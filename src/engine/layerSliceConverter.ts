@@ -1,5 +1,8 @@
 import { FilamentSpool } from '../data/filamentCatalog';
 import { LayerSwapSlot } from './opticalTdEngine';
+import { applyBilateralHeightmapFilter } from './cadMeshBuilder';
+
+export { applyBilateralHeightmapFilter };
 
 export interface LayerSliceConfig {
   /** Initial layer height printed directly on the build plate (e.g. 0.16mm or 0.20mm) */
@@ -10,6 +13,8 @@ export interface LayerSliceConfig {
   minBaseLayers?: number;
   /** Maximum allowable print height in mm (optional ceiling) */
   maxHeightMm?: number;
+  /** Whether to apply edge-preserving spatial bilateral filtering to 2D height maps (default: false) */
+  enableBilateralFilter?: boolean;
 }
 
 // ============================================================================
@@ -474,10 +479,28 @@ export function convertHeightmapToLayerSlices(
     ? (x: number, y: number) => (heightmap as number[][])[y][x]
     : (x: number, y: number) => (heightmap as Float32Array | number[])[y * width + x];
 
+  let effectiveHeights: Float32Array;
+  if (config.enableBilateralFilter && width > 2 && height > 2) {
+    const rawFlattened = new Float32Array(totalPixels);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        rawFlattened[y * width + x] = getHeight(x, y);
+      }
+    }
+    effectiveHeights = applyBilateralHeightmapFilter(rawFlattened, width, height, 1.8, 0.08);
+  } else {
+    effectiveHeights = new Float32Array(totalPixels);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        effectiveHeights[y * width + x] = getHeight(x, y);
+      }
+    }
+  }
+
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
-      const rawH = getHeight(x, y);
+      const rawH = effectiveHeights[idx];
 
       const { layerCount, quantizedHeightMm } = quantizeHeightToLayer(rawH, config);
       layerCounts[idx] = layerCount;

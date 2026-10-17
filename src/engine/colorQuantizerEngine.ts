@@ -467,8 +467,59 @@ export function analyzeImageColorClusters(
     }
   }
 
+  // Restrictive Cluster Dominance for Palette Selection (Requirement 3):
+  // When pulling colors for complex landscapes, require regional cluster dominance (>= 2% of active image area).
+  // If a cluster covers < 2% of the active image mask, merge it into the nearest dominant midtone
+  // rather than letting it fragment the print with random spots (like stray dark/green patches on a road).
+  // Intentional graphic accents with ultra-high chroma (>= 45, like bright red hearts or badges) are preserved.
+  const dominantClusters: typeof validRaw = [];
+  const microClusters: typeof validRaw = [];
+
+  for (const c of merged) {
+    const wRatio = c.weight / Math.max(1e-5, totalWeight);
+    const cChroma = Math.hypot(c.lab.a, c.lab.b);
+    if (wRatio >= 0.020 || (cChroma >= 45.0 && wRatio >= 0.0035)) {
+      dominantClusters.push({ ...c });
+    } else {
+      microClusters.push(c);
+    }
+  }
+
+  if (dominantClusters.length > 0 && microClusters.length > 0) {
+    const dominantMidtones = dominantClusters.filter((d) => d.lab.L >= 20 && d.lab.L <= 85);
+    const mergeTargets = dominantMidtones.length > 0 ? dominantMidtones : dominantClusters;
+
+    for (const mc of microClusters) {
+      let nearestTarget = mergeTargets[0];
+      let minD = Infinity;
+      for (const target of mergeTargets) {
+        const d = ciede2000(target.lab, mc.lab);
+        if (d < minD) {
+          minD = d;
+          nearestTarget = target;
+        }
+      }
+
+      const wTotal = nearestTarget.weight + mc.weight;
+      nearestTarget.lab = {
+        L: (nearestTarget.lab.L * nearestTarget.weight + mc.lab.L * mc.weight) / wTotal,
+        a: (nearestTarget.lab.a * nearestTarget.weight + mc.lab.a * mc.weight) / wTotal,
+        b: (nearestTarget.lab.b * nearestTarget.weight + mc.lab.b * mc.weight) / wTotal,
+      };
+      nearestTarget.rgb = {
+        r: (nearestTarget.rgb.r * nearestTarget.weight + mc.rgb.r * mc.weight) / wTotal,
+        g: (nearestTarget.rgb.g * nearestTarget.weight + mc.rgb.g * mc.weight) / wTotal,
+        b: (nearestTarget.rgb.b * nearestTarget.weight + mc.rgb.b * mc.weight) / wTotal,
+      };
+      nearestTarget.lum = (nearestTarget.lum * nearestTarget.weight + mc.lum * mc.weight) / wTotal;
+      nearestTarget.weight = wTotal;
+    }
+  }
+
+  const finalClusters = dominantClusters.length > 0 ? dominantClusters : merged;
+
   // Sort clusters from darkest to lightest
-  merged.sort((a, b) => a.lum - b.lum);
+  finalClusters.sort((a, b) => a.lum - b.lum);
 
   // 4. Compute global hue sector distribution across all sampled pixels
   const hueSectorWeights: Record<HueSectorName, number> = {
@@ -491,7 +542,7 @@ export function analyzeImageColorClusters(
     const wRatio = hueSectorWeights[sec] / Math.max(1e-5, totalWeight);
 
     // 1. High-chroma vivid accents (red hearts, lips, logos, flowers) with chroma >= 16 and area >= 0.4%
-    const hasAccentCluster = merged.some(
+    const hasAccentCluster = finalClusters.some(
       (c) =>
         getHueSector(c.lab).sector === sec &&
         Math.hypot(c.lab.a, c.lab.b) >= 16.0 &&
@@ -500,7 +551,7 @@ export function analyzeImageColorClusters(
     if (hasAccentCluster) return true;
 
     // 2. Strong chromatic subject (chroma >= 12 and area >= 1.5%)
-    const hasSubjectCluster = merged.some(
+    const hasSubjectCluster = finalClusters.some(
       (c) =>
         getHueSector(c.lab).sector === sec &&
         Math.hypot(c.lab.a, c.lab.b) >= 12.0 &&
@@ -517,7 +568,7 @@ export function analyzeImageColorClusters(
   let midtoneGreyWeight = 0;
   let midtoneTotalWeight = 0;
 
-  const clusters: ImageColorCluster[] = merged.map((m, idx) => {
+  const clusters: ImageColorCluster[] = finalClusters.map((m, idx) => {
     const chroma = Math.hypot(m.lab.a, m.lab.b);
     const { sector } = getHueSector(m.lab);
 

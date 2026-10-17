@@ -148,6 +148,59 @@ export function computeSubtractiveBlendPenalty(
 }
 
 /**
+ * Gradient Preservation & Banding Prevention:
+ * For scenic gradients (smooth canopy transitions, sky, road surfaces), enforces a continuous
+ * transition constraint. Disallows the optimizer from abruptly swapping contrasting filaments
+ * back and forth across adjacent micro-layers unless there is a sharp structural edge.
+ */
+export function computeGradientBandingPenalty(
+  sLower: FilamentSpool,
+  sUpper: FilamentSpool,
+  edgeStrength: number = 0
+): number {
+  if (edgeStrength >= 0.35) return 0.0;
+
+  const labLower = rgbToLab(hexToRgb01(sLower.hex));
+  const labUpper = rgbToLab(hexToRgb01(sUpper.hex));
+  const chromaLower = Math.hypot(labLower.a, labLower.b);
+  const chromaUpper = Math.hypot(labUpper.a, labUpper.b);
+
+  // Neutral tones, earth tones (beige, khaki, grey, silver), or extreme dark/light anchors
+  // serve as natural transition buffers and do not trigger contrasting banding penalties
+  if (
+    chromaLower < 22 ||
+    chromaUpper < 22 ||
+    labLower.L < 18 ||
+    labUpper.L > 88
+  ) {
+    return 0.0;
+  }
+
+  const hueLower = getHueSector(labLower);
+  const hueUpper = getHueSector(labUpper);
+  if (hueLower.sector === 'neutral' || hueUpper.sector === 'neutral') {
+    return 0.0;
+  }
+
+  let angleDiff = Math.abs(hueUpper.hueAngle - hueLower.hueAngle);
+  if (angleDiff > 180) angleDiff = 360 - angleDiff;
+
+  // Continuous scenic transitions (e.g. orange to yellow canopy: angleDiff <= 45°) are smooth & encouraged
+  if (angleDiff <= 45.0) {
+    return 0.0;
+  }
+
+  // Contrasting chromatic jump (e.g. angleDiff >= 85° between saturated colors) in smooth scenic gradient
+  const smoothnessWeight = Math.max(0, 1.0 - edgeStrength / 0.35);
+  let penalty = 0.0;
+  if (angleDiff >= 85.0) {
+    penalty += 35.0 * smoothnessWeight * (angleDiff / 180.0);
+  }
+
+  return Number(penalty.toFixed(2));
+}
+
+/**
  * Filament Swap Economy & Purge Optimization Penalty:
  * Penalizes proposing extra filament swaps (beyond 4 colors) unless the visual Delta E
  * improvement is significant enough to justify the additional purge waste and AMS print time.
@@ -375,6 +428,14 @@ export function solveOptimalPalettes(
 
   const samples = extractPerceptualSamples(imageData);
   if (samples.length === 0 || candidateSpools.length < 2) return [];
+
+  // 0. High-Frequency Edge Analysis: detect smooth scenic gradients vs sharp structural edges
+  const edgeMap = computeHighFrequencyEdgeMap(imageData, 48, 48);
+  let edgeSum = 0;
+  for (let i = 0; i < edgeMap.length; i++) {
+    edgeSum += edgeMap[i];
+  }
+  const meanEdgeStrength = edgeSum / Math.max(1, edgeMap.length);
 
   // Filter out pure transparent carrier spools (TD >= 40mm) unless no other spools exist
   const usablePool = candidateSpools.filter((s) => s.td < 40 && !s.name.toLowerCase().includes('transparent'));
@@ -860,11 +921,30 @@ export function solveOptimalPalettes(
         }
       }
 
+      // Gradient Preservation & Banding Prevention (Constraint 2):
+      // For scenic gradients (smooth canopy transitions, sky, road surfaces), enforces a continuous
+      // transition constraint. Disallows abruptly swapping contrasting filaments back and forth
+      // across adjacent micro-layers unless backed by a sharp structural edge.
+      let gradientBandingPenalty = 0;
+      for (let i = 0; i < ordered.length - 1; i++) {
+        const sLower = ordered[i];
+        const sUpper = ordered[i + 1];
+        const bandPen = computeGradientBandingPenalty(sLower, sUpper, meanEdgeStrength);
+        if (bandPen > 0) {
+          // If the upper contrasting filament is introduced for only 1 micro-layer (< 0.16mm),
+          // it creates an erratic flicker/banding spike without opacity
+          const nextSliceThickness = ends[i + 1] - ends[i];
+          const thinMultiplier = nextSliceThickness < 2 ? 1.75 : 1.0;
+          gradientBandingPenalty += bandPen * thinMultiplier * totalSampleWeight;
+        }
+      }
+
       const visualDe =
         (totalWeightedError * 0.60 + clusterCoverageError * 0.40) / Math.max(1e-5, totalSampleWeight);
       const compositeCost =
         visualDe +
-        (mudPenalty + tdSpacingPenalty + skinProtectionPenalty) / Math.max(1e-5, totalSampleWeight);
+        (mudPenalty + tdSpacingPenalty + skinProtectionPenalty + gradientBandingPenalty) /
+          Math.max(1e-5, totalSampleWeight);
       return {
         avgDe: compositeCost,
         visualDe,

@@ -12,7 +12,7 @@ import {
   LayerSwapSlot,
 } from './opticalTdEngine';
 import { ciede2000, LABColor } from './colorQuantizerEngine';
-import { applyCLAHE } from './cadMeshBuilder';
+import { applyCLAHE, applyBilateralHeightmapFilter } from './cadMeshBuilder';
 import { computeSwapEconomyPenalty, computeHighFrequencyEdgeMap } from './autoSolver';
 import {
   STANDARD_BUILD_PLATE_MAX_BBOX_MM,
@@ -37,6 +37,7 @@ export {
   computeScatteringRadiusMm,
   applySubsurfaceLightDiffusion2D,
   applyCLAHE,
+  applyBilateralHeightmapFilter,
   computeSwapEconomyPenalty,
   computeHighFrequencyEdgeMap,
   STANDARD_BUILD_PLATE_MAX_BBOX_MM,
@@ -355,7 +356,7 @@ export function extractPerceptualColorZones(
     clusterStats[c].weight += s.weight;
   }
 
-  const zones: ColorZoneCluster[] = centroids
+  const rawZones: ColorZoneCluster[] = centroids
     .map((lab, idx) => {
       const w = clusterStats[idx].weight;
       const rgb: RGB =
@@ -375,8 +376,55 @@ export function extractPerceptualColorZones(
         weightRatio: w / Math.max(1e-5, totalWeight),
         chroma: Math.hypot(lab.a, lab.b),
       };
-    })
-    .sort((a, b) => a.lab.L - b.lab.L); // Sort darkest to lightest
+    });
+
+  // Regional Cluster Dominance (Requirement 3):
+  // Merge micro-clusters (< 2% area) into nearest dominant midtone to prevent fragmented palette noise
+  const dominantZones: ColorZoneCluster[] = [];
+  const microZones: ColorZoneCluster[] = [];
+  for (const z of rawZones) {
+    if (z.weightRatio >= 0.020 || (z.chroma >= 45.0 && z.weightRatio >= 0.0035)) {
+      dominantZones.push({ ...z });
+    } else {
+      microZones.push(z);
+    }
+  }
+
+  if (dominantZones.length > 0 && microZones.length > 0) {
+    const dominantMidtones = dominantZones.filter((d) => d.lab.L >= 20 && d.lab.L <= 85);
+    const targets = dominantMidtones.length > 0 ? dominantMidtones : dominantZones;
+
+    for (const mz of microZones) {
+      let nearestTarget = targets[0];
+      let minD = Infinity;
+      for (const t of targets) {
+        const d = ciede2000(t.lab, mz.lab);
+        if (d < minD) {
+          minD = d;
+          nearestTarget = t;
+        }
+      }
+
+      const totalW = nearestTarget.weightRatio + mz.weightRatio;
+      nearestTarget.lab = {
+        L: (nearestTarget.lab.L * nearestTarget.weightRatio + mz.lab.L * mz.weightRatio) / totalW,
+        a: (nearestTarget.lab.a * nearestTarget.weightRatio + mz.lab.a * mz.weightRatio) / totalW,
+        b: (nearestTarget.lab.b * nearestTarget.weightRatio + mz.lab.b * mz.weightRatio) / totalW,
+      };
+      nearestTarget.rgb = {
+        r: Math.max(0, Math.min(1, (nearestTarget.rgb.r * nearestTarget.weightRatio + mz.rgb.r * mz.weightRatio) / totalW)),
+        g: Math.max(0, Math.min(1, (nearestTarget.rgb.g * nearestTarget.weightRatio + mz.rgb.g * mz.weightRatio) / totalW)),
+        b: Math.max(0, Math.min(1, (nearestTarget.rgb.b * nearestTarget.weightRatio + mz.rgb.b * mz.weightRatio) / totalW)),
+      };
+      nearestTarget.weightRatio = totalW;
+      nearestTarget.chroma = Math.hypot(nearestTarget.lab.a, nearestTarget.lab.b);
+      nearestTarget.hex = rgb01ToHex(nearestTarget.rgb);
+    }
+  }
+
+  const zones = (dominantZones.length > 0 ? dominantZones : rawZones)
+    .sort((a, b) => a.lab.L - b.lab.L)
+    .map((z, idx) => ({ ...z, clusterIndex: idx }));
 
   return { zones, rawLuminance };
 }
@@ -1207,10 +1255,19 @@ export function runHueForgeAutoEngine(
   const baseLuminance = config.enableClahe
     ? applyCLAHE(rawLuminance, imageData.width, imageData.height, config.claheClipLimit ?? 2.5)
     : rawLuminance;
-  const adjustedLuminance = applyAdaptiveSCurve(
+  const rawAdjustedLum = applyAdaptiveSCurve(
     baseLuminance,
     config.sCurveSteepness ?? 1.25,
     config.sCurveMidpoint ?? 0.48
+  );
+  // Spatial coherence bilateral filtering on heightmap luminance before layer assignment:
+  // Suppresses random background micro-spikes (leaves, rough ground texture) from creating erratic digital static
+  const adjustedLuminance = applyBilateralHeightmapFilter(
+    rawAdjustedLum,
+    imageData.width,
+    imageData.height,
+    1.8,
+    0.08
   );
 
   // 4. Optical Layer Ordering

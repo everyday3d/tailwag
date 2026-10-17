@@ -249,6 +249,74 @@ export function applyCLAHE(
 }
 
 /**
+ * Edge-preserving spatial coherence bilateral filter for 2D height maps and luminance fields.
+ * Suppresses high-frequency digital static and erratic micro-spikes (leaves, rough pavement/ground gravel)
+ * while strictly preserving sharp structural boundaries, silhouette edges, and horizon lines.
+ *
+ * @param map 2D Float32Array of scalar values (normalized [0..1] or physical height in mm)
+ * @param cols Number of columns
+ * @param rows Number of rows
+ * @param spatialSigma Spatial Gaussian kernel standard deviation (default: 1.8)
+ * @param rangeSigma Range (photometric/depth) standard deviation (default: 0.08)
+ * @param radius Neighborhood kernel radius in pixels (default: 2, yielding 5x5 window)
+ */
+export function applyBilateralHeightmapFilter(
+  map: Float32Array,
+  cols: number,
+  rows: number,
+  spatialSigma: number = 1.8,
+  rangeSigma: number = 0.08,
+  radius: number = 2
+): Float32Array {
+  if (cols <= 1 || rows <= 1) return new Float32Array(map);
+  const result = new Float32Array(cols * rows);
+  const twoSpatialSigmaSq = 2 * spatialSigma * spatialSigma;
+  const twoRangeSigmaSq = 2 * rangeSigma * rangeSigma;
+
+  // Precompute 2D spatial Gaussian weights table
+  const kernelSize = radius * 2 + 1;
+  const spatialWeights = new Float32Array(kernelSize * kernelSize);
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const distSq = dx * dx + dy * dy;
+      spatialWeights[(dy + radius) * kernelSize + (dx + radius)] = Math.exp(-distSq / twoSpatialSigmaSq);
+    }
+  }
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const centerVal = map[y * cols + x];
+      let sumVal = 0;
+      let sumWeight = 0;
+
+      for (let dy = -radius; dy <= radius; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= rows) continue;
+        const rowOffset = ny * cols;
+        const kernelRowOffset = (dy + radius) * kernelSize;
+
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= cols) continue;
+
+          const neighborVal = map[rowOffset + nx];
+          const diff = neighborVal - centerVal;
+          const rangeWeight = Math.exp(-(diff * diff) / twoRangeSigmaSq);
+          const weight = spatialWeights[kernelRowOffset + (dx + radius)] * rangeWeight;
+
+          sumVal += neighborVal * weight;
+          sumWeight += weight;
+        }
+      }
+
+      result[y * cols + x] = sumWeight > 0 ? sumVal / sumWeight : centerVal;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Builds the 2.5D heightmap grid combining image luminance, pre-press contrast/detail curves,
  * parametric shape silhouette, border frame, clock shaft bore, stencil numerals, and rear cavities.
  */
@@ -390,6 +458,10 @@ export function buildHeightmapGrid(params: {
     }
   }
 
+  // Apply edge-preserving spatial coherence bilateral filter to height map before layer-swap assignment.
+  // Suppresses random background micro-spikes (leaves, rough pavement/ground gravel) while preserving true silhouette boundaries
+  const coherentLum = applyBilateralHeightmapFilter(enhancedLum, cols, rows, 1.8, 0.08);
+
   const clockStencilMask = cad.clockMode ? renderClockStencilMask(cols, rows, cad.clockStencil) : new Uint8Array(cols * rows);
   const maxReliefZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
   const halfW = widthMm / 2;
@@ -440,7 +512,7 @@ export function buildHeightmapGrid(params: {
           ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
           : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
       const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
-      let cellLum = enhancedLum[idx];
+      let cellLum = coherentLum[idx];
       let discreteLayer = minBaseLayer + Math.round(cellLum * (totalLayers - minBaseLayer));
       let zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
 
