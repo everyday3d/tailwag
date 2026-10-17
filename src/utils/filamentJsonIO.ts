@@ -59,6 +59,69 @@ function normalizeHexColor(raw: unknown): string | null {
   return null;
 }
 
+const NAMED_COLOR_ANCHORS: Array<{ name: string; r: number; g: number; b: number }> = [
+  { name: 'Jet Black', r: 18, g: 18, b: 20 },
+  { name: 'Charcoal Grey', r: 54, g: 58, b: 62 },
+  { name: 'Slate Grey', r: 108, g: 115, b: 122 },
+  { name: 'Ash Silver', r: 165, g: 170, b: 175 },
+  { name: 'Jade White', r: 245, g: 247, b: 248 },
+  { name: 'Ivory Cream', r: 235, g: 224, b: 202 },
+  { name: 'Warm Beige', r: 215, g: 186, b: 158 },
+  { name: 'Desert Tan', r: 175, g: 155, b: 125 },
+  { name: 'Caramel Fawn', r: 196, g: 132, b: 78 },
+  { name: 'Saddle Brown', r: 125, g: 68, b: 38 },
+  { name: 'Dark Cocoa Brown', r: 78, g: 45, b: 28 },
+  { name: 'Espresso Brown', r: 48, g: 30, b: 22 },
+  { name: 'Terracotta Rust', r: 168, g: 72, b: 44 },
+  { name: 'Crimson Red', r: 198, g: 36, b: 42 },
+  { name: 'Wine Burgundy', r: 105, g: 24, b: 38 },
+  { name: 'Coral Salmon', r: 242, g: 132, b: 116 },
+  { name: 'Blush Pink', r: 244, g: 166, b: 184 },
+  { name: 'Tangerine Orange', r: 242, g: 112, b: 34 },
+  { name: 'Amber Gold', r: 228, g: 162, b: 36 },
+  { name: 'Sunflower Yellow', r: 248, g: 214, b: 28 },
+  { name: 'Lemon Yellow', r: 246, g: 238, b: 118 },
+  { name: 'Olive Drab', r: 78, g: 84, b: 44 },
+  { name: 'Deep Forest Green', r: 22, g: 46, b: 36 },
+  { name: 'Pine Green', r: 36, g: 82, b: 74 },
+  { name: 'Emerald Green', r: 24, g: 156, b: 78 },
+  { name: 'Mint Sage', r: 132, g: 188, b: 156 },
+  { name: 'Dark Abyssal Teal', r: 16, g: 32, b: 34 },
+  { name: 'Deep Ocean Teal', r: 42, g: 94, b: 92 },
+  { name: 'Seafoam Teal', r: 64, g: 142, b: 134 },
+  { name: 'Turquoise Cyan', r: 38, g: 174, b: 196 },
+  { name: 'Sky Blue', r: 96, g: 184, b: 222 },
+  { name: 'Cobalt Blue', r: 28, g: 88, b: 178 },
+  { name: 'Navy Blue', r: 22, g: 38, b: 86 },
+  { name: 'Royal Purple', r: 106, g: 52, b: 156 },
+  { name: 'Lavender Lilac', r: 176, g: 146, b: 212 },
+];
+
+function inferColorNameFromHex(hex: string): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16) || 0;
+  const g = parseInt(clean.slice(2, 4), 16) || 0;
+  const b = parseInt(clean.slice(4, 6), 16) || 0;
+
+  let bestName = 'Custom Shade';
+  let bestDist = Infinity;
+  for (const anchor of NAMED_COLOR_ANCHORS) {
+    const dr = r - anchor.r;
+    const dg = g - anchor.g;
+    const db = b - anchor.b;
+    const dist = dr * dr * 0.3 + dg * dg * 0.59 + db * db * 0.11;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestName = anchor.name;
+    }
+  }
+  return `${bestName} (${hex.toUpperCase()})`;
+}
+
+function isBareHexName(name: string): boolean {
+  return /^#?[0-9a-fA-F]{3,8}$/.test(name.trim());
+}
+
 /**
  * Parses a user-uploaded .json Filament Library file.
  * Supports:
@@ -106,6 +169,14 @@ export function parseFilamentLibraryJson(
     }
   }
 
+  // Check if the library has real non-IMAGE spools; if so, filter out HueForge "Type": "IMAGE" pseudo-entries
+  const hasRealSpools = rawList.some((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const t = String(item.Type ?? item.type ?? item.material ?? '').trim().toUpperCase();
+    const b = String(item.Brand ?? item.brand ?? '').trim();
+    return t !== 'IMAGE' && b.length > 0;
+  });
+
   const spools: FilamentSpool[] = [];
   let skippedCount = 0;
   const seenIds = new Set<string>();
@@ -117,9 +188,18 @@ export function parseFilamentLibraryJson(
       continue;
     }
 
-    const brand = String(
-      item.brand ?? item.Brand ?? item.Manufacturer ?? item.manufacturer ?? item.vendor ?? 'Custom'
+    const rawType = String(item.material ?? item.Type ?? item.type ?? item.Material ?? '').trim();
+    const isImageSwatch = rawType.toUpperCase() === 'IMAGE';
+
+    if (hasRealSpools && isImageSwatch) {
+      skippedCount++;
+      continue;
+    }
+
+    const rawBrand = String(
+      item.brand ?? item.Brand ?? item.Manufacturer ?? item.manufacturer ?? item.vendor ?? ''
     ).trim();
+    const brand = rawBrand || (isImageSwatch ? 'HueForge Image' : 'Custom');
 
     const rawName = String(
       item.name ?? item.Name ?? item.color_name ?? item.ColorName ?? item.title ?? ''
@@ -147,8 +227,11 @@ export function parseFilamentLibraryJson(
     }
 
     const finalHex = hex || '#CCCCCC';
-    const material = normalizeMaterial(item.material ?? item.Type ?? item.type ?? item.Material ?? rawName);
-    const displayName = rawName || `${brand} ${material} ${finalHex}`;
+    const material = normalizeMaterial(rawType || rawName);
+    const displayName =
+      !rawName || isBareHexName(rawName)
+        ? inferColorNameFromHex(finalHex)
+        : rawName;
 
     const baseSlug = `${brand}-${displayName}-${finalHex}`
       .toLowerCase()

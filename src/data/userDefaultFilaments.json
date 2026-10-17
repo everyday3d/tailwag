@@ -1,132 +1,21 @@
 {
     "Filaments": [
         {
-            "Brand": "Panchroma",
-            "Color": "#5fbcdd",
-            "Name": "Aqua Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.3,
-            "Type": "COPE",
-            "uuid": "{d96a1880-9688-4e1d-b3b7-835cd82b9c90}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#404720",
-            "Name": "Army Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.4,
-            "Type": "PETG",
-            "uuid": "{1d499ee1-0630-4539-b985-dd46c3878bb5}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#6d6d74",
-            "Name": "Ash Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.2,
-            "Type": "ABS",
-            "uuid": "{74a2520d-1b8a-4656-8b14-855791940898}"
-        },
-        {
             "Brand": "BambuLab Basic",
-            "Color": "#00ae42",
-            "Name": "BambuLab Green",
-            "Owned": false,
+            "Color": "#ffffff",
+            "Name": "Jade White",
+            "Owned": true,
             "Tags": [
             ],
-            "Transmissivity": 2,
+            "Transmissivity": 5,
             "Type": "PLA",
-            "uuid": "{23a3aa5b-7c28-4688-a783-d299cbb8623a}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#dabaa5",
-            "Name": "Beige",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.5,
-            "Type": "COPE",
-            "uuid": "{8f313920-e281-4925-a352-3d93ce5a6d35}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#e7ceb5",
-            "Name": "Beige",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.5,
-            "Type": "PLA",
-            "uuid": "{0e78ff37-53fa-40b4-a752-7fd38f38f142}"
-        },
-        {
-            "Brand": "eSun",
-            "Color": "#dbbba1",
-            "Name": "Beige",
-            "Owned": false,
-            "Tags": [
-                "eSun"
-            ],
-            "Transmissivity": 7,
-            "Type": "PLA",
-            "uuid": "{700732bc-b103-43ca-becd-6f8a80e7bde6}"
-        },
-        {
-            "Brand": "Sunlu Meta",
-            "Color": "#000000",
-            "Name": "Black",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1,
-            "Type": "PLA",
-            "uuid": "{40e7e873-14ce-45b9-9201-62f0a81e4007}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#000000",
-            "Name": "Black",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.6,
-            "Type": "PLA+",
-            "uuid": "{01030000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#080a0d",
-            "Name": "Black",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.3,
-            "Type": "COPE",
-            "uuid": "{30f19296-f210-418b-9880-9a4e1110de15}"
-        },
-        {
-            "Brand": "JAYO",
-            "Color": "#000000",
-            "Name": "Black",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.3,
-            "Type": "PETG",
-            "uuid": "{b0cf1715-d6c6-4abe-895d-5baf28267fb1}"
+            "uuid": "{29d0549f-7950-4e60-b9e5-aa081f71d61b}"
         },
         {
             "Brand": "BambuLab Basic",
             "Color": "#000000",
             "Name": "Black",
-            "Owned": false,
+            "Owned": true,
             "Tags": [
             ],
             "Transmissivity": 0.6,
@@ -134,494 +23,10 @@
             "uuid": "{43eb13d1-f422-4d84-9bce-37a0e10a2158}"
         },
         {
-            "Brand": "Sunlu",
-            "Color": "#000000",
-            "Name": "Black",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1,
-            "Type": "PLA",
-            "uuid": "{ef2a7793-f607-42b3-b22c-04c1bf4a45b4}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#050916",
-            "Name": "Black",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.3,
-            "Type": "TPU",
-            "uuid": "{e9ba2024-4782-4fc3-9723-733fa447b7c5}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#052285",
-            "Name": "Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.3,
-            "Type": "TPU",
-            "uuid": "{f0a2d807-ca2c-46fd-8f13-d0fe46819cff}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#0041cc",
-            "Name": "Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PLA+",
-            "uuid": "{01070000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#0000ff",
-            "Name": "Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PETG",
-            "uuid": "{6ef9ad80-bad0-49a7-92ba-8dcd5637c692}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#000e5b",
-            "Name": "Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.5,
-            "Type": "PETG",
-            "uuid": "{39d49e89-fbd1-4c96-bffe-d297a41d4ef7}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#00358e",
-            "Name": "Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PLA",
-            "uuid": "{766f745e-c390-4c9d-8653-b16db19a1228}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#003776",
-            "Name": "Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.7,
-            "Type": "COPE",
-            "uuid": "{71401359-2851-43af-b17e-f819c976fd15}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#4c5f71",
-            "Name": "Blue Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PLA",
-            "uuid": "{d8613aaf-41c3-4b82-a885-402554966333}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#606e81",
-            "Name": "Blue Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.7,
-            "Type": "PETG",
-            "uuid": "{938a676a-87cf-43d1-8a71-9dcca6db4e77}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#0f52ba",
-            "Name": "Blue Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PLA+",
-            "uuid": "{fdf8d1b2-1480-4729-9825-a5f55a58b5ec}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#ddd7c7",
-            "Name": "Bone White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01170000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#becf00",
-            "Name": "Bright Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.2,
-            "Type": "PLA",
-            "uuid": "{d0d049e4-7455-4b23-b037-bb73d124fb47}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#ff699b",
-            "Name": "Bright Pink",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.9,
-            "Type": "TPU",
-            "uuid": "{85a86419-ec6e-45f0-bc7e-4f64ea65460d}"
-        },
-        {
-            "Brand": "Polymaker Silk",
-            "Color": "#af6b4c",
-            "Name": "Bronze",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.1,
-            "Type": "PLA",
-            "uuid": "{5cdbb671-d168-4eec-89f9-65208160ee36}"
-        },
-        {
-            "Brand": "Polymaker Panachroma",
-            "Color": "#af6b4c",
-            "Name": "Bronze",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.1,
-            "Type": "PLA SILK",
-            "uuid": "{1fbf44cb-2e88-40af-a4b4-a2a1dcf3b893}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#84754e",
-            "Name": "Bronze",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1,
-            "Type": "PLA",
-            "uuid": "{26bd5303-11c6-41d9-a400-56ac18056245}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#55351c",
-            "Name": "Brown",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.5,
-            "Type": "PLA+",
-            "uuid": "{01150000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#9d432c",
-            "Name": "Brown",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2,
-            "Type": "PLA",
-            "uuid": "{17ea47fa-6eb6-4109-911c-ea608f35cc85}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#785c50",
-            "Name": "Brown",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.6,
-            "Type": "PLA",
-            "uuid": "{04d661b2-97c9-4d11-8644-ad495ed5d004}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#55331a",
-            "Name": "Brown",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.1,
-            "Type": "COPE",
-            "uuid": "{0b954d0a-b171-425e-b4c5-793e5bbf41b8}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#a09268",
-            "Name": "Burly Wood",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.5,
-            "Type": "PLA+",
-            "uuid": "{397d2b69-944d-4950-916d-97f91992ecdb}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#4c4e52",
-            "Name": "Cement Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.6,
-            "Type": "PLA",
-            "uuid": "{294c6f64-0119-4d57-b887-c47421e0ead7}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#57361c",
-            "Name": "Chocolate",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.2,
-            "Type": "PLA",
-            "uuid": "{cca09c72-82b2-4fe1-afe2-8e5432a65930}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#0056b8",
-            "Name": "Cobalt Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.2,
-            "Type": "PLA",
-            "uuid": "{47d171c6-e6fa-43e2-b52e-b352c2044f0b}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#6f5034",
-            "Name": "Cocoa Brown",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.4,
-            "Type": "PLA",
-            "uuid": "{505752c8-689d-42e7-8372-2b31fe9a109e}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#977133",
-            "Name": "Coffee",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PLA+",
-            "uuid": "{01160000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#d9dfe5",
-            "Name": "Cold White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.8,
-            "Type": "COPE",
-            "uuid": "{00450518-8433-497c-af4e-66dc4d864e88}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#eed1a9",
-            "Name": "Cream",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.8,
-            "Type": "COPE",
-            "uuid": "{511af433-82ba-44d7-83c3-e6a4c7e414ca}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#0086d6",
-            "Name": "Cyan",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.5,
-            "Type": "PLA",
-            "uuid": "{843aefd0-878c-48b4-bbce-8fc5f1abfd11}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#11204b",
-            "Name": "Dark Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2,
-            "Type": "PLA+",
-            "uuid": "{01060000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#034e89",
-            "Name": "Dark Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.2,
-            "Type": "ABS",
-            "uuid": "{584430fa-c755-4d33-9b85-fe25dd4d4e73}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#545454",
-            "Name": "Dark Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.6,
-            "Type": "PLA",
-            "uuid": "{b3d2fa3f-861c-4162-b946-6e195ce91a9f}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#075938",
-            "Name": "Dark Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.9,
-            "Type": "ABS",
-            "uuid": "{455c87f6-c337-4b06-ab46-ac42a4d70186}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#485259",
-            "Name": "Dark Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.3,
-            "Type": "COPE",
-            "uuid": "{6ebde553-2ba1-4478-b7ad-86a4490527ca}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#0a92c0",
-            "Name": "Digital Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.2,
-            "Type": "TPU",
-            "uuid": "{a147edb8-2023-4ac1-9ec6-d393c3f8bbef}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#9c0087",
-            "Name": "Fuschia",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01200000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#7b713a",
-            "Name": "Gold",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{c2ed9e04-2c40-481f-9ce1-568435bbde52}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#b28b33",
-            "Name": "Gold",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.7,
-            "Type": "PETG",
-            "uuid": "{17f0954b-29d4-4958-bfb5-70ca6a8a2fd2}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#ce8d00",
-            "Name": "Gold",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.2,
-            "Type": "PETG",
-            "uuid": "{f0782d55-c7f3-4427-bd3b-c755090ad00a}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#008684",
-            "Name": "Grass Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PLA+",
-            "uuid": "{01250000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#c4d802",
-            "Name": "Grass Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.2,
-            "Type": "PETG",
-            "uuid": "{0623622e-62c7-4e0c-88ad-c57f083fdfac}"
-        },
-        {
-            "Brand": "JAYO",
-            "Color": "#646464",
-            "Name": "Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.5,
-            "Type": "PETG",
-            "uuid": "{02d11312-1e7b-41b4-b125-59e8bf99b932}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#96b4c4",
-            "Name": "Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.9,
-            "Type": "TPU",
-            "uuid": "{6a316a2d-acf1-4d79-ba36-e0f3c89b523f}"
-        },
-        {
             "Brand": "BambuLab Basic",
             "Color": "#8e9089",
             "Name": "Gray",
-            "Owned": false,
+            "Owned": true,
             "Tags": [
             ],
             "Transmissivity": 2,
@@ -630,1307 +35,9 @@
         },
         {
             "Brand": "BambuLab Basic",
-            "Color": "#9ea2a2",
-            "Name": "Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PETG",
-            "uuid": "{3d77a198-9003-411a-a0fd-5dc731cebceb}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#658697",
-            "Name": "Gray Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.8,
-            "Type": "PLA",
-            "uuid": "{a4960362-d5c8-4a77-86be-c728eb6d6813}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#189956",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.4,
-            "Type": "TPU",
-            "uuid": "{4c49c7a3-9253-4b18-b475-10d66385bb15}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#00f52c",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 10,
-            "Type": "PLA+",
-            "uuid": "{0fdd570a-4ea6-4fb6-aa1b-21dbd9761c82}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#00f52c",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PLA",
-            "uuid": "{01260000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#00ff00",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PETG",
-            "uuid": "{8a9dc63a-8dd1-4fd9-9082-824174b4633f}"
-        },
-        {
-            "Brand": "Sunlu Meta",
-            "Color": "#3cdac8",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 10,
-            "Type": "PLA",
-            "uuid": "{9e14d746-9226-45d5-8d79-9e0e75733516}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#06924d",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.6,
-            "Type": "COPE",
-            "uuid": "{042d746f-e9f2-4a64-bcb3-774865bc5a7c}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#003b3b",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2,
-            "Type": "PLA",
-            "uuid": "{beebebca-114a-49ad-a581-c72a369ccaa4}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#009639",
-            "Name": "Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.7,
-            "Type": "PETG",
-            "uuid": "{0a4feb5b-e6d0-4bad-a9a2-3c0a02ff8d9d}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#565d65",
-            "Name": "Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2,
-            "Type": "PLA+",
-            "uuid": "{01040000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Sunlu Meta",
-            "Color": "#777b78",
-            "Name": "Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.5,
-            "Type": "PLA",
-            "uuid": "{ea23f51a-9e11-45b0-935e-7be2a6dcebe8}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#8c9099",
-            "Name": "Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.2,
-            "Type": "COPE",
-            "uuid": "{2502fce5-5777-489f-890e-73ea9b74cc04}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#f3d538",
-            "Name": "Highlight Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PLA",
-            "uuid": "{22feefe5-30fd-4a64-83dc-f79a1e5dc77a}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#f5547c",
-            "Name": "Hot Pink",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.9,
-            "Type": "PLA",
-            "uuid": "{70b96432-6e36-4b53-b734-05b0c6861c11}"
-        },
-        {
-            "Brand": "Marz Works",
-            "Color": "#55007f",
-            "Name": "Indigo",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.5,
-            "Type": "PLA",
-            "uuid": "{963a421d-480f-4e54-ad8f-7c8cdde57038}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#482960",
-            "Name": "Indigo Purple",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.1,
-            "Type": "PLA",
-            "uuid": "{50cd7484-ddae-4e25-84fa-21b820ecdb99}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#ffffff",
-            "Name": "Jade White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA",
-            "uuid": "{29d0549f-7950-4e60-b9e5-aa081f71d61b}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#4e742d",
-            "Name": "Jungle Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.4,
-            "Type": "COPE",
-            "uuid": "{01f36004-be60-48f5-83c9-31784fbff751}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#0069b1",
-            "Name": "Lake Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PETG",
-            "uuid": "{62e50775-c5f9-4896-8ce1-29bff6339584}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#eed231",
-            "Name": "Lemon Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.6,
-            "Type": "COPE",
-            "uuid": "{8dfc1a16-0e72-4863-93db-9df28a7728d4}"
-        },
-        {
-            "Brand": "eSun",
-            "Color": "#59e2ff",
-            "Name": "Light Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.5,
-            "Type": "PLA",
-            "uuid": "{ae899cca-720f-4a59-b569-d7506ada9869}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#5ec4ea",
-            "Name": "Light Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "ABS",
-            "uuid": "{5b37627b-d849-4b1b-83a6-dc4e3ee53785}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#9b8b39",
-            "Name": "Light Gold",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PLA+",
-            "uuid": "{4a177969-32b6-4375-824f-a63b810725d2}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#d1d3d5",
-            "Name": "Light Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.7,
-            "Type": "PLA",
-            "uuid": "{54af0381-c181-462a-9e08-b417766f46da}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#74777d",
-            "Name": "Light Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.7,
-            "Type": "PLA",
-            "uuid": "{26cf292a-ecd5-482a-a1a3-637ee7416201}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#b1b1b1",
-            "Name": "Light Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.1,
-            "Type": "PLA",
-            "uuid": "{eabd09e9-b983-44df-ab67-65d6d1f88f58}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#bcd69b",
-            "Name": "Light Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.2,
-            "Type": "PLA",
-            "uuid": "{fa8bc033-09c1-44f9-80f1-7a77043da13f}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#f4d563",
-            "Name": "Light Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.1,
-            "Type": "PLA",
-            "uuid": "{540de9f5-0bcc-4146-890b-df39e1ba4504}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#d7d602",
-            "Name": "Lime Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.1,
-            "Type": "COPE",
-            "uuid": "{13335523-e2fe-48e7-9587-7acb2e7bae07}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#b7db57",
-            "Name": "Lime Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.7,
-            "Type": "PETG",
-            "uuid": "{7bdd1b59-c2f6-4fd2-8948-257406af7341}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#f1cd02",
-            "Name": "Liquid Gold",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.2,
-            "Type": "PLA",
-            "uuid": "{343d34f2-c3b0-4191-86c2-723852843ad8}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#c80181",
-            "Name": "Magenta",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.6,
-            "Type": "PETG",
-            "uuid": "{741fc13d-249e-4b59-832a-f82151b3c01d}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#cd007b",
-            "Name": "Magenta",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "PLA",
-            "uuid": "{3100e0d4-45bf-4835-8637-517d55134e9d}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#f20666",
-            "Name": "Magenta",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.5,
-            "Type": "PLA+",
-            "uuid": "{01210000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#f24574",
-            "Name": "Magenta",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.5,
-            "Type": "COPE",
-            "uuid": "{4d6eebbb-b7b0-48ab-b48e-0e667f93131f}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#9d2235",
-            "Name": "Maroon Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.6,
-            "Type": "PLA",
-            "uuid": "{32b6c001-a340-449c-b942-9c0f523c2b4c}"
-        },
-        {
-            "Brand": "Polymaker",
-            "Color": "#7c594a",
-            "Name": "Matte Earth Brown",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.2,
-            "Type": "PLA",
-            "uuid": "{f84fd1ea-339d-4a06-bc0d-a76cd4cb7e73}"
-        },
-        {
-            "Brand": "Deeplee",
-            "Color": "#3061f4",
-            "Name": "Metallic Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.3,
-            "Type": "PLA",
-            "uuid": "{a890b69c-a87c-4749-92b3-4ebf8b8372b2}"
-        },
-        {
-            "Brand": "eSun",
-            "Color": "#9eff99",
-            "Name": "Mint Green Matte",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1,
-            "Type": "PLA",
-            "uuid": "{8ec8208b-a5ab-4a5e-bb4f-1fb36d68d8e1}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#3f8e43",
-            "Name": "Mistletoe Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1,
-            "Type": "PLA",
-            "uuid": "{d88df60c-0eca-4d23-be4e-cf662a688d87}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#75afcd",
-            "Name": "Morning Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.9,
-            "Type": "PLA",
-            "uuid": "{666bf0b8-80f0-46fb-b8e0-10c1afe5155c}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#f9f7ed",
-            "Name": "Natural",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 14.9,
-            "Type": "ABS",
-            "uuid": "{d02661e5-dd05-4a4c-a994-02cf9f74a7e2}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#f2eada",
-            "Name": "Nature",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 8,
-            "Type": "PETG",
-            "uuid": "{6119f4f9-2b3c-4c9f-95b4-3dcfa1226d0a}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#ffffab",
-            "Name": "Neon Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 7.4,
-            "Type": "PLA",
-            "uuid": "{eeae0708-2814-4194-abb0-15e9df10d9ef}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#738787",
-            "Name": "Night Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.3,
-            "Type": "TPU",
-            "uuid": "{c96ac39b-546e-401e-9e8f-6fac75af10f6}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#948902",
-            "Name": "Olive Drab Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.5,
-            "Type": "COPE",
-            "uuid": "{0f5deb56-0616-4c4c-b35f-29e15d8a9966}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#938903",
-            "Name": "Olive Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.4,
-            "Type": "COPE",
-            "uuid": "{02c685e7-d4ea-4c5a-aea7-5fa42c50aa05}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#455340",
-            "Name": "Olive Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.5,
-            "Type": "PLA+",
-            "uuid": "{01230000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#857f03",
-            "Name": "Olive green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.5,
-            "Type": "PLA",
-            "uuid": "{eb334278-dc9f-4948-bda9-e541dec5de61}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#f67405",
-            "Name": "Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.2,
-            "Type": "COPE",
-            "uuid": "{5fc4b0ea-0590-4d0f-80da-d537db3ca0e1}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#e67f30",
-            "Name": "Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6.6,
-            "Type": "TPU",
-            "uuid": "{dabe0310-e33e-4a65-804d-fa121289364a}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#ff671f",
-            "Name": "Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.5,
-            "Type": "PETG",
-            "uuid": "{eed618fd-c51d-42a4-b971-50cc031aba7b}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ff8000",
-            "Name": "Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01110000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#ff7713",
-            "Name": "Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01120000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#005133",
-            "Name": "Pine Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.2,
-            "Type": "PLA+",
-            "uuid": "{01240000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#ff749e",
-            "Name": "Pink",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01220000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#ff5869",
-            "Name": "Pink",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 8,
-            "Type": "PLA",
-            "uuid": "{d0052b88-70f8-488f-b071-0d62f887b51d}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#f1a1af",
-            "Name": "Pink",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "COPE",
-            "uuid": "{3918b6c4-5e96-4255-9b11-454a8028e636}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#f79dbc",
-            "Name": "Pink",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.2,
-            "Type": "PLA",
-            "uuid": "{eff24d6b-8496-4df0-bd03-9aaf3e5bf72e}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#4cc0c7",
-            "Name": "Polymaker Teal",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.3,
-            "Type": "COPE",
-            "uuid": "{085630ff-5545-4af1-8ba9-a4ccb9e57990}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#ff9016",
-            "Name": "Pumpkin Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.5,
-            "Type": "PLA",
-            "uuid": "{be641437-2559-4f8a-9bf2-89690b97d9e0}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ffd500",
-            "Name": "Pure Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01130000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#6c47b2",
-            "Name": "Purple",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.9,
-            "Type": "COPE",
-            "uuid": "{1ef6ab5c-274d-40ec-b624-faf55f4ea209}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#856fdc",
-            "Name": "Purple",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PLA",
-            "uuid": "{01190000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#9e007e",
-            "Name": "Purple",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.5,
-            "Type": "PETG",
-            "uuid": "{a774bbcb-ff08-4a4a-b9a4-cd5250808908}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#9650d4",
-            "Name": "Purple",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3,
-            "Type": "TPU",
-            "uuid": "{435b1ad0-b150-444c-bf2f-30492b3d5963}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#c00d1e",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PLA",
-            "uuid": "{4fb13a86-6187-4300-95f2-ac2c877aae5e}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#d22332",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PLA+",
-            "uuid": "{01100000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#e72f1d",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.8,
-            "Type": "COPE",
-            "uuid": "{dc096719-402e-4f90-8121-d697e11f309e}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#ec1031",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.4,
-            "Type": "TPU",
-            "uuid": "{02c9cc03-78f6-4d45-9ea9-96d2f736a248}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#7d1112",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.5,
-            "Type": "PETG",
-            "uuid": "{262542bd-6819-4652-a835-3630338da515}"
-        },
-        {
-            "Brand": "Sunlu PLA+ 2.0",
-            "Color": "#d41c1f",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6.2,
-            "Type": "PLA",
-            "uuid": "{aee8f281-5cd1-4ec6-bb10-06d4e5656235}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ff0000",
-            "Name": "Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 7.5,
-            "Type": "PETG",
-            "uuid": "{b35a12fd-561e-45bb-9ddd-2012870d11cd}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#ca6828",
-            "Name": "Rock Mars Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.2,
-            "Type": "PLA",
-            "uuid": "{e33d9559-52e5-41b1-a9fc-96214d95ddca}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#afb6be",
-            "Name": "Rock White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.1,
-            "Type": "PETG",
-            "uuid": "{687c639d-e237-414f-9927-e177858d2f58}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#533426",
-            "Name": "Royal Copper",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.4,
-            "Type": "PLA",
-            "uuid": "{73d1e025-a23e-4a34-8619-71b548d4a384}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#656910",
-            "Name": "Royal Gold",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.4,
-            "Type": "ABS",
-            "uuid": "{431b47bb-f829-4bf9-82dc-40bb210c943c}"
-        },
-        {
-            "Brand": "Polymaker",
-            "Color": "#ffbeec",
-            "Name": "Sakura Pink Matte",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.2,
-            "Type": "PLA",
-            "uuid": "{030d06ec-8c07-4f66-a54f-6c0e754bd66e}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#89939c",
-            "Name": "Silver",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2,
-            "Type": "PLA+",
-            "uuid": "{01050000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#a6a9aa",
-            "Name": "Silver",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.5,
-            "Type": "PLA",
-            "uuid": "{940c9f5c-e618-4a2a-b11b-f1de28e7895e}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ffcaa6",
-            "Name": "Skin",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01140000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#01b3ff",
-            "Name": "Sky Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4,
-            "Type": "PLA+",
-            "uuid": "{39381ed5-bebd-4b15-94f1-9b8eaa27a841}"
-        },
-        {
-            "Brand": "Esun",
-            "Color": "#0cc1f5",
-            "Name": "Space Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.5,
-            "Type": "PLA+",
-            "uuid": "{01080000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#63646b",
-            "Name": "Space Gray",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.1,
-            "Type": "PLA",
-            "uuid": "{eab6b82a-a2d4-458e-b3a9-62a2ef88a536}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#212e3a",
-            "Name": "Sparkle Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.2,
-            "Type": "PETG",
-            "uuid": "{6c4af375-d8d8-4e87-8809-593f314448b2}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#142b4b",
-            "Name": "Starry Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.1,
-            "Type": "PETG",
-            "uuid": "{7b4ad4cd-6d82-46a2-8488-fbd1332de67f}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#616469",
-            "Name": "Steel Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.8,
-            "Type": "COPE",
-            "uuid": "{6db2a17f-b0f2-452c-afc5-824ded57ee87}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#477ba2",
-            "Name": "Stone Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.2,
-            "Type": "COPE",
-            "uuid": "{3a2420ee-fd56-439c-9a70-cab81f48502b}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#fec600",
-            "Name": "Sunflower Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 4.4,
-            "Type": "PLA",
-            "uuid": "{7e544771-d59b-439d-b589-965d15ddbae4}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ff7713",
-            "Name": "Sunny Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 8,
-            "Type": "PLA+",
-            "uuid": "{a1eab3fd-9cd0-40ef-b865-59015ed5b624}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#f55b14",
-            "Name": "Sunny Orange",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.8,
-            "Type": "PLA",
-            "uuid": "{ed37be8d-5b4a-4757-85f3-0610ae7fabc6}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#a79e82",
-            "Name": "Tan",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.1,
-            "Type": "COPE",
-            "uuid": "{000b5bbd-2a70-45aa-a79e-94ab5c825d62}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#08abfb",
-            "Name": "Translucent Cyan",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.3,
-            "Type": "PLA",
-            "uuid": "{eea1e6db-40ef-475f-b330-4e6a5a1a2fb1}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#9199a4",
-            "Name": "Translucent Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PLA",
-            "uuid": "{6f846377-c9af-4071-9ba6-29e04a9e4185}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#9199a4",
-            "Name": "Translucent Grey",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 10,
-            "Type": "PLA",
-            "uuid": "{e8e1d39b-0303-4054-b7e9-575bda8e289b}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#e8e6d0",
-            "Name": "Translucent Natural",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 35,
-            "Type": "PLA",
-            "uuid": "{51dcacce-2129-439c-95e4-6d06f82ef24c}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#f6ff4f",
-            "Name": "Translucent Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 9.2,
-            "Type": "PLA",
-            "uuid": "{5b7bb037-faaf-4b9f-affe-188a3a174925}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#ffffff",
-            "Name": "Transparent",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 100,
-            "Type": "PETG",
-            "uuid": "{766b5efe-e467-4e67-b6b1-698ce2d97623}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#ffffff",
-            "Name": "Transparent",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 50,
-            "Type": "PETG",
-            "uuid": "{83f4eaa1-eb2b-4705-9e92-e95d3fbecfbb}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#a6a6ff",
-            "Name": "Transparent",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 100,
-            "Type": "PLA",
-            "uuid": "{01296ba2-c93f-4b55-bf6f-9c1552db0db1}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#09048e",
-            "Name": "Transparent Blue",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 7.3,
-            "Type": "PETG",
-            "uuid": "{1faa665c-fb06-4342-afff-75ebce63f571}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#019a45",
-            "Name": "Transparent Green",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 16.2,
-            "Type": "PETG",
-            "uuid": "{520ebefc-5473-4614-a5c1-6004362b244a}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#ce333e",
-            "Name": "Transparent Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 23,
-            "Type": "PETG",
-            "uuid": "{86c44906-b7b7-4ccc-988d-fea95b4eaae1}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#00b1b7",
-            "Name": "Turquoise",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 1.4,
-            "Type": "PLA",
-            "uuid": "{48abab87-a8f9-4ddc-8981-af3b91dfd513}"
-        },
-        {
-            "Brand": "Anycubic",
-            "Color": "#eff0f1",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.4,
-            "Type": "PLA",
-            "uuid": "{c525c1f5-8db1-4380-b825-caabcddde526}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#e2dedb",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.1,
-            "Type": "PLA",
-            "uuid": "{cfedc8a2-eca0-4921-abc5-4986fb64cd36}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ffffff",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 10,
-            "Type": "PETG",
-            "uuid": "{89cb8a00-1a9d-4621-bc3b-a7f1312e6e19}"
-        },
-        {
-            "Brand": "Sunlu Meta",
-            "Color": "#ffffff",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 8,
-            "Type": "PLA",
-            "uuid": "{4097523d-486c-4723-ae88-e18dad0808e9}"
-        },
-        {
-            "Brand": "JAYO",
-            "Color": "#ffffff",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PETG",
-            "uuid": "{45625d51-718e-4c09-a937-f299d688cef6}"
-        },
-        {
-            "Brand": "Sunlu",
-            "Color": "#ffffff",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5,
-            "Type": "PLA+",
-            "uuid": "{01020000-0000-0000-0000-000000000000}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#e2dedb",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.1,
-            "Type": "COPE",
-            "uuid": "{03d063ee-807d-4042-bf37-018620e6a0a8}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#ffffff",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.5,
-            "Type": "PETG",
-            "uuid": "{b4e82e5b-8cc1-4cbb-976d-8aec327443b2}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#e6ffff",
-            "Name": "White",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 5.6,
-            "Type": "TPU",
-            "uuid": "{7dd3d03b-ba03-4862-84e9-0bcede7d005e}"
-        },
-        {
-            "Brand": "Overture",
-            "Color": "#621322",
-            "Name": "Wine",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 0.5,
-            "Type": "PLA",
-            "uuid": "{6dc7a4e5-fcfc-46fa-81f6-7c195a509111}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#d60212",
-            "Name": "Wine Red",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 2.1,
-            "Type": "COPE",
-            "uuid": "{1ddf8a1f-3412-4567-8f11-d471b56d7c35}"
-        },
-        {
-            "Brand": "BambuLab Basic",
             "Color": "#fce300",
             "Name": "Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 6,
-            "Type": "PETG",
-            "uuid": "{b3ed312f-817d-436d-919d-d44492273b2b}"
-        },
-        {
-            "Brand": "Panchroma",
-            "Color": "#f3b400",
-            "Name": "Yellow",
-            "Owned": false,
-            "Tags": [
-            ],
-            "Transmissivity": 3.4,
-            "Type": "COPE",
-            "uuid": "{aed035ce-26fa-4b66-86ba-7896f37205f3}"
-        },
-        {
-            "Brand": "BambuLab Basic",
-            "Color": "#fce300",
-            "Name": "Yellow",
-            "Owned": false,
+            "Owned": true,
             "Tags": [
             ],
             "Transmissivity": 6,
@@ -1938,43 +45,120 @@
             "uuid": "{3d555b4e-0304-423a-b0b7-2a09bbaf8186}"
         },
         {
-            "Brand": "Sunlu",
-            "Color": "#d5ff01",
-            "Name": "Yellow",
-            "Owned": false,
+            "Brand": "BambuLab Basic",
+            "Color": "#4c5f71",
+            "Name": "Blue Gray",
+            "Owned": true,
             "Tags": [
             ],
-            "Transmissivity": 10,
-            "Type": "PLA+",
-            "uuid": "{47672531-ef7d-4b16-bea2-45fa32b6a84d}"
+            "Transmissivity": 3,
+            "Type": "PLA",
+            "uuid": "{d8613aaf-41c3-4b82-a885-402554966333}"
         },
         {
-            "Brand": "Overture",
-            "Color": "#faf75d",
-            "Name": "Yellow",
-            "Owned": false,
+            "Brand": "BambuLab Basic",
+            "Color": "#00ae42",
+            "Name": "BambuLab Green",
+            "Owned": true,
             "Tags": [
             ],
-            "Transmissivity": 9.3,
-            "Type": "TPU",
-            "uuid": "{aca8b4cc-779f-421e-a10d-b332d1765fee}"
+            "Transmissivity": 2,
+            "Type": "PLA",
+            "uuid": "{23a3aa5b-7c28-4688-a783-d299cbb8623a}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#c00d1e",
+            "Name": "Red",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 4,
+            "Type": "PLA",
+            "uuid": "{4fb13a86-6187-4300-95f2-ac2c877aae5e}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#003b3b",
+            "Name": "Green",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 2,
+            "Type": "PLA",
+            "uuid": "{beebebca-114a-49ad-a581-c72a369ccaa4}"
+        },
+        {
+            "Brand": "BambuLab Matte",
+            "Color": "#757575",
+            "Name": "Nardo Gray",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.7,
+            "Type": "PLA",
+            "uuid": "{f1359a44-27c9-4358-9d2e-055351596bb1}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#0086d6",
+            "Name": "Cyan",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 3.5,
+            "Type": "PLA",
+            "uuid": "{843aefd0-878c-48b4-bbce-8fc5f1abfd11}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#cd007b",
+            "Name": "Magenta",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 3,
+            "Type": "PLA",
+            "uuid": "{3100e0d4-45bf-4835-8637-517d55134e9d}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#ff9016",
+            "Name": "Pumpkin Orange",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 5.5,
+            "Type": "PLA",
+            "uuid": "{be641437-2559-4f8a-9bf2-89690b97d9e0}"
+        },
+        {
+            "Brand": "Sunlu Matte",
+            "Color": "#ee465c",
+            "Name": "Red",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 3,
+            "Type": "PLA",
+            "uuid": "{80b77bcf-bb98-4ffa-b856-56cae28449c6}"
         },
         {
             "Brand": "Sunlu Meta",
-            "Color": "#fd9886",
-            "Name": "pink",
-            "Owned": false,
+            "Color": "#ffffff",
+            "Name": "White",
+            "Owned": true,
             "Tags": [
             ],
-            "Transmissivity": 12,
+            "Transmissivity": 8,
             "Type": "PLA",
-            "uuid": "{afe26e72-c7b4-49a9-9e71-bf9cdeb15ffc}"
+            "uuid": "{4097523d-486c-4723-ae88-e18dad0808e9}"
         },
         {
             "Brand": "Sunlu Meta",
             "Color": "#fd3e3e",
             "Name": "red",
-            "Owned": false,
+            "Owned": true,
             "Tags": [
             ],
             "Transmissivity": 7,
@@ -1982,15 +166,236 @@
             "uuid": "{0223d85d-7c28-42b3-be79-033137908b05}"
         },
         {
-            "Brand": "Sunlu Meta",
-            "Color": "#f8ef99",
-            "Name": "yellow",
-            "Owned": false,
+            "Brand": "BambuLab Matte",
+            "Color": "#9b9ea0",
+            "Name": "Ash Gray",
+            "Owned": true,
             "Tags": [
             ],
-            "Transmissivity": 10,
+            "Transmissivity": 1.5,
             "Type": "PLA",
-            "uuid": "{92a27b6e-bdb5-4218-823a-f4e3d7aef06e}"
+            "uuid": "{12536dfb-5f35-4c55-a97d-58cd4d310c9c}"
+        },
+        {
+            "Brand": "eSun",
+            "Color": "#dbbba1",
+            "Name": "Beige",
+            "Owned": true,
+            "Tags": [
+                "eSun"
+            ],
+            "Transmissivity": 7,
+            "Type": "PLA",
+            "uuid": "{700732bc-b103-43ca-becd-6f8a80e7bde6}"
+        },
+        {
+            "Brand": "Overture Matte",
+            "Color": "#a6896c",
+            "Name": "Light Brown",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.6,
+            "Type": "PLA",
+            "uuid": "{5421d42d-97f3-4dcd-9e54-bde8feb27763}"
+        },
+        {
+            "Brand": "Sunlu PLA+ 2.0",
+            "Color": "#d41c1f",
+            "Name": "Red",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 6.2,
+            "Type": "PLA",
+            "uuid": "{aee8f281-5cd1-4ec6-bb10-06d4e5656235}"
+        },
+        {
+            "Brand": "Anycubic",
+            "Color": "#eff0f1",
+            "Name": "White",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 5.4,
+            "Type": "PLA",
+            "uuid": "{c525c1f5-8db1-4380-b825-caabcddde526}"
+        },
+        {
+            "Brand": "Sunlu",
+            "Color": "#000000",
+            "Name": "Black",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1,
+            "Type": "PLA",
+            "uuid": "{ef2a7793-f607-42b3-b22c-04c1bf4a45b4}"
+        },
+        {
+            "Brand": "Polymaker Silk",
+            "Color": "#af6b4c",
+            "Name": "Bronze",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1.1,
+            "Type": "PLA",
+            "uuid": "{5cdbb671-d168-4eec-89f9-65208160ee36}"
+        },
+        {
+            "Brand": "Sunlu",
+            "Color": "#a6a6ff",
+            "Name": "Transparent",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 100,
+            "Type": "PLA",
+            "uuid": "{01296ba2-c93f-4b55-bf6f-9c1552db0db1}"
+        },
+        {
+            "Brand": "Polymaker",
+            "Color": "#7c594a",
+            "Name": "Matte Earth Brown",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.2,
+            "Type": "PLA",
+            "uuid": "{f84fd1ea-339d-4a06-bc0d-a76cd4cb7e73}"
+        },
+        {
+            "Brand": "Sunlu",
+            "Color": "#f1cd02",
+            "Name": "Liquid Gold",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 4.2,
+            "Type": "PLA",
+            "uuid": "{343d34f2-c3b0-4191-86c2-723852843ad8}"
+        },
+        {
+            "Brand": "Sunlu",
+            "Color": "#f55b14",
+            "Name": "Sunny Orange",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 3.8,
+            "Type": "PLA",
+            "uuid": "{ed37be8d-5b4a-4757-85f3-0610ae7fabc6}"
+        },
+        {
+            "Brand": "Overture",
+            "Color": "#b1b1b1",
+            "Name": "Light Gray",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.1,
+            "Type": "PLA",
+            "uuid": "{eabd09e9-b983-44df-ab67-65d6d1f88f58}"
+        },
+        {
+            "Brand": "eSun",
+            "Color": "#59e2ff",
+            "Name": "Light Blue",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.5,
+            "Type": "PLA",
+            "uuid": "{ae899cca-720f-4a59-b569-d7506ada9869}"
+        },
+        {
+            "Brand": "eSun",
+            "Color": "#9eff99",
+            "Name": "Mint Green Matte",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1,
+            "Type": "PLA",
+            "uuid": "{8ec8208b-a5ab-4a5e-bb4f-1fb36d68d8e1}"
+        },
+        {
+            "Brand": "Polymaker",
+            "Color": "#ffbeec",
+            "Name": "Sakura Pink Matte",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 2.2,
+            "Type": "PLA",
+            "uuid": "{030d06ec-8c07-4f66-a54f-6c0e754bd66e}"
+        },
+        {
+            "Brand": "Marz Works",
+            "Color": "#55007f",
+            "Name": "Indigo",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.5,
+            "Type": "PLA",
+            "uuid": "{963a421d-480f-4e54-ad8f-7c8cdde57038}"
+        },
+        {
+            "Brand": "Deeplee",
+            "Color": "#3061f4",
+            "Name": "Metallic Blue",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 0.3,
+            "Type": "PLA",
+            "uuid": "{a890b69c-a87c-4749-92b3-4ebf8b8372b2}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#9d2235",
+            "Name": "Maroon Red",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1.6,
+            "Type": "PLA",
+            "uuid": "{32b6c001-a340-449c-b942-9c0f523c2b4c}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#d1d3d5",
+            "Name": "Light Gray",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1.7,
+            "Type": "PLA",
+            "uuid": "{54af0381-c181-462a-9e08-b417766f46da}"
+        },
+        {
+            "Brand": "BambuLab Basic",
+            "Color": "#3f8e43",
+            "Name": "Mistletoe Green",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1,
+            "Type": "PLA",
+            "uuid": "{d88df60c-0eca-4d23-be4e-cf662a688d87}"
+        },
+        {
+            "Brand": "Polymaker Panachroma",
+            "Color": "#af6b4c",
+            "Name": "Bronze",
+            "Owned": true,
+            "Tags": [
+            ],
+            "Transmissivity": 1.1,
+            "Type": "PLA SILK",
+            "uuid": "{1fbf44cb-2e88-40af-a4b4-a2a1dcf3b893}"
         }
     ]
 }

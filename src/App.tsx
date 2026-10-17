@@ -558,9 +558,13 @@ export const App: React.FC = () => {
                         )}
                       </button>
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-slate-100 truncate">{spool.name}</div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                          <span>{spool.brand}</span>
+                        <div className="text-xs font-semibold text-slate-100 truncate">
+                          {spool.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                          <span className="text-slate-300 font-medium">{spool.brand}</span>
+                          <span>•</span>
+                          <span className="px-1 rounded bg-slate-800 text-slate-300">{spool.material}</span>
                           <span>•</span>
                           <span className="text-orange-400 font-mono">TD {spool.td.toFixed(1)}mm</span>
                           {spool.amsSlot && (

@@ -74,8 +74,8 @@ export interface TailWagState {
   clearAllImportedLibraries: () => void;
 }
 
-const CATALOG_STORAGE_KEY = 'tailwag_catalog_v3';
-const LIBS_STORAGE_KEY = 'tailwag_imported_libs_v3';
+const CATALOG_STORAGE_KEY = 'tailwag_catalog_v4';
+const LIBS_STORAGE_KEY = 'tailwag_imported_libs_v4';
 
 const CLEAN_BUILTIN_CATALOG: FilamentSpool[] = VERIFIED_FILAMENT_CATALOG.map((s) => ({
   ...s,
