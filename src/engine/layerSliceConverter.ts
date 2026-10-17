@@ -4,7 +4,9 @@ import {
   applyBilateralHeightmapFilter,
   computeSobelEdgeMask,
   applySpatialGradientSmoothing,
+  applyEdgeAwareHeightmapSharpening,
   quantizeHeightmapMatrix,
+  adaptiveQuantizeHeightmapMatrix,
   applyMorphologicalRegionMerge,
 } from './cadMeshBuilder';
 
@@ -12,7 +14,9 @@ export {
   applyBilateralHeightmapFilter,
   computeSobelEdgeMask,
   applySpatialGradientSmoothing,
+  applyEdgeAwareHeightmapSharpening,
   quantizeHeightmapMatrix,
+  adaptiveQuantizeHeightmapMatrix,
   applyMorphologicalRegionMerge,
 };
 
@@ -33,7 +37,13 @@ export interface LayerSliceConfig {
   minRegionPixels?: number;
   /** Whether to apply structural gradient smoothing to eliminate sudden height discontinuities (default: false unless enabled) */
   enableGradientSmoothing?: boolean;
-  /** Sobel edge threshold above which height jumps are preserved as major edges (default: 0.35) */
+  /** Whether to apply detail-preserving edge-aware sharpening in height space (default: false unless enabled) */
+  enableEdgeSharpening?: boolean;
+  /** Sharpening strength multiplier (default: 0.85) */
+  sharpenStrength?: number;
+  /** Whether to dynamically preserve continuous micro-steps in high-contrast/edge zones (default: true) */
+  enableAdaptiveQuantization?: boolean;
+  /** Sobel edge threshold above which height jumps are preserved as major edges (default: 0.08 for adaptive quantization, 0.35 for smoothing) */
   edgeThreshold?: number;
 }
 
@@ -528,7 +538,24 @@ export function convertHeightmapToLayerSlices(
     );
   }
 
-  // 2. Height-Map Quantization Banding (Constraint 2)
+  // 1b. Detail-Preserving Edge-Aware Sharpening (Unsharp Masking in Height Space)
+  if (config.enableEdgeSharpening && width > 2 && height > 2) {
+    effectiveHeights = applyEdgeAwareHeightmapSharpening(
+      effectiveHeights,
+      width,
+      height,
+      { strength: config.sharpenStrength ?? 0.85, coringThreshold: 0.02 }
+    );
+  }
+
+  // 2. Adaptive Quantization Banding Control (Constraint 2)
+  const rawEdgeMask = computeSobelEdgeMask(effectiveHeights, width, height);
+  const edgeThresh = config.edgeThreshold ?? 0.08;
+  const binaryEdgeMask = new Uint8Array(totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    if (rawEdgeMask[i] >= edgeThresh) binaryEdgeMask[i] = 1;
+  }
+
   const rawLayerCounts = new Uint16Array(totalPixels);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -539,19 +566,30 @@ export function convertHeightmapToLayerSlices(
     }
   }
 
-  // 3. Morphological Filtering & Region Merging (Constraint 1)
+  // 3. Morphological Filtering & Region Merging (protecting edge features!)
   const shouldMorph = config.enableMorphologicalFilter ?? (width >= 4 && height >= 4);
   const minPixels = config.minRegionPixels ?? 4;
   const finalLayerCounts =
     shouldMorph && width >= 4 && height >= 4
-      ? applyMorphologicalRegionMerge(rawLayerCounts, width, height, minPixels)
+      ? applyMorphologicalRegionMerge(rawLayerCounts, width, height, minPixels, binaryEdgeMask)
       : rawLayerCounts;
 
+  const useAdaptive = config.enableAdaptiveQuantization ?? false;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
       const layerCount = finalLayerCounts[idx];
-      const quantizedHeightMm = layerIndexToZHeight(layerCount, config.baseLayerMm, config.layerHeightMm);
+      let quantizedHeightMm: number;
+
+      if (useAdaptive && binaryEdgeMask[idx] === 1 && layerCount > 0) {
+        // High-contrast / edge zone: continuous micro-steps preserve sharp slopes without staircase terracing
+        quantizedHeightMm = Math.max(
+          config.baseLayerMm,
+          Math.min(config.maxHeightMm ?? Infinity, effectiveHeights[idx])
+        );
+      } else {
+        quantizedHeightMm = layerIndexToZHeight(layerCount, config.baseLayerMm, config.layerHeightMm);
+      }
 
       layerCounts[idx] = layerCount;
       quantizedHeightsMm[idx] = quantizedHeightMm;

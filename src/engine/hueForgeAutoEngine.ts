@@ -17,7 +17,9 @@ import {
   applyBilateralHeightmapFilter,
   computeSobelEdgeMask,
   applySpatialGradientSmoothing,
+  applyEdgeAwareHeightmapSharpening,
   quantizeHeightmapMatrix,
+  adaptiveQuantizeHeightmapMatrix,
   applyMorphologicalRegionMerge,
 } from './cadMeshBuilder';
 import { computeSwapEconomyPenalty, computeHighFrequencyEdgeMap } from './autoSolver';
@@ -1321,13 +1323,41 @@ export function runHueForgeAutoEngine(
   );
   // Spatial gradient smoothing with major edge masking:
   // Penalizes sudden height discontinuities unless coinciding with major edges
-  const adjustedLuminance = applySpatialGradientSmoothing(
+  const smoothedLum = applySpatialGradientSmoothing(
     coherentLum,
     imageData.width,
     imageData.height,
     0.35,
     0.08
   );
+
+  // Detail-Preserving Edge-Aware Sharpening (Unsharp Masking in Height Space):
+  // Sharpens micro-details (tree trunks, branches, fine silhouettes, sharp boundaries)
+  // so they don't get blurred out by previous smoothing passes.
+  const sharpenedLum = applyEdgeAwareHeightmapSharpening(
+    smoothedLum,
+    imageData.width,
+    imageData.height,
+    { strength: 0.85, coringThreshold: 0.02, maxOvershoot: 0.15 }
+  );
+
+  // Contrast-Stretched Dynamic Range Allocation:
+  // Dynamically re-normalizes the heightmap across active pixels to utilize 100% of the available Z-depth
+  let minLum = 1.0;
+  let maxLum = 0.0;
+  for (let i = 0; i < sharpenedLum.length; i++) {
+    if (sharpenedLum[i] < minLum) minLum = sharpenedLum[i];
+    if (sharpenedLum[i] > maxLum) maxLum = sharpenedLum[i];
+  }
+  const lumSpan = maxLum - minLum;
+  const adjustedLuminance = new Float32Array(sharpenedLum.length);
+  if (lumSpan > 0.08) {
+    for (let i = 0; i < sharpenedLum.length; i++) {
+      adjustedLuminance[i] = Math.max(0.0, Math.min(1.0, (sharpenedLum[i] - minLum) / lumSpan));
+    }
+  } else {
+    adjustedLuminance.set(sharpenedLum);
+  }
 
   // 4. Optical Layer Ordering
   const ordered = orderFilamentStack(matched);

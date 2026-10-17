@@ -424,6 +424,77 @@ export function applySpatialGradientSmoothing(
 }
 
 /**
+ * Detail-Preserving Edge-Aware Sharpening (Unsharp Masking in Height Space):
+ * Sharpens micro-details (tree trunks, branches, fine silhouettes, sharp boundaries)
+ * in the height map before final mesh rendering so they don't get blurred out by previous smoothing passes.
+ * Uses Sobel gradient magnitude with a coring threshold to avoid amplifying flat background sensor noise.
+ */
+export function applyEdgeAwareHeightmapSharpening(
+  heightmap: Float32Array,
+  cols: number,
+  rows: number,
+  options?: {
+    strength?: number;
+    coringThreshold?: number;
+    maxOvershoot?: number;
+  }
+): Float32Array {
+  const total = cols * rows;
+  if (cols <= 2 || rows <= 2) return new Float32Array(heightmap);
+
+  const strength = options?.strength ?? 0.85;
+  const coring = options?.coringThreshold ?? 0.02;
+  const maxOvershoot = options?.maxOvershoot ?? 0.15;
+  const result = new Float32Array(total);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const center = heightmap[idx];
+
+      if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
+        result[idx] = center;
+        continue;
+      }
+
+      // 8-neighbor weighted blur reference
+      const n00 = heightmap[(r - 1) * cols + (c - 1)];
+      const n01 = heightmap[(r - 1) * cols + c];
+      const n02 = heightmap[(r - 1) * cols + (c + 1)];
+      const n10 = heightmap[r * cols + (c - 1)];
+      const n12 = heightmap[r * cols + (c + 1)];
+      const n20 = heightmap[(r + 1) * cols + (c - 1)];
+      const n21 = heightmap[(r + 1) * cols + c];
+      const n22 = heightmap[(r + 1) * cols + (c + 1)];
+
+      const blur =
+        (center * 4.0 + (n01 + n10 + n12 + n21) * 2.0 + (n00 + n02 + n20 + n22) * 1.0) / 16.0;
+
+      // Sobel gradient magnitude
+      const gx = (n02 + 2 * n12 + n22) - (n00 + 2 * n10 + n20);
+      const gy = (n20 + 2 * n21 + n22) - (n00 + 2 * n01 + n02);
+      const grad = Math.hypot(gx, gy) / 8.0;
+
+      // High-pass difference
+      const detail = center - blur;
+
+      if (grad < coring) {
+        // Flat background or sensor noise: preserve smooth surface without amplifying noise
+        result[idx] = center;
+      } else {
+        // Linear ramp between coring and coring * 3
+        const ramp = Math.min(1.0, (grad - coring) / Math.max(1e-4, coring * 2.5));
+        const boost = detail * strength * ramp;
+        const clampedBoost = Math.max(-maxOvershoot, Math.min(maxOvershoot, boost));
+        result[idx] = Math.max(0.0, Math.min(1.0, center + clampedBoost));
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Height-Map Quantization Banding (Constraint 2):
  * Forces continuous float height values to snap cleanly to discrete layer-height intervals
  * (e.g. 0.08mm steps) using a rounded quantization matrix before computing multi-layer splits.
@@ -467,16 +538,83 @@ export function quantizeHeightmapMatrix(
 }
 
 /**
+ * Adaptive Quantization Banding Control (Constraint 2):
+ * Dynamically adjusts layer-height snapping based on local image gradients:
+ * - High-detail / high-contrast zones: Allows tighter, smoother micro-steps (0.08mm or continuous interpolation)
+ *   preserving crisp branch / trunk / silhouette boundaries without staircase blockiness.
+ * - Flat background gradients: Snaps to discrete layer intervals to prevent noisy micro-speckles.
+ */
+export function adaptiveQuantizeHeightmapMatrix(
+  heightmap: Float32Array,
+  cols: number,
+  rows: number,
+  baseLayerMm: number,
+  layerHeightMm: number,
+  minBaseLayers: number = 1,
+  maxLayers?: number,
+  edgeThreshold: number = 0.08
+): {
+  quantizedMm: Float32Array;
+  discreteLayers: Uint16Array;
+  edgeMask: Uint8Array;
+} {
+  const total = cols * rows;
+  const quantizedMm = new Float32Array(total);
+  const discreteLayers = new Uint16Array(total);
+  const rawEdgeMask = computeSobelEdgeMask(heightmap, cols, rows);
+  const edgeMask = new Uint8Array(total);
+
+  for (let i = 0; i < total; i++) {
+    const isEdge = rawEdgeMask[i] >= edgeThreshold;
+    edgeMask[i] = isEdge ? 1 : 0;
+
+    const rawH = heightmap[i];
+    if (rawH <= 0 || rawH < baseLayerMm * 0.5) {
+      quantizedMm[i] = 0;
+      discreteLayers[i] = 0;
+      continue;
+    }
+
+    const extra = Math.max(0, rawH - baseLayerMm);
+    const continuousLayer = 1 + extra / layerHeightMm;
+    let discreteLayer = 1 + Math.round(extra / layerHeightMm);
+
+    if (minBaseLayers > 0) {
+      discreteLayer = Math.max(minBaseLayers, discreteLayer);
+    }
+    if (maxLayers !== undefined && maxLayers > 0) {
+      discreteLayer = Math.min(maxLayers, discreteLayer);
+    }
+
+    discreteLayers[i] = discreteLayer;
+
+    if (isEdge) {
+      // High-detail / edge zone: continuous micro-steps preserve sharp slopes without blocky staircase banding
+      const clampedLayer = Math.max(minBaseLayers, maxLayers ? Math.min(maxLayers, continuousLayer) : continuousLayer);
+      quantizedMm[i] = Number((baseLayerMm + (clampedLayer - 1) * layerHeightMm).toFixed(4));
+    } else {
+      // Flat background: clean discrete layer snapping
+      quantizedMm[i] = Number((baseLayerMm + (discreteLayer - 1) * layerHeightMm).toFixed(4));
+    }
+  }
+
+  return { quantizedMm, discreteLayers, edgeMask };
+}
+
+/**
  * Morphological Filtering & Region Merging (Constraint 1):
  * Applies connected-component blob analysis to 2D discrete layer maps.
  * Any isolated pixel regions smaller than `minRegionPixels` (default: 4 adjacent pixels)
  * are merged into their surrounding dominant region to eliminate stray speckling and digital static dots.
+ * When an `edgeMask` is provided, pixels on high-contrast edges and fine structural lines (branches, silhouettes)
+ * are STRICTLY PRESERVED and protected from being merged into surrounding background.
  */
 export function applyMorphologicalRegionMerge(
   layerGrid: Uint16Array | Int32Array | Uint8Array,
   cols: number,
   rows: number,
-  minRegionPixels: number = 4
+  minRegionPixels: number = 4,
+  edgeMask?: Uint8Array | Float32Array
 ): Uint16Array {
   const total = cols * rows;
   if (cols <= 1 || rows <= 1 || minRegionPixels <= 1) {
@@ -560,18 +698,30 @@ export function applyMorphologicalRegionMerge(
         }
       }
 
-      // If component size is below threshold, merge into surrounding dominant neighbor
+      // If component size is below threshold, merge into surrounding dominant neighbor UNLESS protected by edge mask
       if (compCount < minRegionPixels && neighborFreq.size > 0) {
-        let maxFreq = 0;
-        let dominantVal = targetVal;
-        for (const [val, freq] of neighborFreq.entries()) {
-          if (freq > maxFreq) {
-            maxFreq = freq;
-            dominantVal = val;
+        let hasProtectedEdge = false;
+        if (edgeMask) {
+          for (let k = 0; k < compCount; k++) {
+            if (edgeMask[component[k]] > 0) {
+              hasProtectedEdge = true;
+              break;
+            }
           }
         }
-        for (let k = 0; k < compCount; k++) {
-          result[component[k]] = dominantVal;
+
+        if (!hasProtectedEdge) {
+          let maxFreq = 0;
+          let dominantVal = targetVal;
+          for (const [val, freq] of neighborFreq.entries()) {
+            if (freq > maxFreq) {
+              maxFreq = freq;
+              dominantVal = val;
+            }
+          }
+          for (let k = 0; k < compCount; k++) {
+            result[component[k]] = dominantVal;
+          }
         }
       }
     }
@@ -730,29 +880,69 @@ export function buildHeightmapGrid(params: {
   // Penalizes sudden height discontinuities between neighbor pixels unless coinciding with major edges
   const smoothedLum = applySpatialGradientSmoothing(coherentLum, cols, rows, 0.35, 0.08);
 
+  // 2b. Detail-Preserving Edge-Aware Sharpening (Unsharp Masking in Height Space):
+  // Restores sharpness on micro-details (tree trunks, branches, fine silhouettes, sharp boundaries)
+  // so they don't get blurred out by previous smoothing passes.
+  const sharpenedLum = applyEdgeAwareHeightmapSharpening(smoothedLum, cols, rows, {
+    strength: 0.85,
+    coringThreshold: 0.02,
+    maxOvershoot: 0.15,
+  });
+
+  // 2c. Contrast-Stretched Dynamic Range Allocation:
+  // Dynamically re-normalizes the heightmap across active pixels so that shadows hit the base layer
+  // and highlights hit the max height limit, utilizing 100% of the available Z-depth.
+  let minLum = 1.0;
+  let maxLum = 0.0;
+  for (let i = 0; i < cols * rows; i++) {
+    if (sharpenedLum[i] < minLum) minLum = sharpenedLum[i];
+    if (sharpenedLum[i] > maxLum) maxLum = sharpenedLum[i];
+  }
+  const lumSpan = maxLum - minLum;
+  const finalLum = new Float32Array(cols * rows);
+  if (lumSpan > 0.08) {
+    for (let i = 0; i < cols * rows; i++) {
+      finalLum[i] = Math.max(0.0, Math.min(1.0, (sharpenedLum[i] - minLum) / lumSpan));
+    }
+  } else {
+    finalLum.set(sharpenedLum);
+  }
+
   const clockStencilMask = cad.clockMode ? renderClockStencilMask(cols, rows, cad.clockStencil) : new Uint8Array(cols * rows);
   const maxReliefZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
   const halfW = widthMm / 2;
   const halfH = heightMm / 2;
   const frameNormThreshold = (cad.frameWidthMm / Math.max(widthMm, heightMm)) * 2.0;
 
-  const targetBaseLayers =
-    baseSolidThicknessMm !== undefined
-      ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
-      : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
-  const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
-
-  // 3. Height-Map Quantization Banding (Constraint 2):
-  // Force continuous float height map to snap cleanly to discrete layer-height intervals (0.08mm steps)
-  // using a rounded quantization matrix before computing the multi-layer split
-  const rawDiscreteLayers = new Uint16Array(cols * rows);
+  // 3. Adaptive Quantization Banding Control & Edge-Protected Region Merging:
+  // Instead of flat block quantization, dynamically adjust layer-height snapping based on local gradients.
+  // Allow tighter, smoother micro-steps in high-detail / edge zones, and reserve discrete steps for flat backgrounds.
+  const edgeMask = computeSobelEdgeMask(finalLum, cols, rows);
+  const isEdgeZone = new Uint8Array(cols * rows);
+  const edgeThreshold = 0.08;
   for (let i = 0; i < cols * rows; i++) {
-    rawDiscreteLayers[i] = minBaseLayer + Math.round(smoothedLum[i] * (totalLayers - minBaseLayer));
+    if (edgeMask[i] >= edgeThreshold) {
+      isEdgeZone[i] = 1;
+    }
   }
 
-  // 4. Morphological Filtering & Region Merging (Constraint 1):
-  // Merges isolated pixel regions smaller than 4 adjacent pixels into surrounding dominant region
-  const cleanedLayers = applyMorphologicalRegionMerge(rawDiscreteLayers, cols, rows, 4);
+  const minBaseLayer =
+    baseSolidThicknessMm !== undefined
+      ? Math.min(Math.max(1, totalLayers - 2), Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm)))
+      : 1;
+
+  const rawDiscreteLayers = new Uint16Array(cols * rows);
+  const continuousLayers = new Float32Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) {
+    const contL = minBaseLayer + finalLum[i] * (totalLayers - minBaseLayer);
+    continuousLayers[i] = contL;
+    rawDiscreteLayers[i] = Math.max(minBaseLayer, Math.min(totalLayers, Math.round(contL)));
+  }
+
+  // Morphological Filtering with Edge-Protection Mask:
+  // Merges isolated pixel speckles smaller than 4 pixels into surrounding dominant region,
+  // but STRICTLY PRESERVES pixels on high-contrast edges and fine structural lines (branches, silhouettes)
+  const cleanedLayers = applyMorphologicalRegionMerge(rawDiscreteLayers, cols, rows, 4, isEdgeZone);
 
   for (let r = 0; r < rows; r++) {
     const ny = (r / Math.max(1, rows - 1)) * 2.0 - 1.0; // -1 (top) to +1 (bottom)
@@ -794,8 +984,20 @@ export function buildHeightmapGrid(params: {
       }
 
       let discreteLayer = cleanedLayers[idx];
-      let cellLum = (discreteLayer - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
-      let zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
+      let cellLum: number;
+      let zMm: number;
+
+      if (isEdgeZone[idx] === 1) {
+        // High-contrast / edge zone: continuous micro-steps preserve sharp slopes & fine geometry
+        const contL = Math.max(minBaseLayer, Math.min(totalLayers, continuousLayers[idx]));
+        discreteLayer = Math.round(contL);
+        cellLum = (contL - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
+        zMm = baseLayerMm + (contL - 1) * layerHeightMm;
+      } else {
+        // Flat background gradient: clean discrete layer snapping
+        cellLum = (discreteLayer - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
+        zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
+      }
 
       // Clock stencil numerals raised to top layer
       if (cad.clockMode && clockStencilMask[idx] === 1) {

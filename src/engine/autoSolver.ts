@@ -491,23 +491,22 @@ export function solveOptimalPalettes(
 
   // Pre-aggregate image samples into `totalLayers` weighted LAB buckets
   // matching the user-configured solid starting base thickness
-  const targetBaseLayers =
+  const minBaseLayer =
     baseSolidThicknessMm !== undefined
-      ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
-      : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
-  const minBaseLayer = Math.min(Math.max(1, totalLayers - 3), targetBaseLayers);
+      ? Math.min(Math.max(1, totalLayers - 3), Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm)))
+      : 1;
   const bucketL = new Float64Array(totalLayers);
   const bucketA = new Float64Array(totalLayers);
   const bucketB = new Float64Array(totalLayers);
   const bucketW = new Float64Array(totalLayers);
 
-  // Dynamic Range Stretch via Depth Mapping (Requirement 5):
-  // Compute robust luminance percentiles (2nd & 98th) to dynamically stretch the image's
-  // histogram across the full available layer stack, avoiding bunching in the lower layers.
+  // Contrast-Stretched Dynamic Range Allocation:
+  // Re-normalizes the sample luminance histogram dynamically across the full available Z-depth [0.16mm base up to max height]
+  // avoiding compression of midtones into a flat washed-out band.
   const sampleLums = samples.map((s) => s.luminance).sort((a, b) => a - b);
-  const pLow = sampleLums[Math.floor(sampleLums.length * 0.02)] ?? 0.0;
-  const pHigh = sampleLums[Math.floor(sampleLums.length * 0.98)] ?? 1.0;
-  const dynRange = Math.max(0.18, pHigh - pLow);
+  const pLow = sampleLums[Math.floor(sampleLums.length * 0.01)] ?? 0.0;
+  const pHigh = sampleLums[Math.floor(sampleLums.length * 0.99)] ?? 1.0;
+  const dynRange = Math.max(0.12, pHigh - pLow);
 
   let totalSampleWeight = 0;
   for (let i = 0; i < samples.length; i++) {
@@ -852,8 +851,8 @@ export function solveOptimalPalettes(
     // Black starting base spans Layers 1..(minBaseLayer + 1) (e.g. L1..L6 = 0.56mm)
     // Remaining TD blending layers span from shadowMaxQ to totalLayers
     const quantiles: number[] = [];
-    const shadowMaxQ = chromatics.length > 0 ? Math.max(0.24, (minBaseLayer + 1) / totalLayers) : 0.68;
-    const chromaMaxQ = whites.length > 0 ? 0.75 : 0.96;
+    const shadowMaxQ = chromatics.length > 0 ? Math.max(0.18, (minBaseLayer + 1) / totalLayers) : 0.68;
+    const chromaMaxQ = whites.length > 0 ? 0.82 : 0.96;
     const coreChromaMaxQ =
       paleChromatics.length > 0 && coreChromatics.length > 0
         ? chromaMaxQ - Math.min(0.08, paleChromatics.length * 0.06)
