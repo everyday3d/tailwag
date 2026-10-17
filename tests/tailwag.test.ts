@@ -219,4 +219,86 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
     const cmyk = solveCmykPalette(imgData, parsed.spools, 24, 0.16, 0.08, 4);
     expect(cmyk.slots).toHaveLength(4);
   });
+
+  it('supports Manual Mode palette drag-and-drop insertion, lay-down reordering, configurable base thickness, and Single-Extruder No-AMS STL + HTML Pause Guide export', async () => {
+    const { useTailWagStore } = await import('../src/store/useTailWagStore');
+    const { generateSingleExtruderHtmlGuide, generateNoAmsStlPackageZip } = await import(
+      '../src/engine/exporter3mf'
+    );
+    const { buildHeightmapGrid } = await import('../src/engine/cadMeshBuilder');
+    const { unzipSync } = await import('fflate');
+
+    const store = useTailWagStore.getState();
+    const initialSpool0 = store.slots[0].spool.id;
+    const initialSpool1 = store.slots[1].spool.id;
+
+    // 1. Rearrange slot 0 and slot 1 in lay-down order
+    store.reorderSlots(0, 1);
+    const afterReorder = useTailWagStore.getState();
+    expect(afterReorder.slots[0].spool.id).toBe(initialSpool1);
+    expect(afterReorder.slots[1].spool.id).toBe(initialSpool0);
+    // Monotonic layer boundaries must be preserved so new #1 Base has lowest upToLayer
+    expect(afterReorder.slots[0].upToLayer).toBeLessThan(afterReorder.slots[1].upToLayer);
+
+    // 2. Insert a dragged spool at index 1
+    const extraSpool = afterReorder.catalog[5];
+    afterReorder.insertSpoolAt(extraSpool, 1);
+    const afterInsert = useTailWagStore.getState();
+    expect(afterInsert.slots[1].spool.id).toBe(extraSpool.id);
+    for (let i = 1; i < afterInsert.slots.length; i++) {
+      expect(afterInsert.slots[i].upToLayer).toBeGreaterThan(afterInsert.slots[i - 1].upToLayer);
+    }
+
+    // 3. Configure solid base thickness in mm
+    afterInsert.setBaseSolidThicknessMm(0.80);
+    const afterBase = useTailWagStore.getState();
+    expect(afterBase.baseSolidThicknessMm).toBeCloseTo(0.80, 2);
+
+    // 4. Generate Single-Extruder (No-AMS) HTML Pause Guide and STL + HTML ZIP bundle
+    const size = 24;
+    const rgba = new Uint8ClampedArray(size * size * 4).fill(180);
+    const imgData = { data: rgba, width: size, height: size, colorSpace: 'srgb' } as ImageData;
+    const grid = buildHeightmapGrid({
+      imageData: imgData,
+      gridRes: 24,
+      widthMm: 120,
+      heightMm: 120,
+      baseLayerMm: 0.16,
+      baseSolidThicknessMm: afterBase.baseSolidThicknessMm,
+      layerHeightMm: 0.08,
+      totalLayers: afterBase.totalLayers,
+      gamma: 1.0,
+      contrast: 1.0,
+      detailEnhance: 0.2,
+      invertLuminance: false,
+      cad: afterBase.cad,
+    });
+
+    const html = generateSingleExtruderHtmlGuide(
+      'TestProject',
+      grid,
+      0.16,
+      0.08,
+      afterBase.totalLayers,
+      afterBase.slots
+    );
+    expect(html).toContain('PAUSE #1');
+    expect(html).toContain('Single-Extruder (No-AMS)');
+    expect(html).toContain('0.16 mm');
+    expect(html).toContain('0.08 mm');
+
+    const zipBytes = generateNoAmsStlPackageZip({
+      projectName: 'TestProject',
+      grid,
+      baseLayerMm: 0.16,
+      layerHeightMm: 0.08,
+      totalLayers: afterBase.totalLayers,
+      slots: afterBase.slots,
+    });
+    const unzipped = unzipSync(zipBytes);
+    expect(Object.keys(unzipped)).toContain('TestProject_TailWag_rev1.stl');
+    expect(Object.keys(unzipped)).toContain('TestProject_Color_Change_Guide.html');
+    expect(Object.keys(unzipped)).toContain('TestProject_Swap_Playbook.txt');
+  });
 });
+

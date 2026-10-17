@@ -159,7 +159,8 @@ export function solveOptimalPalettes(
   totalLayers: number,
   baseLayerMm: number,
   layerHeightMm: number,
-  maxColors: number = 4
+  maxColors: number = 4,
+  baseSolidThicknessMm?: number
 ): SolverRecipe[] {
   const samples = extractPerceptualSamples(imageData);
   if (samples.length === 0 || candidateSpools.length < 2) return [];
@@ -173,8 +174,12 @@ export function solveOptimalPalettes(
   const { clusters, intrinsicColorCount, isMonochromeOrGreySubject } = clusterAnalysis;
 
   // Pre-aggregate image samples into `totalLayers` weighted LAB buckets
-  // matching the HueForge solid starting base (minBaseLayer = 5 -> 0.48mm at 0.16mm initial + 0.08mm layers)
-  const minBaseLayer = Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+  // matching the user-configured solid starting base thickness
+  const targetBaseLayers =
+    baseSolidThicknessMm !== undefined
+      ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
+      : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+  const minBaseLayer = Math.min(Math.max(1, totalLayers - 3), targetBaseLayers);
   const bucketL = new Float64Array(totalLayers);
   const bucketA = new Float64Array(totalLayers);
   const bucketB = new Float64Array(totalLayers);
@@ -683,3 +688,109 @@ export function solveOptimalPalettes(
     },
   ];
 }
+
+/**
+ * Optimizes the `upToLayer` swap boundaries for a user-defined manual palette
+ * while strictly preserving the exact filament lay-down order chosen by the user.
+ */
+export function optimizeManualSlotBoundaries(
+  imageData: ImageData,
+  slots: LayerSwapSlot[],
+  totalLayers: number,
+  baseLayerMm: number,
+  layerHeightMm: number,
+  baseSolidThicknessMm?: number
+): LayerSwapSlot[] {
+  const count = slots.length;
+  if (count === 0) return [];
+  if (count === 1) {
+    return [{ ...slots[0], upToLayer: totalLayers }];
+  }
+
+  const samples = extractPerceptualSamples(imageData);
+  const layerBuckets: { lab: LABColor; weight: number }[] = Array.from({ length: totalLayers }, () => ({
+    lab: { L: 0, a: 0, b: 0 },
+    weight: 0,
+  }));
+
+  const targetBaseLayers =
+    baseSolidThicknessMm !== undefined
+      ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
+      : Math.min(Math.max(2, Math.floor(totalLayers / count)), 5);
+  const minBaseLayer = Math.min(Math.max(1, totalLayers - count), targetBaseLayers);
+
+  let totalSampleWeight = 0;
+  for (const s of samples) {
+    const layerNumber = minBaseLayer + Math.round(s.luminance * (totalLayers - minBaseLayer));
+    const lIdx = Math.max(0, Math.min(totalLayers - 1, layerNumber - 1));
+    const bucket = layerBuckets[lIdx];
+    const newW = bucket.weight + s.weight;
+    bucket.lab.L = (bucket.lab.L * bucket.weight + s.lab.L * s.weight) / newW;
+    bucket.lab.a = (bucket.lab.a * bucket.weight + s.lab.a * s.weight) / newW;
+    bucket.lab.b = (bucket.lab.b * bucket.weight + s.lab.b * s.weight) / newW;
+    bucket.weight = newW;
+    totalSampleWeight += s.weight;
+  }
+
+  // Initialize monotonic layer boundaries starting with HueForge base layer anchor
+  const currentEnds: number[] = slots.map((_, idx) => {
+    if (idx === count - 1) return totalLayers;
+    if (idx === 0) return minBaseLayer;
+    const remFraction = idx / (count - 1);
+    return Math.max(
+      idx + 1,
+      Math.min(
+        totalLayers - (count - 1 - idx),
+        Math.round(minBaseLayer + remFraction * (totalLayers - minBaseLayer))
+      )
+    );
+  });
+
+  for (let i = 1; i < count; i++) {
+    if (currentEnds[i] <= currentEnds[i - 1]) {
+      currentEnds[i] = Math.min(totalLayers, currentEnds[i - 1] + 1);
+    }
+  }
+  currentEnds[count - 1] = totalLayers;
+
+  const scoreEnds = (ends: number[]): number => {
+    const candidateSlots: LayerSwapSlot[] = slots.map((s, idx) => ({
+      ...s,
+      upToLayer: ends[idx],
+    }));
+    const lut = buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, candidateSlots);
+    let err = 0;
+    for (let l = 0; l < totalLayers; l++) {
+      const bucket = layerBuckets[l];
+      if (bucket.weight <= 0) continue;
+      const lutLab = rgbToLab(lut[l].rgb);
+      const activeSpoolLab = rgbToLab(hexToRgb01(lut[l].activeSpool.hex));
+      err += (ciede2000(bucket.lab, lutLab) * 0.82 + ciede2000(bucket.lab, activeSpoolLab) * 0.18) * bucket.weight;
+    }
+    return err / Math.max(1e-5, totalSampleWeight);
+  };
+
+  let bestScore = scoreEnds(currentEnds);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < count - 1; i++) {
+      const minL = i === 0 ? Math.max(2, Math.min(4, currentEnds[1] - 1)) : currentEnds[i - 1] + 1;
+      const maxL = currentEnds[i + 1] - 1;
+      let bestLayerForI = currentEnds[i];
+      for (let candidateL = minL; candidateL <= maxL; candidateL++) {
+        currentEnds[i] = candidateL;
+        const sc = scoreEnds(currentEnds);
+        if (sc < bestScore) {
+          bestScore = sc;
+          bestLayerForI = candidateL;
+        }
+      }
+      currentEnds[i] = bestLayerForI;
+    }
+  }
+
+  return slots.map((s, idx) => ({
+    ...s,
+    upToLayer: currentEnds[idx],
+  }));
+}
+

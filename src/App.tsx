@@ -18,11 +18,21 @@ import {
   FileJson,
   Download,
   Trash2,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  Plus,
+  Hand,
 } from 'lucide-react';
 import { useTailWagStore } from './store/useTailWagStore';
 import { createDefaultPortraitImageData } from './utils/defaultPortrait';
 import { buildHeightmapGrid, MeshShapeMode, FrameStyle, ClockStencilStyle } from './engine/cadMeshBuilder';
-import { solveOptimalPalettes, solveCmykPalette, SolverRecipe } from './engine/autoSolver';
+import {
+  solveOptimalPalettes,
+  solveCmykPalette,
+  optimizeManualSlotBoundaries,
+  SolverRecipe,
+} from './engine/autoSolver';
 import { parseFilamentLibraryJson, serializeFilamentLibraryJson } from './utils/filamentJsonIO';
 import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
@@ -37,7 +47,9 @@ export const App: React.FC = () => {
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
   const [solverColorCount, setSolverColorCount] = useState<4 | 8 | 12 | 16>(4);
-  const [solverColorMode, setSolverColorMode] = useState<'natural' | 'cmyk'>('natural');
+  const [solverColorMode, setSolverColorMode] = useState<'natural' | 'cmyk' | 'manual'>('natural');
+  const [manualDragOverIdx, setManualDragOverIdx] = useState<number | 'append' | null>(null);
+  const [manualDraggingSlotIdx, setManualDraggingSlotIdx] = useState<number | null>(null);
   const [jsonImportBanner, setJsonImportBanner] = useState<string | null>(null);
   const [solverRecipes, setSolverRecipes] = useState<SolverRecipe[]>([]);
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
@@ -59,6 +71,8 @@ export const App: React.FC = () => {
     heightMm,
     setDimensions,
     baseLayerMm,
+    baseSolidThicknessMm,
+    setBaseSolidThicknessMm,
     layerHeightMm,
     totalLayers,
     setLayerParams,
@@ -76,6 +90,11 @@ export const App: React.FC = () => {
     slots,
     setSlots,
     addSlot,
+    insertSpoolAt,
+    reorderSlots,
+    distributeSlotsEvenly,
+    updateSlotSpool,
+    removeSlot,
     toggleSpoolOwned,
     importOwnedLibraryJson,
     removeImportedLibrary,
@@ -90,6 +109,7 @@ export const App: React.FC = () => {
         widthMm,
         heightMm,
         baseLayerMm,
+        baseSolidThicknessMm,
         layerHeightMm,
         totalLayers,
         gamma,
@@ -104,6 +124,7 @@ export const App: React.FC = () => {
       widthMm,
       heightMm,
       baseLayerMm,
+      baseSolidThicknessMm,
       layerHeightMm,
       totalLayers,
       gamma,
@@ -175,6 +196,19 @@ export const App: React.FC = () => {
 
         // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode & color count
         setViewportMode('3d-mesh');
+        if (solverColorMode === 'manual') {
+          setSlots(
+            optimizeManualSlotBoundaries(
+              newImgData,
+              slots,
+              totalLayers,
+              baseLayerMm,
+              layerHeightMm,
+              baseSolidThicknessMm
+            )
+          );
+          return;
+        }
         const effectiveLayers = Math.max(totalLayers, solverColorCount * 2);
         if (effectiveLayers !== totalLayers) {
           setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
@@ -189,7 +223,8 @@ export const App: React.FC = () => {
                 effectiveLayers,
                 baseLayerMm,
                 layerHeightMm,
-                solverColorCount
+                solverColorCount,
+                baseSolidThicknessMm
               );
         setSolverRecipes(recipes);
         if (recipes.length > 0) {
@@ -205,7 +240,7 @@ export const App: React.FC = () => {
   const handleRunAiSolver = (
     modeOverride?: 'owned' | 'shown',
     colorCountOverride?: 4 | 8 | 12 | 16,
-    colorModeOverride?: 'natural' | 'cmyk'
+    colorModeOverride?: 'natural' | 'cmyk' | 'manual'
   ) => {
     const activeMode = modeOverride ?? effectiveSolverPoolMode;
     const activeColors = colorCountOverride ?? solverColorCount;
@@ -218,6 +253,9 @@ export const App: React.FC = () => {
     }
     if (colorModeOverride) {
       setSolverColorMode(colorModeOverride);
+    }
+    if (activeColorMode === 'manual') {
+      return;
     }
     const effectiveLayers = Math.max(totalLayers, activeColors * 2);
     if (effectiveLayers !== totalLayers) {
@@ -233,11 +271,70 @@ export const App: React.FC = () => {
             effectiveLayers,
             baseLayerMm,
             layerHeightMm,
-            activeColors
+            activeColors,
+            baseSolidThicknessMm
           );
     setSolverRecipes(recipes);
     if (recipes.length > 0) {
       setSlots(recipes[0].slots);
+    }
+  };
+
+  const handleManualDropOnSlot = (e: React.DragEvent, targetIdx: number, replaceExisting = false) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setManualDragOverIdx(null);
+
+    const fromSlotStr = e.dataTransfer.getData('application/x-tailwag-slot-index');
+    if (fromSlotStr !== '') {
+      const fromIdx = parseInt(fromSlotStr, 10);
+      if (!Number.isNaN(fromIdx) && fromIdx !== targetIdx) {
+        reorderSlots(fromIdx, targetIdx);
+      }
+      setManualDraggingSlotIdx(null);
+      return;
+    }
+
+    const spoolId =
+      e.dataTransfer.getData('application/x-tailwag-spool-id') ||
+      e.dataTransfer.getData('text/plain');
+    if (spoolId) {
+      const found = catalog.find((c) => c.id === spoolId);
+      if (found) {
+        if (solverColorMode !== 'manual') setSolverColorMode('manual');
+        if (replaceExisting || e.shiftKey || slots.length >= 16) {
+          updateSlotSpool(slots[targetIdx].id, found);
+        } else {
+          insertSpoolAt(found, targetIdx);
+        }
+      }
+    }
+  };
+
+  const handleManualDropAppend = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setManualDragOverIdx(null);
+
+    const fromSlotStr = e.dataTransfer.getData('application/x-tailwag-slot-index');
+    if (fromSlotStr !== '') {
+      const fromIdx = parseInt(fromSlotStr, 10);
+      if (!Number.isNaN(fromIdx) && fromIdx !== slots.length - 1) {
+        reorderSlots(fromIdx, slots.length - 1);
+      }
+      setManualDraggingSlotIdx(null);
+      return;
+    }
+
+    const spoolId =
+      e.dataTransfer.getData('application/x-tailwag-spool-id') ||
+      e.dataTransfer.getData('text/plain');
+    if (spoolId) {
+      const found = catalog.find((c) => c.id === spoolId);
+      if (found) {
+        if (solverColorMode !== 'manual') setSolverColorMode('manual');
+        insertSpoolAt(found);
+      }
     }
   };
 
@@ -553,9 +650,19 @@ export const App: React.FC = () => {
                 filteredCatalog.map((spool) => (
                   <div
                     key={spool.id}
-                    className="bg-[#181f2e] hover:bg-slate-800/80 border border-slate-800 rounded-lg p-2 flex items-center justify-between gap-2 transition"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/x-tailwag-spool-id', spool.id);
+                      e.dataTransfer.setData('text/plain', spool.id);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    title="Drag this filament onto the Palette or Layer Timeline, or click + Stack"
+                    className="bg-[#181f2e] hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 rounded-lg p-2 flex items-center justify-between gap-2 transition cursor-grab active:cursor-grabbing"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-slate-500 hover:text-slate-300 shrink-0">
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </span>
                       <button
                         onClick={() => toggleSpoolOwned(spool.id)}
                         className="relative shrink-0"
@@ -701,12 +808,25 @@ export const App: React.FC = () => {
 
         {/* RIGHT SIDEBAR: AI Auto-Solver, Slicer Geometry & 2.5D Parametric CAD Cutouts */}
         <aside className="w-80 max-w-80 bg-[#121722] border-l border-slate-800 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 gap-3.5 shrink-0">
-          {/* 1. AI Palette & Layer-Swap Auto-Solver */}
-          <section className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5 min-w-0">
+          {/* 1. AI Palette & Layer-Swap Auto-Solver / Manual Palette Builder */}
+          <section
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleManualDropAppend}
+            className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5 min-w-0"
+          >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4" />
-                AI Palette & Swap Solver
+                {solverColorMode === 'manual' ? (
+                  <>
+                    <Hand className="w-4 h-4" />
+                    Manual Palette Studio
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    AI Palette & Swap Solver
+                  </>
+                )}
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <Cpu className="w-3 h-3" />
@@ -714,69 +834,26 @@ export const App: React.FC = () => {
               </span>
             </div>
 
-            {/* Auto-Solve Filament Source Selector */}
+            {/* Solver Color Mode: Library Best Match | CMYK Mode | Manual Mode */}
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Auto-Solve Filament Source
+                Color Selection Mode
               </span>
-              {hasOwnedLibrary ? (
-                <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                  <button
-                    onClick={() => handleRunAiSolver('owned')}
-                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                      effectiveSolverPoolMode === 'owned'
-                        ? 'bg-emerald-600 text-white shadow'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                    title="Auto-solve strictly using filaments from your filaments.json library"
-                  >
-                    <CheckCircle2 className="w-3 h-3 shrink-0" />
-                    <span className="truncate">Owned ({ownedSpools.length})</span>
-                  </button>
-                  <button
-                    onClick={() => handleRunAiSolver('shown')}
-                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                      effectiveSolverPoolMode === 'shown'
-                        ? 'bg-orange-600 text-white shadow'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                    title="Auto-solve using the filaments currently displayed in the active Filament Library tab & search filter"
-                  >
-                    <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                  <button
-                    onClick={() => handleRunAiSolver('shown')}
-                    className="w-full py-1.5 px-2 rounded-md text-[11px] font-bold bg-orange-600 text-white shadow flex items-center justify-center gap-1"
-                  >
-                    <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Solver Color Mode: Library Best Match vs CMYK Process */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Solver Color Mode
-              </span>
-              <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+              <div className="grid grid-cols-3 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
                 <button
                   onClick={() => handleRunAiSolver(undefined, undefined, 'natural')}
-                  className={`py-1 px-2 rounded-md text-[11px] font-bold transition ${
+                  className={`py-1 px-1.5 rounded-md text-[10px] font-bold transition truncate ${
                     solverColorMode === 'natural'
                       ? 'bg-orange-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                   title="Solve using the best matching natural filament colors from your selected library"
                 >
-                  Library Best Match
+                  Library Best
                 </button>
                 <button
                   onClick={() => handleRunAiSolver(undefined, undefined, 'cmyk')}
-                  className={`py-1 px-2 rounded-md text-[11px] font-bold transition ${
+                  className={`py-1 px-1.5 rounded-md text-[10px] font-bold transition truncate ${
                     solverColorMode === 'cmyk'
                       ? 'bg-sky-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
@@ -785,108 +862,355 @@ export const App: React.FC = () => {
                 >
                   CMYK Mode
                 </button>
+                <button
+                  onClick={() => setSolverColorMode('manual')}
+                  className={`py-1 px-1.5 rounded-md text-[10px] font-bold transition truncate ${
+                    solverColorMode === 'manual'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Drag colors from the Filament Library onto the palette and rearrange their lay-down order"
+                >
+                  Manual Mode
+                </button>
               </div>
             </div>
 
-            {/* Palette Color Count Selector: 4 / 8 / 12 / 16 Colors */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Palette Color Count (AMS Stack)
-              </span>
-              <div className="grid grid-cols-4 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                {([4, 8, 12, 16] as const).map((cnt) => (
+            {solverColorMode === 'manual' ? (
+              /* MANUAL LAY-DOWN PALETTE BUILDER */
+              <div className="flex flex-col gap-2 min-w-0">
+                <div className="flex items-center justify-between text-[10px] text-slate-300">
+                  <span className="font-semibold uppercase tracking-wider text-emerald-300">
+                    Lay-Down Stack (#1 Base → #{slots.length} Top)
+                  </span>
                   <button
-                    key={cnt}
-                    onClick={() => handleRunAiSolver(undefined, cnt)}
-                    className={`py-1 px-1.5 rounded-md text-[11px] font-bold transition ${
-                      solverColorCount === cnt
-                        ? 'bg-orange-600 text-white shadow'
-                        : 'text-slate-400 hover:text-slate-200'
+                    onClick={() => {
+                      const blackSpool =
+                        catalog.find((s) => s.name.toLowerCase() === 'black') || catalog[0];
+                      const whiteSpool =
+                        catalog.find((s) => s.name.toLowerCase().includes('jade white')) ||
+                        catalog.find((s) => s.name.toLowerCase().includes('white')) ||
+                        catalog[catalog.length - 1];
+                      const baseEnd = Math.min(
+                        totalLayers - 1,
+                        Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm)) + 1
+                      );
+                      setSlots([
+                        { id: `slot-${Date.now()}-base`, spool: blackSpool, upToLayer: baseEnd },
+                        { id: `slot-${Date.now()}-top`, spool: whiteSpool, upToLayer: totalLayers },
+                      ]);
+                    }}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition"
+                    title="Reset palette to #1 Black Base + #2 White Top so you can drag in custom colors"
+                  >
+                    Reset to Base+Top
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-snug bg-slate-900/70 border border-slate-800/80 rounded-lg p-2">
+                  Drag any filament from the left <strong className="text-slate-200">Filament Library</strong> onto this palette. Drag rows or click <strong className="text-slate-200">↑ / ↓</strong> to rearrange the exact order colors lay down.
+                </p>
+
+                {/* Rearrangeable Manual Palette List */}
+                <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto pr-0.5 min-w-0">
+                  {slots.map((slot, idx) => {
+                    const startLayer = idx === 0 ? 1 : slots[idx - 1].upToLayer + 1;
+                    const endLayer = idx === slots.length - 1 ? totalLayers : slot.upToLayer;
+                    const orderTag =
+                      idx === 0
+                        ? '#1 Base'
+                        : idx === slots.length - 1
+                          ? `#${idx + 1} Top`
+                          : `#${idx + 1}`;
+                    const isOver = manualDragOverIdx === idx;
+                    const isDragging = manualDraggingSlotIdx === idx;
+
+                    return (
+                      <div
+                        key={slot.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('application/x-tailwag-slot-index', String(idx));
+                          e.dataTransfer.effectAllowed = 'move';
+                          setManualDraggingSlotIdx(idx);
+                        }}
+                        onDragEnd={() => {
+                          setManualDraggingSlotIdx(null);
+                          setManualDragOverIdx(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (manualDragOverIdx !== idx) setManualDragOverIdx(idx);
+                        }}
+                        onDragLeave={() => {
+                          if (manualDragOverIdx === idx) setManualDragOverIdx(null);
+                        }}
+                        onDrop={(e) => handleManualDropOnSlot(e, idx, false)}
+                        className={`p-1.5 rounded-lg flex items-center justify-between gap-1.5 transition cursor-grab active:cursor-grabbing min-w-0 ${
+                          isOver
+                            ? 'bg-emerald-500/15 border-2 border-emerald-400'
+                            : 'bg-slate-900/90 border border-slate-800 hover:border-slate-700'
+                        } ${isDragging ? 'opacity-45' : ''}`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <GripVertical className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-950 text-orange-300 border border-slate-800 shrink-0">
+                            {orderTag}
+                          </span>
+                          <span
+                            onDrop={(e) => handleManualDropOnSlot(e, idx, true)}
+                            className="w-4 h-4 rounded-full border border-white/30 shrink-0 shadow"
+                            style={{ backgroundColor: slot.spool.hex }}
+                            title="Drop a library filament on swatch to replace this slot"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] font-semibold text-white truncate">
+                              {slot.spool.name}
+                            </div>
+                            <div className="text-[9px] text-slate-400 font-mono truncate">
+                              L{startLayer}–L{endLayer} • TD {slot.spool.td.toFixed(1)}mm
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            onClick={() => reorderSlots(idx, idx - 1)}
+                            disabled={idx === 0}
+                            className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 transition"
+                            title="Move earlier (lays down lower toward Base)"
+                          >
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => reorderSlots(idx, idx + 1)}
+                            disabled={idx === slots.length - 1}
+                            className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 transition"
+                            title="Move later (lays down higher toward Top)"
+                          >
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                          {slots.length > 1 && (
+                            <button
+                              onClick={() => removeSlot(slot.id)}
+                              className="p-0.5 rounded text-slate-500 hover:text-rose-400 transition"
+                              title="Remove from palette"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Dropzone to Add Filament from Library */}
+                {slots.length < 16 && (
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (manualDragOverIdx !== 'append') setManualDragOverIdx('append');
+                    }}
+                    onDragLeave={() => {
+                      if (manualDragOverIdx === 'append') setManualDragOverIdx(null);
+                    }}
+                    onDrop={handleManualDropAppend}
+                    onClick={() => {
+                      const candidate =
+                        catalog.find((c) => !slots.some((s) => s.spool.id === c.id)) || catalog[0];
+                      addSlot(candidate);
+                    }}
+                    className={`py-2 px-2.5 rounded-lg border border-dashed text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                      manualDragOverIdx === 'append'
+                        ? 'border-emerald-400 bg-emerald-500/15 text-emerald-200'
+                        : 'border-slate-700 bg-slate-900/50 hover:bg-slate-800/70 text-slate-300'
                     }`}
                   >
-                    {cnt} Colors
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={() => handleRunAiSolver()}
-              className="w-full py-1.5 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow flex items-center justify-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              {solverColorMode === 'cmyk'
-                ? `Auto-Solve CMYK (${solverColorCount} Colors)`
-                : effectiveSolverPoolMode === 'owned'
-                  ? `Auto-Solve (${solverColorCount} Colors • Owned ${ownedSpools.length})`
-                  : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
-            </button>
-
-            {/* Color Count Advisory when >4 colors are not needed */}
-            {solverRecipes[0]?.colorCountAdvisory && (
-              <div
-                className={`p-2 rounded-lg border text-[11px] flex flex-col gap-1.5 min-w-0 break-words ${
-                  solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
-                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
-                    : 'bg-emerald-500/12 border-emerald-500/30 text-emerald-200'
-                }`}
-              >
-                <div className="font-bold flex items-center justify-between gap-1 min-w-0">
-                  <span className="truncate">
-                    {solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
-                      ? `Advisory: ${solverRecipes[0].recommendedColors ?? 4} Colors Recommended`
-                      : '✓ 4 Colors Optimal (Single AMS)'}
-                  </span>
-                  {solverRecipes[0].detectedClusterCount && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30 shrink-0">
-                      {solverRecipes[0].detectedClusterCount} Clusters
+                    <Plus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">
+                      Drag Color Here from Library ({slots.length}/16)
                     </span>
-                  )}
-                </div>
-                <p className="text-[10px] leading-relaxed opacity-90 break-words">
-                  {solverRecipes[0].colorCountAdvisory}
-                </p>
-                {solverColorCount > (solverRecipes[0].recommendedColors ?? 4) && (
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                   <button
                     onClick={() =>
-                      handleRunAiSolver(undefined, solverRecipes[0].recommendedColors ?? 4)
+                      setSlots(
+                        optimizeManualSlotBoundaries(
+                          sourceImageData,
+                          slots,
+                          totalLayers,
+                          baseLayerMm,
+                          layerHeightMm,
+                          baseSolidThicknessMm
+                        )
+                      )
                     }
-                    className="mt-0.5 py-1 px-2 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] transition self-start shadow"
+                    className="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition shadow truncate"
+                    title="Optimize layer swap heights for your chosen filaments while keeping your exact manual lay-down order"
                   >
-                    Switch to {solverRecipes[0].recommendedColors ?? 4} Colors (Recommended)
+                    Auto-Tune Swap Layers
                   </button>
-                )}
-              </div>
-            )}
-
-            {solverRecipes.length > 0 && (
-              <div className="space-y-1.5 pt-1">
-                {solverRecipes.map((recipe) => (
                   <button
-                    key={recipe.id}
-                    onClick={() => setSlots(recipe.slots)}
-                    className="w-full text-left p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 transition flex flex-col gap-1"
+                    onClick={() => distributeSlotsEvenly()}
+                    className="py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[10px] font-semibold transition truncate"
+                    title="Space upper filament layers evenly above the base layer"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">{recipe.name}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 font-mono">
-                        {recipe.badge}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 line-clamp-2">{recipe.description}</p>
-                    <div className="flex items-center gap-1 pt-0.5">
-                      {recipe.slots.map((s) => (
-                        <span
-                          key={s.id}
-                          className="h-3 flex-1 rounded-sm border border-white/20"
-                          style={{ backgroundColor: s.spool.hex }}
-                          title={`${s.spool.name} (Up to L${s.upToLayer})`}
-                        />
-                      ))}
-                    </div>
+                    Space Layers Evenly
                   </button>
-                ))}
+                </div>
               </div>
+            ) : (
+              /* AUTO-SOLVER CONTROLS (LIBRARY BEST MATCH & CMYK MODE) */
+              <>
+                {/* Auto-Solve Filament Source Selector */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Auto-Solve Filament Source
+                  </span>
+                  {hasOwnedLibrary ? (
+                    <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                      <button
+                        onClick={() => handleRunAiSolver('owned')}
+                        className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                          effectiveSolverPoolMode === 'owned'
+                            ? 'bg-emerald-600 text-white shadow'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                        title="Auto-solve strictly using filaments from your filaments.json library"
+                      >
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        <span className="truncate">Owned ({ownedSpools.length})</span>
+                      </button>
+                      <button
+                        onClick={() => handleRunAiSolver('shown')}
+                        className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                          effectiveSolverPoolMode === 'shown'
+                            ? 'bg-orange-600 text-white shadow'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                        title="Auto-solve using the filaments currently displayed in the active Filament Library tab & search filter"
+                      >
+                        <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                      <button
+                        onClick={() => handleRunAiSolver('shown')}
+                        className="w-full py-1.5 px-2 rounded-md text-[11px] font-bold bg-orange-600 text-white shadow flex items-center justify-center gap-1"
+                      >
+                        <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Palette Color Count Selector: 4 / 8 / 12 / 16 Colors */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Palette Color Count (AMS Stack)
+                  </span>
+                  <div className="grid grid-cols-4 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                    {([4, 8, 12, 16] as const).map((cnt) => (
+                      <button
+                        key={cnt}
+                        onClick={() => handleRunAiSolver(undefined, cnt)}
+                        className={`py-1 px-1.5 rounded-md text-[11px] font-bold transition ${
+                          solverColorCount === cnt
+                            ? 'bg-orange-600 text-white shadow'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {cnt} Colors
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleRunAiSolver()}
+                  className="w-full py-1.5 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {solverColorMode === 'cmyk'
+                    ? `Auto-Solve CMYK (${solverColorCount} Colors)`
+                    : effectiveSolverPoolMode === 'owned'
+                      ? `Auto-Solve (${solverColorCount} Colors • Owned ${ownedSpools.length})`
+                      : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
+                </button>
+
+                {/* Color Count Advisory when >4 colors are not needed */}
+                {solverRecipes[0]?.colorCountAdvisory && (
+                  <div
+                    className={`p-2 rounded-lg border text-[11px] flex flex-col gap-1.5 min-w-0 break-words ${
+                      solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                        : 'bg-emerald-500/12 border-emerald-500/30 text-emerald-200'
+                    }`}
+                  >
+                    <div className="font-bold flex items-center justify-between gap-1 min-w-0">
+                      <span className="truncate">
+                        {solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
+                          ? `Advisory: ${solverRecipes[0].recommendedColors ?? 4} Colors Recommended`
+                          : '✓ 4 Colors Optimal (Single AMS)'}
+                      </span>
+                      {solverRecipes[0].detectedClusterCount && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30 shrink-0">
+                          {solverRecipes[0].detectedClusterCount} Clusters
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] leading-relaxed opacity-90 break-words">
+                      {solverRecipes[0].colorCountAdvisory}
+                    </p>
+                    {solverColorCount > (solverRecipes[0].recommendedColors ?? 4) && (
+                      <button
+                        onClick={() =>
+                          handleRunAiSolver(undefined, solverRecipes[0].recommendedColors ?? 4)
+                        }
+                        className="mt-0.5 py-1 px-2 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] transition self-start shadow"
+                      >
+                        Switch to {solverRecipes[0].recommendedColors ?? 4} Colors (Recommended)
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {solverRecipes.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {solverRecipes.map((recipe) => (
+                      <button
+                        key={recipe.id}
+                        onClick={() => setSlots(recipe.slots)}
+                        className="w-full text-left p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 transition flex flex-col gap-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-white">{recipe.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 font-mono">
+                            {recipe.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 line-clamp-2">{recipe.description}</p>
+                        <div className="flex items-center gap-1 pt-0.5">
+                          {recipe.slots.map((s) => (
+                            <span
+                              key={s.id}
+                              className="h-3 flex-1 rounded-sm border border-white/20"
+                              style={{ backgroundColor: s.spool.hex }}
+                              title={`${s.spool.name} (Up to L${s.upToLayer})`}
+                            />
+                          ))}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </section>
 
@@ -940,16 +1264,19 @@ export const App: React.FC = () => {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-[10px] text-slate-400">Initial Layer</label>
-                <select
+                <input
+                  type="number"
+                  min={0.08}
+                  max={0.48}
+                  step={0.04}
                   value={baseLayerMm}
-                  onChange={(e) => setLayerParams(parseFloat(e.target.value), layerHeightMm, totalLayers)}
+                  onChange={(e) => {
+                    const val = Math.max(0.08, Math.min(0.48, parseFloat(e.target.value) || 0.16));
+                    setLayerParams(Number(val.toFixed(2)), layerHeightMm, totalLayers);
+                  }}
+                  title="Slicer First / Initial Layer Height in mm (default 0.16mm for HueForge)"
                   className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white font-mono"
-                >
-                  <option value={0.16}>0.16mm (HF)</option>
-                  <option value={0.20}>0.20mm</option>
-                  <option value={0.24}>0.24mm</option>
-                  <option value={0.32}>0.32mm</option>
-                </select>
+                />
               </div>
               <div>
                 <label className="text-[10px] text-slate-400">Layer Height</label>
@@ -968,21 +1295,55 @@ export const App: React.FC = () => {
                 <input
                   type="number"
                   min={10}
-                  max={48}
+                  max={64}
                   value={totalLayers}
                   onChange={(e) =>
-                    setLayerParams(baseLayerMm, layerHeightMm, Math.max(10, Math.min(48, Number(e.target.value) || 24)))
+                    setLayerParams(baseLayerMm, layerHeightMm, Math.max(10, Math.min(64, Number(e.target.value) || 24)))
                   }
                   className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
                 />
               </div>
             </div>
 
-            <div className="px-2 py-1 rounded bg-slate-900/90 border border-slate-800 text-[10px] text-slate-300 font-mono flex items-center justify-between">
-              <span>100% Rectilinear Infill • 1 Wall</span>
-              <span className="text-orange-400">
-                Max Z: {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm
-              </span>
+            {/* Configurable Base Layer Thickness (Solid Starting Base in mm) */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-semibold text-slate-300">
+                  Base Layer Thickness (Solid Base)
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={baseLayerMm}
+                    max={2.8}
+                    step={layerHeightMm}
+                    value={baseSolidThicknessMm}
+                    onChange={(e) => setBaseSolidThicknessMm(parseFloat(e.target.value) || 0.48)}
+                    className="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-orange-400 font-mono text-right"
+                  />
+                  <span className="text-[10px] text-slate-400 font-mono">mm</span>
+                </div>
+              </div>
+              <input
+                type="range"
+                min={baseLayerMm}
+                max={2.0}
+                step={layerHeightMm}
+                value={baseSolidThicknessMm}
+                onInput={(e) => setBaseSolidThicknessMm(parseFloat((e.target as HTMLInputElement).value))}
+                onChange={(e) => setBaseSolidThicknessMm(parseFloat(e.target.value))}
+                className="w-full accent-orange-500 h-1.5 cursor-pointer"
+              />
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span>
+                  Base: L1–L
+                  {Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))} (
+                  {baseSolidThicknessMm.toFixed(2)}mm)
+                </span>
+                <span className="text-orange-400">
+                  Max Z: {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm
+                </span>
+              </div>
             </div>
 
             <div>

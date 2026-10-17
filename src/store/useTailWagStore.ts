@@ -27,6 +27,7 @@ export interface TailWagState {
   heightMm: number;
   lockAspect: boolean;
   baseLayerMm: number;
+  baseSolidThicknessMm: number;
   layerHeightMm: number;
   totalLayers: number;
   meshResolution: number;
@@ -54,6 +55,7 @@ export interface TailWagState {
   setSlicePreviewMaxLayer: (layer: number) => void;
   setDimensions: (widthMm: number, heightMm: number) => void;
   setLayerParams: (baseLayerMm: number, layerHeightMm: number, totalLayers: number) => void;
+  setBaseSolidThicknessMm: (thicknessMm: number) => void;
   setMeshResolution: (res: number) => void;
   setPrePress: (partial: Partial<{ gamma: number; contrast: number; detailEnhance: number; invertLuminance: boolean }>) => void;
   setCadConfig: (partial: Partial<CadCutoutConfig>) => void;
@@ -61,6 +63,9 @@ export interface TailWagState {
   updateSlotLayer: (slotId: string, upToLayer: number) => void;
   updateSlotSpool: (slotId: string, spool: FilamentSpool) => void;
   addSlot: (spool: FilamentSpool) => void;
+  insertSpoolAt: (spool: FilamentSpool, targetIndex?: number) => void;
+  reorderSlots: (fromIndex: number, toIndex: number) => void;
+  distributeSlotsEvenly: () => void;
   removeSlot: (slotId: string) => void;
   addCustomSpoolToCatalog: (spool: FilamentSpool) => void;
   toggleSpoolOwned: (spoolId: string) => void;
@@ -182,6 +187,7 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   heightMm: 180,
   lockAspect: true,
   baseLayerMm: 0.16,
+  baseSolidThicknessMm: 0.48,
   layerHeightMm: 0.08,
   totalLayers: 24,
   meshResolution: 240,
@@ -237,6 +243,39 @@ export const useTailWagStore = create<TailWagState>((set) => ({
         slots: updatedSlots,
       };
     }),
+  setBaseSolidThicknessMm: (thicknessMm) =>
+    set((state) => {
+      const clampedMm = Math.max(state.baseLayerMm, Math.min(3.2, Number(thicknessMm) || state.baseLayerMm));
+      const baseLayers = Math.max(
+        1,
+        1 + Math.round(Math.max(0, clampedMm - state.baseLayerMm) / state.layerHeightMm)
+      );
+      const snappedMm = Number((state.baseLayerMm + (baseLayers - 1) * state.layerHeightMm).toFixed(2));
+      const N = state.slots.length;
+      const nextTotalLayers = Math.max(state.totalLayers, baseLayers + Math.max(8, N * 2));
+      const nextSlots = state.slots.map((s) => ({ ...s }));
+      if (N > 1) {
+        const baseSlotEnd = Math.max(1, Math.min(nextTotalLayers - (N - 1), baseLayers + 1));
+        nextSlots[0].upToLayer = baseSlotEnd;
+        for (let i = 1; i < N - 1; i++) {
+          if (nextSlots[i].upToLayer <= nextSlots[i - 1].upToLayer) {
+            nextSlots[i].upToLayer = Math.min(
+              nextTotalLayers - (N - 1 - i),
+              nextSlots[i - 1].upToLayer + 1
+            );
+          }
+        }
+        nextSlots[N - 1].upToLayer = nextTotalLayers;
+      } else if (N === 1) {
+        nextSlots[0].upToLayer = nextTotalLayers;
+      }
+      return {
+        baseSolidThicknessMm: snappedMm,
+        totalLayers: nextTotalLayers,
+        slicePreviewMaxLayer: nextTotalLayers,
+        slots: nextSlots,
+      };
+    }),
   setMeshResolution: (meshResolution) => set({ meshResolution }),
   setPrePress: (partial) => set((state) => ({ ...state, ...partial })),
   setCadConfig: (partial) => set((state) => ({ cad: { ...state.cad, ...partial } })),
@@ -277,24 +316,143 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   addSlot: (spool) =>
     set((state) => {
       if (state.slots.length >= 16) return state;
-      const prevSlots = [...state.slots];
-      const lastIdx = prevSlots.length - 1;
-      const prevEnd = lastIdx > 0 ? prevSlots[lastIdx - 1].upToLayer : 2;
-      const midLayer = Math.max(prevEnd + 1, Math.floor((prevEnd + state.totalLayers) / 2));
-      prevSlots[lastIdx] = { ...prevSlots[lastIdx], upToLayer: midLayer };
-      prevSlots.push({
-        id: `slot-${Date.now()}`,
+      const nextSlots = [
+        ...state.slots,
+        {
+          id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          spool,
+          upToLayer: state.totalLayers,
+        },
+      ];
+      const count = nextSlots.length;
+      const nextTotalLayers = Math.max(state.totalLayers, count * 2);
+      const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
+      const distributed = nextSlots.map((s, idx) => {
+        if (idx === count - 1) return { ...s, upToLayer: nextTotalLayers };
+        if (idx === 0) return { ...s, upToLayer: minBaseLayer };
+        const frac = idx / (count - 1);
+        const targetL = Math.round(minBaseLayer + frac * (nextTotalLayers - minBaseLayer));
+        const clampedL = Math.max(idx + 1, Math.min(nextTotalLayers - (count - 1 - idx), targetL));
+        return { ...s, upToLayer: clampedL };
+      });
+      for (let i = 1; i < count; i++) {
+        if (distributed[i].upToLayer <= distributed[i - 1].upToLayer) {
+          distributed[i] = { ...distributed[i], upToLayer: Math.min(nextTotalLayers, distributed[i - 1].upToLayer + 1) };
+        }
+      }
+      distributed[count - 1] = { ...distributed[count - 1], upToLayer: nextTotalLayers };
+      return {
+        totalLayers: nextTotalLayers,
+        slicePreviewMaxLayer: nextTotalLayers,
+        slots: distributed,
+      };
+    }),
+  insertSpoolAt: (spool, targetIndex) =>
+    set((state) => {
+      if (state.slots.length >= 16) return state;
+      const nextSlots = [...state.slots];
+      const insertIdx =
+        targetIndex === undefined
+          ? nextSlots.length
+          : Math.max(0, Math.min(nextSlots.length, targetIndex));
+      nextSlots.splice(insertIdx, 0, {
+        id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         spool,
         upToLayer: state.totalLayers,
       });
-      return { slots: prevSlots };
+      const count = nextSlots.length;
+      const nextTotalLayers = Math.max(state.totalLayers, count * 2);
+      const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
+      const distributed = nextSlots.map((s, idx) => {
+        if (idx === count - 1) return { ...s, upToLayer: nextTotalLayers };
+        if (idx === 0) return { ...s, upToLayer: minBaseLayer };
+        const frac = idx / (count - 1);
+        const targetL = Math.round(minBaseLayer + frac * (nextTotalLayers - minBaseLayer));
+        const clampedL = Math.max(idx + 1, Math.min(nextTotalLayers - (count - 1 - idx), targetL));
+        return { ...s, upToLayer: clampedL };
+      });
+      for (let i = 1; i < count; i++) {
+        if (distributed[i].upToLayer <= distributed[i - 1].upToLayer) {
+          distributed[i] = { ...distributed[i], upToLayer: Math.min(nextTotalLayers, distributed[i - 1].upToLayer + 1) };
+        }
+      }
+      distributed[count - 1] = { ...distributed[count - 1], upToLayer: nextTotalLayers };
+      return {
+        totalLayers: nextTotalLayers,
+        slicePreviewMaxLayer: nextTotalLayers,
+        slots: distributed,
+      };
+    }),
+  reorderSlots: (fromIndex, toIndex) =>
+    set((state) => {
+      const N = state.slots.length;
+      if (
+        fromIndex < 0 ||
+        fromIndex >= N ||
+        toIndex < 0 ||
+        toIndex >= N ||
+        fromIndex === toIndex
+      ) {
+        return state;
+      }
+      // Capture current monotonic layer boundaries before reordering spools
+      const layerBoundaries = state.slots.map((s) => s.upToLayer).sort((a, b) => a - b);
+      layerBoundaries[N - 1] = state.totalLayers;
+      for (let i = 1; i < N; i++) {
+        if (layerBoundaries[i] <= layerBoundaries[i - 1]) {
+          layerBoundaries[i] = Math.min(state.totalLayers, layerBoundaries[i - 1] + 1);
+        }
+      }
+
+      const reordered = [...state.slots];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+
+      const updated = reordered.map((slot, idx) => ({
+        ...slot,
+        upToLayer: layerBoundaries[idx],
+      }));
+      return { slots: updated };
+    }),
+  distributeSlotsEvenly: () =>
+    set((state) => {
+      const count = state.slots.length;
+      if (count === 0) return state;
+      if (count === 1) {
+        return { slots: [{ ...state.slots[0], upToLayer: state.totalLayers }] };
+      }
+      const minBaseLayer = Math.min(Math.max(2, Math.floor(state.totalLayers / count)), 6);
+      const distributed = state.slots.map((s, idx) => {
+        if (idx === count - 1) return { ...s, upToLayer: state.totalLayers };
+        if (idx === 0) return { ...s, upToLayer: minBaseLayer };
+        const frac = idx / (count - 1);
+        const targetL = Math.round(minBaseLayer + frac * (state.totalLayers - minBaseLayer));
+        const clampedL = Math.max(idx + 1, Math.min(state.totalLayers - (count - 1 - idx), targetL));
+        return { ...s, upToLayer: clampedL };
+      });
+      for (let i = 1; i < count; i++) {
+        if (distributed[i].upToLayer <= distributed[i - 1].upToLayer) {
+          distributed[i] = { ...distributed[i], upToLayer: Math.min(state.totalLayers, distributed[i - 1].upToLayer + 1) };
+        }
+      }
+      distributed[count - 1] = { ...distributed[count - 1], upToLayer: state.totalLayers };
+      return { slots: distributed };
     }),
   removeSlot: (slotId) =>
     set((state) => {
-      if (state.slots.length <= 2) return state;
+      if (state.slots.length <= 1) return state;
       const filtered = state.slots.filter((s) => s.id !== slotId);
-      filtered[filtered.length - 1] = {
-        ...filtered[filtered.length - 1],
+      const count = filtered.length;
+      for (let i = 0; i < count - 1; i++) {
+        const maxAllowed = state.totalLayers - (count - 1 - i);
+        const minAllowed = i === 0 ? 1 : filtered[i - 1].upToLayer + 1;
+        filtered[i] = {
+          ...filtered[i],
+          upToLayer: Math.max(minAllowed, Math.min(maxAllowed, filtered[i].upToLayer)),
+        };
+      }
+      filtered[count - 1] = {
+        ...filtered[count - 1],
         upToLayer: state.totalLayers,
       };
       return { slots: filtered };

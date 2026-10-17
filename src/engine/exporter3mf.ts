@@ -1,5 +1,5 @@
 import { zipSync, strToU8 } from 'fflate';
-import { HeightmapGrid } from './cadMeshBuilder';
+import { HeightmapGrid, generateBinaryStlFromGrid } from './cadMeshBuilder';
 import { LayerSwapSlot } from './opticalTdEngine';
 import bambuProjectTemplate from '../data/bambuProjectTemplate.json';
 
@@ -67,7 +67,7 @@ export function buildSwapPlaybook(
 }
 
 /**
- * Generates a human-readable HueForge-compatible + Bambu/Orca enhanced instructions file (`TailWag_Swap_Playbook.txt`)
+ * Generates a human-readable HueForge-compatible + Single-Extruder (No-AMS) & Bambu/Orca instructions file (`TailWag_Swap_Playbook.txt`)
  */
 export function generatePlaybookText(
   projectName: string,
@@ -78,28 +78,52 @@ export function generatePlaybookText(
   slots: LayerSwapSlot[]
 ): string {
   const playbook = buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers);
+  const pauseLayersSummary =
+    playbook.length > 1
+      ? playbook
+          .slice(1)
+          .map((p) => `Layer ${p.startLayer} (${p.startZMm.toFixed(2)} mm -> ${p.spoolName})`)
+          .join(', ')
+      : 'None (Single Color)';
+
   const lines: string[] = [
     `===================================================================`,
     `🐕 TAILWAG STUDIO — 3D FILAMENT PAINTING & SLICER RECIPE PLAYBOOK`,
     `===================================================================`,
     `Project Name     : ${projectName}`,
+    `STL Model File   : ${projectName}_TailWag_rev1.stl`,
     `Physical Size    : ${grid.widthMm.toFixed(1)} mm x ${grid.heightMm.toFixed(1)} mm`,
     `First Layer (Z0) : ${baseLayerMm.toFixed(2)} mm`,
     `Layer Height     : ${layerHeightMm.toFixed(2)} mm`,
     `Total Layers     : ${totalLayers} (Max Relief Z: ${(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)} mm)`,
-    `Infill           : 100% Aligned Rectilinear | Wall Loops: 1`,
+    `Infill           : 100% Aligned Rectilinear | Wall Loops: 1 | Top/Bottom Shells: 999`,
+    `IMPORTANT        : Do NOT scale Z-height in your slicer (keep Z at 100%).`,
     `-------------------------------------------------------------------`,
     `FILAMENT PALETTE & TRANSMISSION DISTANCE (TD):`,
     ...playbook.map(
-      (p) => `  [${p.slotIndex}] ${p.brand} - ${p.spoolName} (${p.hex}) | TD: ${p.td.toFixed(1)} mm | ${p.amsUnitSlot}`
+      (p) => `  [#${p.slotIndex}] ${p.brand} - ${p.spoolName} (${p.hex}) | TD: ${p.td.toFixed(1)} mm | Layers ${p.startLayer}–${p.endLayer} (${p.startZMm.toFixed(2)}–${p.endZMm.toFixed(2)} mm)`
     ),
     `-------------------------------------------------------------------`,
-    `LAYER SWAP SCHEDULE (BAMBU STUDIO / ORCASLICER):`,
+    `🛠️ SINGLE-EXTRUDER / NO-AMS MANUAL PAUSE & COLOR CHANGE SCHEDULE:`,
+    `  Exact Slicer Pause Layers: ${pauseLayersSummary}`,
     ...playbook.map((p, idx) =>
       idx === 0
-        ? `  • Start with ${p.brand} ${p.spoolName} (${p.hex}) at Layer 1 (${p.startZMm.toFixed(2)} mm) -> Print through Layer ${p.endLayer} (${p.endZMm.toFixed(2)} mm)`
-        : `  • At Layer ${p.startLayer} (${p.startZMm.toFixed(2)} mm), swap to ${p.brand} ${p.spoolName} (${p.hex}) -> Print through Layer ${p.endLayer} (${p.endZMm.toFixed(2)} mm)`
+        ? `  [START PRINT - Layer 1 (${p.startZMm.toFixed(2)} mm)] Load #1 ${p.brand} ${p.spoolName} (${p.hex}) before starting print -> Prints Layers 1 to ${p.endLayer} (${p.endZMm.toFixed(2)} mm)`
+        : `  [PAUSE #${idx} - Layer ${p.startLayer} (${p.startZMm.toFixed(2)} mm)] Add Slicer Pause / Color Change (M600) at Layer ${p.startLayer} -> Unload ${playbook[idx - 1].spoolName}, Load #${p.slotIndex} ${p.brand} ${p.spoolName} (${p.hex}) -> Prints Layers ${p.startLayer} to ${p.endLayer} (${p.endZMm.toFixed(2)} mm)`
     ),
+    `-------------------------------------------------------------------`,
+    `HOW TO PRINT ON A SINGLE-HEAD PRINTER (NO AMS) USING THE .STL FILE:`,
+    `  1. Load "${projectName}_TailWag_rev1.stl" into your slicer (Bambu Studio, OrcaSlicer, PrusaSlicer, or Cura).`,
+    `  2. Set First/Initial Layer Height = ${baseLayerMm.toFixed(2)} mm and Layer Height = ${layerHeightMm.toFixed(2)} mm.`,
+    `  3. Set Infill = 100% Rectilinear (or 999 Top/Bottom Solid Layers) and Wall Loops = 1.`,
+    `  4. Slice the plate, then use the right-hand vertical Layer Preview Slider to add a "Pause" or "Change Filament (M600)" at:`,
+    ...playbook
+      .slice(1)
+      .map(
+        (p) =>
+          `     -> Layer ${p.startLayer} (Z = ${p.startZMm.toFixed(2)} mm): Swap to ${p.brand} ${p.spoolName} (${p.hex})`
+      ),
+    `  5. Start the print with ${playbook[0]?.brand || ''} ${playbook[0]?.spoolName || ''} loaded. Each time the printer pauses, swap to the next filament listed above and press Resume!`,
   ];
 
   const chained = playbook.filter((p) => p.chainingAction);
@@ -113,6 +137,417 @@ export function generatePlaybookText(
 
   lines.push(`===================================================================`);
   return lines.join('\n');
+}
+
+/**
+ * Generates a self-contained, interactive HTML instruction guide (`${projectName}_Color_Change_Guide.html`)
+ * explaining how any user with a Single-Head Printer and NO AMS can print the exported `.STL` file
+ * via layer pausing and manual filament color changes in their slicer of choice.
+ */
+export function generateSingleExtruderHtmlGuide(
+  projectName: string,
+  grid: HeightmapGrid,
+  baseLayerMm: number,
+  layerHeightMm: number,
+  totalLayers: number,
+  slots: LayerSwapSlot[]
+): string {
+  const playbook = buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers);
+  const maxZ = (baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2);
+  const pauseItems = playbook.slice(1);
+  const pauseLayersInline =
+    pauseItems.length > 0
+      ? pauseItems.map((p) => `Layer ${p.startLayer} (${p.startZMm.toFixed(2)}mm)`).join(', ')
+      : 'No pauses needed (1 color)';
+
+  const rowsHtml = playbook
+    .map((p, idx) => {
+      const isStart = idx === 0;
+      const prev = idx > 0 ? playbook[idx - 1] : null;
+      const layerCount = Math.max(1, p.endLayer - p.startLayer + 1);
+      return `
+        <tr>
+          <td style="text-align:center;">
+            <input type="checkbox" style="width:18px;height:18px;accent-color:#f97316;cursor:pointer;" title="Mark step complete" />
+          </td>
+          <td>
+            ${
+              isStart
+                ? `<span class="badge badge-start">START PRINT • LAYER 1</span>`
+                : `<span class="badge badge-pause">PAUSE #${idx} • LAYER ${p.startLayer}</span>`
+            }
+            <div style="font-size:12px;color:#94a3b8;margin-top:4px;font-family:monospace;">
+              Z-Height: <strong style="color:#f8fafc;">${p.startZMm.toFixed(2)} mm</strong>
+            </div>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="swatch" style="background:${p.hex};"></span>
+              <div>
+                <div style="font-weight:700;color:#ffffff;font-size:14px;">#${p.slotIndex}: ${p.brand} — ${p.spoolName}</div>
+                <div style="font-size:12px;color:#cbd5e1;font-family:monospace;">Hex: ${p.hex} • TD: ${p.td.toFixed(1)} mm</div>
+              </div>
+            </div>
+          </td>
+          <td style="font-family:monospace;font-size:13px;color:#34d399;font-weight:700;">
+            Layer ${p.startLayer} &rarr; Layer ${p.endLayer}
+            <div style="font-size:11px;color:#94a3b8;font-weight:400;">
+              ${p.startZMm.toFixed(2)} mm – ${p.endZMm.toFixed(2)} mm (${layerCount} ${layerCount === 1 ? 'layer' : 'layers'})
+            </div>
+          </td>
+          <td style="font-size:13px;color:#e2e8f0;line-height:1.45;">
+            ${
+              isStart
+                ? `<strong>Load before starting print:</strong> Load <strong>${p.brand} ${p.spoolName}</strong> onto your printer and start the print. It will print the base from Layer 1 through Layer ${p.endLayer}.`
+                : `<strong>Pause at start of Layer ${p.startLayer} (${p.startZMm.toFixed(2)} mm):</strong> Unload <em>${prev?.spoolName}</em>, load <strong>${p.brand} ${p.spoolName}</strong>, purge until clean, and press <strong>Resume</strong>.`
+            }
+          </td>
+        </tr>`;
+    })
+    .join('\n');
+
+  const pausePillsHtml = pauseItems
+    .map(
+      (p) => `
+      <div class="pause-pill">
+        <span class="swatch-sm" style="background:${p.hex};"></span>
+        <span><strong>Pause at Layer ${p.startLayer}</strong> (${p.startZMm.toFixed(2)} mm) &rarr; Switch to <strong>${p.spoolName}</strong> (${p.hex})</span>
+      </div>`
+    )
+    .join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${projectName} — Single-Extruder (No-AMS) STL Layer Pause & Color Change Guide</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px 18px 60px;
+      background: #0b0e14;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .card {
+      background: #121722;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      color: #ffffff;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #fb923c;
+    }
+    .subtitle {
+      color: #94a3b8;
+      font-size: 14px;
+      margin: 0;
+    }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .stat-box {
+      background: #181f2e;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+    }
+    .stat-value {
+      font-size: 17px;
+      font-weight: 800;
+      color: #f8fafc;
+      font-family: monospace;
+      margin-top: 2px;
+    }
+    .warning-banner {
+      margin-top: 14px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #fde68a;
+      font-size: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    th, td {
+      padding: 13px 12px;
+      text-align: left;
+      border-bottom: 1px solid #1e293b;
+      vertical-align: middle;
+    }
+    th {
+      background: #181f2e;
+      color: #94a3b8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .swatch {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.45);
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .swatch-sm {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.5);
+      flex-shrink: 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      font-family: monospace;
+      letter-spacing: 0.03em;
+    }
+    .badge-start {
+      background: rgba(16, 185, 129, 0.2);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.45);
+    }
+    .badge-pause {
+      background: rgba(249, 115, 22, 0.22);
+      color: #fdba74;
+      border: 1px solid rgba(249, 115, 22, 0.5);
+    }
+    .pause-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .pause-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #181f2e;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    .slicer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .slicer-card {
+      background: #181f2e;
+      border: 1px solid #283548;
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .slicer-card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #38bdf8;
+    }
+    .slicer-card ol {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+    .slicer-card li {
+      margin-bottom: 6px;
+    }
+    @media print {
+      body { background: #ffffff; color: #0f172a; padding: 0; }
+      .card, .stat-box, .slicer-card, .pause-pill { background: #ffffff; border-color: #cbd5e1; color: #0f172a; box-shadow: none; }
+      h1, .stat-value, td div { color: #0f172a !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>🐕 TailWag Studio — Single-Extruder (No-AMS) .STL Print &amp; Layer Pause Guide</h1>
+      <p class="subtitle">
+        Project: <strong>${projectName}</strong> • Model File: <code>${projectName}_TailWag_rev1.stl</code> • Print this multi-color 3D filament painting on <strong>any single-head 3D printer without an AMS</strong> by adding layer pauses!
+      </p>
+
+      <div class="settings-grid">
+        <div class="stat-box">
+          <div class="stat-label">First / Initial Layer</div>
+          <div class="stat-value" style="color:#fb923c;">${baseLayerMm.toFixed(2)} mm</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Layer Height</div>
+          <div class="stat-value" style="color:#fb923c;">${layerHeightMm.toFixed(2)} mm</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total Layers / Max Z</div>
+          <div class="stat-value">${totalLayers} Layers (${maxZ} mm)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Infill &amp; Perimeters</div>
+          <div class="stat-value" style="color:#34d399;">100% Rectilinear • 1 Wall</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Physical Dimensions</div>
+          <div class="stat-value">${grid.widthMm.toFixed(1)} &times; ${grid.heightMm.toFixed(1)} mm</div>
+        </div>
+      </div>
+
+      <div class="warning-banner">
+        <strong>⚠️ CRITICAL SLICER RULE:</strong> Set your slicer to <strong>${baseLayerMm.toFixed(2)} mm Initial Layer Height</strong>, <strong>${layerHeightMm.toFixed(2)} mm Layer Height</strong>, <strong>100% Aligned Rectilinear Infill</strong> (or <code>999</code> Top &amp; Bottom Solid Layers), and <strong>NEVER scale the Z-axis height</strong> (keep Z at 100%). You may scale X &amp; Y width/height if desired, but Z must stay untouched so layer numbers match the color swap schedule below.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>1. Quick Summary — Which Layers to Pause On</h2>
+      <p class="subtitle">Add a Pause (or Filament Change <code>M600</code>) at the <strong>start</strong> of each of these layers in your slicer's layer preview bar:</p>
+      <div class="pause-list">
+        ${pausePillsHtml}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Complete Layer-by-Layer Color Change Schedule (Interactive Checklist)</h2>
+      <p class="subtitle">Check off each step as you add the pauses in your slicer or as you swap filament spools at your printer:</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:46px;text-align:center;">Done</th>
+            <th style="width:190px;">Pause Layer &amp; Z-Height</th>
+            <th style="width:250px;">Filament Color to Load</th>
+            <th style="width:185px;">Layers Printed</th>
+            <th>Action Instructions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>3. How to Add Layer Pauses &amp; Color Changes in Your Slicer (No AMS Needed)</h2>
+      <div class="slicer-grid">
+        <div class="slicer-card">
+          <h3>Bambu Studio / OrcaSlicer (No AMS / External Spool)</h3>
+          <ol>
+            <li>Open <code>${projectName}_TailWag_rev1.stl</code>.</li>
+            <li>Set <strong>Initial Layer Height = ${baseLayerMm.toFixed(2)} mm</strong>, <strong>Layer Height = ${layerHeightMm.toFixed(2)} mm</strong>, <strong>Sparse Infill = 100%</strong>, and <strong>Top/Bottom Shell Layers = 999</strong>.</li>
+            <li>Click <strong>Slice Plate</strong> to switch to the <strong>Preview</strong> tab.</li>
+            <li>On the right vertical <strong>Layer Slider</strong>, drag the slider to <strong>${pauseLayersInline}</strong>.</li>
+            <li>At each pause layer, <strong>right-click the green <code>(+)</code> icon</strong> on the slider and select <strong>"Add Pause"</strong> (or <strong>"Change Filament"</strong>).</li>
+            <li>Click <strong>Slice Plate</strong> again and start the print with <strong>${playbook[0]?.spoolName || 'Slot #1'}</strong> loaded. When the printer pauses at each layer, unload the spool, load the next color from the table above, and press <strong>Resume</strong>!</li>
+          </ol>
+        </div>
+
+        <div class="slicer-card">
+          <h3>PrusaSlicer / SuperSlicer</h3>
+          <ol>
+            <li>Import <code>${projectName}_TailWag_rev1.stl</code>.</li>
+            <li>Set First Layer Height to <strong>${baseLayerMm.toFixed(2)} mm</strong>, Layer Height to <strong>${layerHeightMm.toFixed(2)} mm</strong>, and Infill to <strong>100% Rectilinear</strong>.</li>
+            <li>Click <strong>Slice Now</strong>.</li>
+            <li>Use the vertical orange layer slider on the right to move to <strong>${pauseLayersInline}</strong>.</li>
+            <li>Click the orange <strong><code>+</code> (Add Color Change / M600)</strong> button at each of those layers, re-slice, and export G-code.</li>
+          </ol>
+        </div>
+
+        <div class="slicer-card">
+          <h3>UltiMaker Cura / Creality Print / Anycubic</h3>
+          <ol>
+            <li>Import <code>${projectName}_TailWag_rev1.stl</code> and slice with <strong>${baseLayerMm.toFixed(2)} mm</strong> Initial Layer Height, <strong>${layerHeightMm.toFixed(2)} mm</strong> Layer Height, and <strong>100% Infill</strong>.</li>
+            <li>In Cura, open <strong>Extensions &rarr; Post Processing &rarr; Modify G-Code</strong>.</li>
+            <li>Click <strong>Add a Script &rarr; Filament Change</strong> (or <strong>Pause at Height &rarr; By Layer</strong>).</li>
+            <li>Add a script for each pause layer: <strong>${pauseItems.map((p) => `Layer ${p.startLayer}`).join(', ')}</strong>, then re-slice!</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Generates a ready-to-print Single-Extruder (No-AMS) `.ZIP` bundle containing:
+ * 1. Watertight Binary `.STL` (`${projectName}_TailWag_rev1.stl`)
+ * 2. Interactive Visual `.HTML` Layer Pause & Color-Change Guide (`${projectName}_Color_Change_Guide.html`)
+ * 3. Plain-Text Layer Swap Playbook (`${projectName}_Swap_Playbook.txt`)
+ */
+export function generateNoAmsStlPackageZip(params: {
+  projectName: string;
+  grid: HeightmapGrid;
+  baseLayerMm: number;
+  layerHeightMm: number;
+  totalLayers: number;
+  slots: LayerSwapSlot[];
+}): Uint8Array {
+  const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
+  const stlBuffer = generateBinaryStlFromGrid(grid);
+  const htmlGuide = generateSingleExtruderHtmlGuide(
+    projectName,
+    grid,
+    baseLayerMm,
+    layerHeightMm,
+    totalLayers,
+    slots
+  );
+  const txtPlaybook = generatePlaybookText(
+    projectName,
+    grid,
+    baseLayerMm,
+    layerHeightMm,
+    totalLayers,
+    slots
+  );
+
+  return zipSync(
+    {
+      [`${projectName}_TailWag_rev1.stl`]: new Uint8Array(stlBuffer),
+      [`${projectName}_Color_Change_Guide.html`]: strToU8(htmlGuide),
+      [`${projectName}_Swap_Playbook.txt`]: strToU8(txtPlaybook),
+    },
+    { level: 6 }
+  );
 }
 
 /**

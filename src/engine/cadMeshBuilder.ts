@@ -154,6 +154,7 @@ export function buildHeightmapGrid(params: {
   widthMm: number;
   heightMm: number;
   baseLayerMm: number;
+  baseSolidThicknessMm?: number;
   layerHeightMm: number;
   totalLayers: number;
   gamma: number;
@@ -168,6 +169,7 @@ export function buildHeightmapGrid(params: {
     widthMm,
     heightMm,
     baseLayerMm,
+    baseSolidThicknessMm,
     layerHeightMm,
     totalLayers,
     gamma,
@@ -325,7 +327,11 @@ export function buildHeightmapGrid(params: {
         }
       }
 
-      const minBaseLayer = Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+      const targetBaseLayers =
+        baseSolidThicknessMm !== undefined
+          ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
+          : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+      const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
       let cellLum = enhancedLum[idx];
       let discreteLayer = minBaseLayer + Math.round(cellLum * (totalLayers - minBaseLayer));
       let zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
