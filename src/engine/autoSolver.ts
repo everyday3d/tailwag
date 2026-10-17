@@ -400,7 +400,10 @@ export function solveOptimalPalettes(
     if (info.isWhite) {
       return 0.90 + lum * 0.07 + (1 / Math.max(0.5, s.td)) * 0.02;
     }
-    return 0.20 + lum * 0.65;
+    const sLab = rgbToLab(hexToRgb01(s.hex));
+    const sHue = getHueSector(sLab);
+    const hueOffset = (sHue.sector === 'green' || sHue.sector === 'cyan') ? -0.10 : 0;
+    return 0.20 + lum * 0.65 + hueOffset;
   };
 
   /**
@@ -471,15 +474,16 @@ export function solveOptimalPalettes(
       const lut = buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots);
       const lutLabs = lut.map((entry) => rgbToLab(entry.rgb));
 
+      // Forward-Simulation Scoring (No Blended Surprises):
+      // Scores the actual physically-blended transmitted color of the stacked layers
+      // against the target image using CIEDE2000 Delta E rather than raw flat swatches.
       let totalWeightedError = 0;
       for (let l = 0; l < totalLayers; l++) {
         const bucket = layerBuckets[l];
         if (bucket.weight <= 0) continue;
         const lutLab = lutLabs[l];
-        const activeSpoolLab = rgbToLab(hexToRgb01(lut[l].activeSpool.hex));
         const blendErr = ciede2000(bucket.lab, lutLab);
-        const surfaceErr = ciede2000(bucket.lab, activeSpoolLab);
-        totalWeightedError += (blendErr * 0.82 + surfaceErr * 0.18) * bucket.weight;
+        totalWeightedError += blendErr * bucket.weight;
       }
 
       // Cluster Hue Coverage Error: ensures the physical stack achieves the genuine chromatic colors
@@ -497,7 +501,66 @@ export function solveOptimalPalettes(
         clusterCoverageError += minClusterD * effectiveWeight * totalSampleWeight;
       }
 
-      const compositeError = totalWeightedError * 0.60 + clusterCoverageError * 0.40;
+      // Subtractive Inter-Layer Mud Penalty:
+      // Penalizes unwanted muddy cross-blends (e.g., high-TD warm colors over dark cool bases,
+      // cool green/cyan over warm skin, or simulated olive green distortion on human faces)
+      let mudPenalty = 0;
+      for (let i = 0; i < ordered.length - 1; i++) {
+        const sLower = ordered[i];
+        const sUpper = ordered[i + 1];
+        const lowerLab = rgbToLab(hexToRgb01(sLower.hex));
+        const upperLab = rgbToLab(hexToRgb01(sUpper.hex));
+        const lowerLum = getSpoolLuminance(sLower);
+        const upperHue = getHueSector(upperLab);
+
+        // Mud Penalty A: High-TD Warm Yellow/Gold directly over Dark Cool Base without warm insulator (Olive Mud)
+        const isDarkCoolBase = lowerLum < 0.35 && lowerLab.a <= 2.5;
+        const isHighTdWarmYellow =
+          sUpper.td > 2.0 &&
+          (upperHue.sector === 'yellow' || (upperLab.b > 20 && upperLab.a >= -2 && upperLab.a < 12));
+        if (isDarkCoolBase && isHighTdWarmYellow) {
+          mudPenalty += 35.0 * totalSampleWeight;
+        }
+
+        // Mud Penalty B: Cool Green / Cyan directly over Warm Skin / Tan / Brown (Necrotic Zombie Skin)
+        const isWarmLower = lowerLab.a >= 5.0 && lowerLab.b >= 8.0;
+        const isCoolGreenCyanUpper =
+          upperHue.sector === 'green' ||
+          upperHue.sector === 'cyan' ||
+          upperLab.a < -6.0;
+        if (isWarmLower && isCoolGreenCyanUpper) {
+          mudPenalty += 45.0 * totalSampleWeight;
+        }
+
+        // Mud Penalty C: High-TD Yellow/Gold directly over Black without warm insulator
+        if (lowerLum < 0.08 && isHighTdWarmYellow) {
+          mudPenalty += 30.0 * totalSampleWeight;
+        }
+      }
+
+      // Mud Penalty D: Forward-Simulated Hue Distortion on Warm Human Skin Tones:
+      for (let l = 0; l < totalLayers; l++) {
+        const bucket = layerBuckets[l];
+        if (bucket.weight <= 0) continue;
+        const tHue = getHueSector(bucket.lab);
+        const isTargetWarmSkin =
+          bucket.lab.L >= 32 &&
+          bucket.lab.L <= 82 &&
+          bucket.lab.a >= 3.5 &&
+          bucket.lab.b >= 7.0 &&
+          (tHue.sector === 'orange' || tHue.sector === 'red');
+        if (isTargetWarmSkin) {
+          const simLab = lutLabs[l];
+          const sHue = getHueSector(simLab);
+          const isSimGreenOlive =
+            sHue.sector === 'green' || (sHue.sector === 'yellow' && simLab.a < 2.0);
+          if (isSimGreenOlive || (simLab.a < 1.0 && simLab.b > 8.0)) {
+            mudPenalty += 40.0 * bucket.weight;
+          }
+        }
+      }
+
+      const compositeError = totalWeightedError * 0.60 + clusterCoverageError * 0.40 + mudPenalty;
       return {
         avgDe: compositeError / Math.max(1e-5, totalSampleWeight),
         slots,
@@ -554,11 +617,7 @@ export function solveOptimalPalettes(
       .sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
     const whites = pool
       .filter((s) => classifyAndScoreSpool(s).isWhite)
-      .sort((a, b) => {
-        const lumDiff = getSpoolLuminance(b) - getSpoolLuminance(a);
-        if (Math.abs(lumDiff) > 0.02) return lumDiff;
-        return Math.abs(a.td - 5.0) - Math.abs(b.td - 5.0);
-      });
+      .sort((a, b) => b.td - a.td);
     const shadowGreys = pool
       .filter((s) => {
         const info = classifyAndScoreSpool(s);
@@ -616,7 +675,7 @@ export function solveOptimalPalettes(
       picked.push(s);
     };
 
-    // 1. Primary Black Shadow Base + Primary Crisp White Highlight
+    // 1. Primary Black Shadow Base + Primary Crisp White Highlight (Locked per Fallback Safety Rule)
     addSpool(blacks[0] || pool[0], false, false);
     addSpool(whites[0] || pool[pool.length - 1], false, false);
 
@@ -639,7 +698,7 @@ export function solveOptimalPalettes(
       if (countLimit <= 4 && picked.length >= 3 && clusterMatchedSpools.length >= 2) {
         break;
       }
-      addSpool(cs, false, true);
+      addSpool(cs, false, false);
     }
 
     // 2b. Ensure Essential Image Hues (e.g. green grass, blue sky, red suit) each get representation
@@ -655,6 +714,8 @@ export function solveOptimalPalettes(
         if (usedIds.has(s.id) || usedHexes.has(s.hex.toLowerCase())) continue;
         if (getSpoolHue(s).sector !== eh) continue;
         const info = classifyAndScoreSpool(s);
+        // Only accept if spool actually matches an image cluster or has solid sample support!
+        if (info.minClusterDe00 > 22.0 && info.hueSupportRatio < 0.04) continue;
         const score = info.minClusterDe00 - Math.min(8, info.hueSupportRatio * 50);
         if (score < bestHueScore) {
           bestHueScore = score;
@@ -780,23 +841,44 @@ export function solveOptimalPalettes(
   // Always compute the optimal 4-color stack (with exhaustive pair search + Beer-Lambert coordinate descent)
   let best4ColorMatch = buildBestStackFromPool(effectivePool, 1.0, 4);
   {
-    const blacks = effectivePool.filter((s) => classifyAndScoreSpool(s).isBlack);
+    const blacks = effectivePool
+      .filter((s) => classifyAndScoreSpool(s).isBlack)
+      .sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
     const whites = effectivePool
       .filter((s) => classifyAndScoreSpool(s).isWhite)
-      .sort((a, b) => Math.abs(a.td - 5.0) - Math.abs(b.td - 5.0));
+      .sort((a, b) => b.td - a.td);
+
+    const hasWarmSkinSubject = samples.some((s) => {
+      const h = getHueSector(s.lab);
+      return (
+        s.lab.L >= 32 &&
+        s.lab.L <= 80 &&
+        s.lab.a >= 4.0 &&
+        s.lab.b >= 8.0 &&
+        (h.sector === 'orange' || h.sector === 'red')
+      );
+    });
+    const hasEssentialGreen = essentialHues.includes('green');
+
     const validMids = effectivePool.filter((s) => {
       const info = classifyAndScoreSpool(s);
       if (info.isBlack || info.isWhite) return false;
+      const sLab = rgbToLab(hexToRgb01(s.hex));
+      const sHue = getHueSector(sLab);
+
+      // Protect warm portraits: do not allow green/cyan filaments into midtones unless photo has true green
+      if (hasWarmSkinSubject && !hasEssentialGreen) {
+        if (sHue.sector === 'green' || sHue.sector === 'cyan' || sLab.a < -4.0) {
+          return false;
+        }
+      }
+
       if (!info.isNeutral) {
-        const sHue = getHueSector(rgbToLab(hexToRgb01(s.hex)));
         if (
           sHue.sector !== 'neutral' &&
           !essentialHues.includes(sHue.sector) &&
           (hueSectorWeights[sHue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) < 0.015
         ) {
-          return false;
-        }
-        if (getSpoolLuminance(s) > 0.68 && best4ColorMatch.distinctChromaticsCount >= 2) {
           return false;
         }
       }
@@ -811,19 +893,30 @@ export function solveOptimalPalettes(
         const infoI = classifyAndScoreSpool(validMids[i]);
         const infoJ = classifyAndScoreSpool(validMids[j]);
 
-        // When the photo has essential chromatic hues (e.g. red hearts, purple flowers),
-        // do not allow both midtones to be neutral greys, which drops the chromatic subject!
-        if (essentialHues.length > 0 && infoI.isNeutral && infoJ.isNeutral) {
+        // When the photo has essential chromatic hues:
+        const hueI = getHueSector(rgbToLab(hexToRgb01(validMids[i].hex))).sector;
+        const hueJ = getHueSector(rgbToLab(hexToRgb01(validMids[j].hex))).sector;
+
+        // In 4-color mode, with only 2 midtone slots:
+        // 1. Never allow two chromatic spools in the SAME hue family if another essential hue exists!
+        if (hueI !== 'neutral' && hueI === hueJ && essentialHues.some((h) => h !== hueI)) {
           continue;
         }
 
-        // Also ensure at least one midtone covers an essential hue if essentialHues are present
-        if (essentialHues.length > 0) {
-          const hueI = getHueSector(rgbToLab(hexToRgb01(validMids[i].hex))).sector;
-          const hueJ = getHueSector(rgbToLab(hexToRgb01(validMids[j].hex))).sector;
-          const coversEssential = essentialHues.some((h) => h === hueI || h === hueJ);
-          if (!coversEssential) {
+        // 2. When essential chromatic hues exist:
+        // The 4-color palette MUST cover the primary dominant essential hue (essentialHues[0])
+        if (essentialHues.length > 0 && !isMonochromeOrGreySubject) {
+          const coversPrimaryEssential = hueI === essentialHues[0] || hueJ === essentialHues[0];
+          if (!coversPrimaryEssential) {
             continue;
+          }
+          // If 2 or more essential hues exist, ensure both midtones cover essential hues or are neutral
+          if (essentialHues.length >= 2) {
+            const hueIOk = infoI.isNeutral || essentialHues.includes(hueI);
+            const hueJOk = infoJ.isNeutral || essentialHues.includes(hueJ);
+            if (!hueIOk || !hueJOk) {
+              continue;
+            }
           }
         }
 

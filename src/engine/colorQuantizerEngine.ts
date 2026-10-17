@@ -37,7 +37,8 @@ export type HueSectorName =
 
 export function getHueSector(lab: LABColor): { sector: HueSectorName; chroma: number; hueAngle: number } {
   const chroma = Math.hypot(lab.a, lab.b);
-  if (chroma < 7.0) {
+  const minChroma = lab.L > 65 ? 11.0 : lab.L < 35 ? (lab.b < 0 ? 16.0 : 8.5) : 7.5;
+  if (chroma < minChroma) {
     return { sector: 'neutral', chroma, hueAngle: 0 };
   }
   let deg = (Math.atan2(lab.b, lab.a) * 180) / Math.PI;
@@ -46,11 +47,11 @@ export function getHueSector(lab: LABColor): { sector: HueSectorName; chroma: nu
   let sector: HueSectorName;
   if (deg >= 340 || deg < 50) sector = 'red';
   else if (deg < 75) sector = 'orange';
-  else if (deg < 105) sector = 'yellow';
+  else if (deg < 100) sector = 'yellow';
   else if (deg < 170) sector = 'green';
-  else if (deg < 215) sector = 'cyan';
-  else if (deg < 275) sector = 'blue';
-  else if (deg < 315) sector = 'indigo';
+  else if (deg < 220) sector = 'cyan';
+  else if (deg < 290) sector = 'blue';
+  else if (deg < 320) sector = 'indigo';
   else sector = 'magenta';
 
   return { sector, chroma, hueAngle: deg };
@@ -241,15 +242,19 @@ export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[
   return rawPixels.map((p) => {
     const normL = Math.max(0, Math.min(1, (p.rawLum - pLow) / dynRange));
 
-    // Balanced radial saliency lens without hue discrimination:
-    // gentle center focus (1.35x) to edge (0.85x) so natural outdoor backdrops
-    // (lawn grass, sky, trees) are preserved fairly alongside subjects.
-    const distCenter = Math.hypot(p.nx, p.ny * 0.85);
-    let weight = distCenter <= 0.60 ? 1.35 : distCenter <= 0.88 ? 1.0 : 0.85;
+    // 1. Weighted Regional Sampling with Center-Weighted Mask:
+    // Focuses on the primary subject, strongly downweighting peripheral background noise (corners, borders, room walls, sheets)
+    const distCenterSq = p.nx * p.nx + (p.ny * 0.88) * (p.ny * 0.88);
+    const centerMask = Math.exp(-distCenterSq / (2 * 0.48 * 0.48));
+    let weight = Math.max(0.18, centerMask * 1.85);
+
+    if (p.isBorder && !p.isChromatic) {
+      weight *= 0.40;
+    }
 
     const labChroma = Math.hypot(p.lab.a, p.lab.b);
     if (labChroma >= 12.0) {
-      weight *= 1.25;
+      weight *= 1.40;
     }
 
     return {
@@ -295,19 +300,41 @@ export function analyzeImageColorClusters(
   const totalWeight = samples.reduce((acc, s) => acc + s.weight, 0);
   const k = Math.min(maxClusters, Math.max(2, samples.length));
 
-  // 1. Deterministic K-Means++ initialization (start with darkest sample, then farthest weighted ΔE00)
-  const centroids: LABColor[] = [];
-  let darkestIdx = 0;
-  for (let i = 1; i < samples.length; i++) {
-    if (samples[i].lab.L < samples[darkestIdx].lab.L) darkestIdx = i;
-  }
-  centroids.push({ ...samples[darkestIdx].lab });
+  // 1. Segment samples into luminance zones (Shadows, Midtones, Highlights)
+  // Ensures background noise is ignored and primary subject's color distribution dictates the palette
+  const shadowSamples = samples.filter((s) => s.lab.L < 32);
+  const midtoneSamples = samples.filter((s) => s.lab.L >= 32 && s.lab.L <= 72);
+  const highlightSamples = samples.filter((s) => s.lab.L > 72);
 
+  const centroids: LABColor[] = [];
+
+  // Seed 1-2 centroids in Shadows (darkest sample)
+  if (shadowSamples.length > 0) {
+    let darkest = shadowSamples[0];
+    for (const s of shadowSamples) {
+      if (s.lab.L < darkest.lab.L) darkest = s;
+    }
+    centroids.push({ ...darkest.lab });
+  } else {
+    centroids.push({ ...samples[0].lab });
+  }
+
+  // Seed 1 centroid in Highlights (brightest / highest luminance)
+  if (highlightSamples.length > 0 && centroids.length < k) {
+    let brightest = highlightSamples[0];
+    for (const s of highlightSamples) {
+      if (s.lab.L > brightest.lab.L) brightest = s;
+    }
+    centroids.push({ ...brightest.lab });
+  }
+
+  // Seed remaining centroids predominantly in Midtones (where subject, skin, core chromatic elements live)
+  const midPool = midtoneSamples.length >= 4 ? midtoneSamples : samples;
   while (centroids.length < k) {
     let bestIdx = 0;
     let bestScore = -1;
-    for (let i = 0; i < samples.length; i++) {
-      const s = samples[i];
+    for (let i = 0; i < midPool.length; i++) {
+      const s = midPool[i];
       let minDist = Infinity;
       for (const c of centroids) {
         const d = ciede2000(s.lab, c);
@@ -319,7 +346,7 @@ export function analyzeImageColorClusters(
         bestIdx = i;
       }
     }
-    centroids.push({ ...samples[bestIdx].lab });
+    centroids.push({ ...midPool[bestIdx].lab });
   }
 
   // 2. Run 10 iterations of weighted K-Means in CIE LAB
@@ -392,9 +419,9 @@ export function analyzeImageColorClusters(
     .filter((c) => {
       const wRatio = c.weight / Math.max(1e-5, totalWeight);
       const cChroma = Math.hypot(c.lab.a, c.lab.b);
-      // Keep clusters with >= 1.0% area, or small high-chroma accent elements (>= 0.5% area with chroma >= 14)
+      // Keep clusters with >= 1.0% area, or small high-chroma accent elements (>= 0.35% area with chroma >= 14)
       // so small red hearts, red lips, eye accents, or graphic icons are never erased
-      return wRatio >= 0.010 || (cChroma >= 14 && wRatio >= 0.005);
+      return wRatio >= 0.010 || (cChroma >= 14 && wRatio >= 0.0035);
     })
     .map((c) => ({
       lab: c.lab,
@@ -445,8 +472,32 @@ export function analyzeImageColorClusters(
     const { sector } = getHueSector(s.lab);
     hueSectorWeights[sector] += s.weight;
   }
-  const essentialHues: HueSectorName[] = (Object.keys(hueSectorWeights) as HueSectorName[])
-    .filter((sec) => sec !== 'neutral' && hueSectorWeights[sec] / Math.max(1e-5, totalWeight) >= 0.008);
+  const essentialHues: HueSectorName[] = (Object.keys(hueSectorWeights) as HueSectorName[]).filter((sec) => {
+    if (sec === 'neutral') return false;
+    const wRatio = hueSectorWeights[sec] / Math.max(1e-5, totalWeight);
+
+    // 1. High-chroma vivid accents (red hearts, lips, logos, flowers) with chroma >= 16 and area >= 0.4%
+    const hasAccentCluster = merged.some(
+      (c) =>
+        getHueSector(c.lab).sector === sec &&
+        Math.hypot(c.lab.a, c.lab.b) >= 16.0 &&
+        c.weight / Math.max(1e-5, totalWeight) >= 0.0035
+    );
+    if (hasAccentCluster) return true;
+
+    // 2. Strong chromatic subject (chroma >= 12 and area >= 1.5%)
+    const hasSubjectCluster = merged.some(
+      (c) =>
+        getHueSector(c.lab).sector === sec &&
+        Math.hypot(c.lab.a, c.lab.b) >= 12.0 &&
+        c.weight / Math.max(1e-5, totalWeight) >= 0.012
+    );
+    if (hasSubjectCluster && wRatio >= 0.010) return true;
+
+    // 3. Broad background zone (e.g. lawn grass, blue sky) with area >= 6%
+    return wRatio >= 0.06;
+  });
+  essentialHues.sort((a, b) => (hueSectorWeights[b] ?? 0) - (hueSectorWeights[a] ?? 0));
 
   const matchedHexSet = new Set<string>();
   let midtoneGreyWeight = 0;
@@ -470,18 +521,17 @@ export function analyzeImageColorClusters(
       const rawD = ciede2000(m.lab, sLab);
       let adjustedD = rawD;
 
-      if (chroma >= 7.0) {
-        // Cluster is chromatic (green grass, blue sky, red suit, etc.)
+      if (chroma >= 11.0) {
+        // Cluster is genuinely chromatic (green grass, blue sky, red suit, warm skin)
         if (sChroma < 6.0) {
-          // Candidate spool is neutral (gray/black/white) -> HEAVY PENALTY!
-          // Neutral spools should NEVER steal a chromatic cluster!
-          adjustedD += 18.0;
+          // Candidate spool is neutral (gray/black/white) -> penalty scales smoothly with cluster chroma
+          adjustedD += Math.min(20.0, (chroma - 8.0) * 2.5);
         } else {
           // Both are chromatic: check angular hue alignment
           const cosSim = (m.lab.a * sLab.a + m.lab.b * sLab.b) / (chroma * sChroma);
           if (cosSim < 0.25) {
-            // Alien hue family (e.g. green vs purple, blue vs red) -> HEAVY PENALTY!
-            adjustedD += 25.0;
+            // Alien hue family (e.g. green vs purple, blue vs red, green vs skin) -> HEAVY PENALTY!
+            adjustedD += 30.0;
           } else if (cosSim >= 0.65) {
             // Same hue family (e.g. grass to green spool, sky to blue spool)
             // Under Beer-Lambert transmission, translucent filaments thin out and desaturate,
