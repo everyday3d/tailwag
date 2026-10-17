@@ -11,8 +11,8 @@
     "build": "tsc && vite build && node scripts/build-electron.mjs",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite --port 5188\" \"wait-on tcp:5188 && electron .\"",
-    "electron:pack": "npm run build && electron-builder --dir",
-    "electron:dist": "npm run build && electron-builder",
+    "electron:pack": "npm run build && electron-builder --dir && powershell -ExecutionPolicy Bypass -File scripts/update-desktop-shortcut.ps1",
+    "electron:dist": "npm run build && electron-builder && powershell -ExecutionPolicy Bypass -File scripts/update-desktop-shortcut.ps1",
     "test": "vitest run"
   },
   "dependencies": {
