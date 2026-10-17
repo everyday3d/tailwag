@@ -1,7 +1,11 @@
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['electron/main.ts', 'electron/preload.ts', 'mcp/server.ts'],
+  entryPoints: {
+    main: 'electron/main.ts',
+    preload: 'electron/preload.ts',
+    'mcp-server': 'mcp/server.ts',
+  },
   bundle: true,
   platform: 'node',
   target: 'node20',
@@ -9,4 +13,4 @@ await build({
   external: ['electron'],
   format: 'cjs',
 });
-console.log('Built Electron main, preload & TailWag MCP Server bundles.');
+console.log('Built Electron main.js, preload.js & mcp-server.js bundles.');

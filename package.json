@@ -49,14 +49,25 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/icon.ico",
+      "build/icon.png"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"
       ],
-      "artifactName": "TailWag-Setup-${version}.${ext}"
+      "artifactName": "TailWag-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "TailWag-Setup-${version}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "TailWag-Portable-${version}.${ext}"
     }
   }
 }

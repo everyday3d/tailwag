@@ -5,12 +5,17 @@ import * as fs from 'fs';
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
+  const iconPath = fs.existsSync(path.join(__dirname, '../dist/icon.ico'))
+    ? path.join(__dirname, '../dist/icon.ico')
+    : path.join(__dirname, '../public/icon.ico');
+
   mainWindow = new BrowserWindow({
     width: 1640,
     height: 980,
     minWidth: 1200,
     minHeight: 760,
     title: 'TailWag Studio — 3D Filament Painting & TD Lithophane Engine',
+    icon: iconPath,
     backgroundColor: '#0b0e14',
     autoHideMenuBar: true,
     webPreferences: {
