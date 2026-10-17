@@ -361,17 +361,20 @@ export function solveOptimalPalettes(
     const info = classifyAndScoreSpool(s);
     if (info.isBlack || info.isWhite || info.isNeutral) return true;
 
-    // 1. Spool is the direct best match for an image K-Means++ cluster (>=2.0% area)
+    // 1. Spool is the direct best match for an image K-Means++ cluster (>=1.5% area or high-chroma accent >=0.5%)
     const matchesStrongCluster = clusters.some(
-      (c) => c.bestSpool?.id === s.id && c.weightRatio >= 0.020 && (c.bestSpoolDeltaE00 ?? 99) <= 22
+      (c) =>
+        c.bestSpool?.id === s.id &&
+        ((c.weightRatio >= 0.005 && (c.chroma ?? 0) >= 14) || c.weightRatio >= 0.015) &&
+        (c.bestSpoolDeltaE00 ?? 99) <= 22
     );
     if (matchesStrongCluster) return true;
 
-    // 2. Or it matches an Essential Image Hue (e.g. green grass, blue sky, red suit) that exists in the image
+    // 2. Or it matches an Essential Image Hue (e.g. green grass, blue sky, red suit, hearts) that exists in the image
     const sLab = rgbToLab(hexToRgb01(s.hex));
     const sHue = getHueSector(sLab);
     if (essentialHues.includes(sHue.sector)) {
-      if (info.minClusterDe00 <= 24.0 || info.hueSupportRatio >= 0.020) {
+      if (info.minClusterDe00 <= 24.0 || info.hueSupportRatio >= 0.008) {
         return true;
       }
     }
@@ -482,13 +485,16 @@ export function solveOptimalPalettes(
       // Cluster Hue Coverage Error: ensures the physical stack achieves the genuine chromatic colors
       let clusterCoverageError = 0;
       for (const c of clusters) {
-        if (c.weightRatio < 0.02) continue;
+        const isAccentCluster = (c.chroma ?? 0) >= 14 && c.weightRatio >= 0.005;
+        if (c.weightRatio < 0.015 && !isAccentCluster) continue;
         let minClusterD = Infinity;
         for (let l = 0; l < totalLayers; l++) {
           const d = ciede2000(c.lab, lutLabs[l]);
           if (d < minClusterD) minClusterD = d;
         }
-        clusterCoverageError += minClusterD * c.weightRatio * totalSampleWeight;
+        // Give high-chroma accent clusters (hearts, logos, details) extra weight so they are not drowned out by background
+        const effectiveWeight = isAccentCluster ? Math.max(c.weightRatio, 0.08) : c.weightRatio;
+        clusterCoverageError += minClusterD * effectiveWeight * totalSampleWeight;
       }
 
       const compositeError = totalWeightedError * 0.60 + clusterCoverageError * 0.40;
@@ -592,6 +598,13 @@ export function solveOptimalPalettes(
             (eh) => !usedHues.has(eh) && pool.some((ps) => getSpoolHue(ps).sector === eh)
           );
           if (hasUnpickedEssential) return;
+
+          // Limit spools in the same chromatic hue family based on its area ratio in the image:
+          // Accents (< 5% of photo) only need 1 spool, avoiding redundant multiple reds/blues
+          const hueWeightRatio = (hueSectorWeights[hue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight);
+          const currentCountInHue = picked.filter((p) => getSpoolHue(p).sector === hue.sector).length;
+          const maxSpoolsForHue = hueWeightRatio >= 0.35 ? 4 : hueWeightRatio >= 0.15 ? 3 : hueWeightRatio >= 0.05 ? 2 : 1;
+          if (currentCountInHue >= maxSpoolsForHue) return;
         }
       }
 
@@ -608,10 +621,12 @@ export function solveOptimalPalettes(
     addSpool(whites[0] || pool[pool.length - 1], false, false);
 
     // 2. High-Priority Cluster Spools:
-    // Add distinct chromatic spools directly matched to image K-Means++ clusters (>=2.0% area)
+    // Add distinct chromatic spools directly matched to image K-Means++ clusters (>=1.5% area or high-chroma accent >=0.5%)
     const clusterMatchedSpools = clusters
       .filter((c) => {
-        if (!c.bestSpool || c.weightRatio < 0.020 || (c.bestSpoolDeltaE00 ?? 99) > 22) return false;
+        if (!c.bestSpool || (c.bestSpoolDeltaE00 ?? 99) > 22) return false;
+        const isAccentCluster = (c.chroma ?? 0) >= 14 && c.weightRatio >= 0.005;
+        if (c.weightRatio < 0.015 && !isAccentCluster) return false;
         return true;
       })
       .map((c) => c.bestSpool!)
@@ -686,9 +701,10 @@ export function solveOptimalPalettes(
       for (const c of chromatics) {
         if (usedIds.has(c.id) || usedHexes.has(c.hex.toLowerCase())) continue;
         const cHue = getSpoolHue(c);
-        // Anti-hallucination guard: if image has < 1.5% pixels in this hue sector, skip alien spool!
+        // Anti-hallucination guard: if image has < 1.5% pixels in this hue sector and not essential, skip alien spool!
         if (
           cHue.sector !== 'neutral' &&
+          !essentialHues.includes(cHue.sector) &&
           (hueSectorWeights[cHue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) < 0.015
         ) {
           continue;
@@ -714,6 +730,7 @@ export function solveOptimalPalettes(
       .filter((c) => {
         const hue = getSpoolHue(c);
         if (hue.sector === 'neutral') return true;
+        if (essentialHues.includes(hue.sector)) return true;
         return (hueSectorWeights[hue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) >= 0.015;
       })
       .sort((a, b) => {
@@ -767,16 +784,14 @@ export function solveOptimalPalettes(
     const whites = effectivePool
       .filter((s) => classifyAndScoreSpool(s).isWhite)
       .sort((a, b) => Math.abs(a.td - 5.0) - Math.abs(b.td - 5.0));
-    const allowNeutralMidsIn4 =
-      isMonochromeOrGreySubject || best4ColorMatch.distinctChromaticsCount < 2;
     const validMids = effectivePool.filter((s) => {
       const info = classifyAndScoreSpool(s);
       if (info.isBlack || info.isWhite) return false;
-      if (info.isNeutral && !allowNeutralMidsIn4) return false;
       if (!info.isNeutral) {
         const sHue = getHueSector(rgbToLab(hexToRgb01(s.hex)));
         if (
           sHue.sector !== 'neutral' &&
+          !essentialHues.includes(sHue.sector) &&
           (hueSectorWeights[sHue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) < 0.015
         ) {
           return false;
@@ -793,6 +808,25 @@ export function solveOptimalPalettes(
     for (let i = 0; i < validMids.length; i++) {
       for (let j = i + 1; j < validMids.length; j++) {
         if (validMids[i].hex.toLowerCase() === validMids[j].hex.toLowerCase()) continue;
+        const infoI = classifyAndScoreSpool(validMids[i]);
+        const infoJ = classifyAndScoreSpool(validMids[j]);
+
+        // When the photo has essential chromatic hues (e.g. red hearts, purple flowers),
+        // do not allow both midtones to be neutral greys, which drops the chromatic subject!
+        if (essentialHues.length > 0 && infoI.isNeutral && infoJ.isNeutral) {
+          continue;
+        }
+
+        // Also ensure at least one midtone covers an essential hue if essentialHues are present
+        if (essentialHues.length > 0) {
+          const hueI = getHueSector(rgbToLab(hexToRgb01(validMids[i].hex))).sector;
+          const hueJ = getHueSector(rgbToLab(hexToRgb01(validMids[j].hex))).sector;
+          const coversEssential = essentialHues.some((h) => h === hueI || h === hueJ);
+          if (!coversEssential) {
+            continue;
+          }
+        }
+
         const trial = evaluateStack([b0, validMids[i], validMids[j], w0], true);
         if (trial.avgDe < best4ColorMatch.avgDe) {
           best4ColorMatch = {

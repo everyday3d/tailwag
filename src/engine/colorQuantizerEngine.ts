@@ -44,13 +44,13 @@ export function getHueSector(lab: LABColor): { sector: HueSectorName; chroma: nu
   if (deg < 0) deg += 360;
 
   let sector: HueSectorName;
-  if (deg >= 345 || deg < 25) sector = 'red';
-  else if (deg < 65) sector = 'orange';
+  if (deg >= 340 || deg < 50) sector = 'red';
+  else if (deg < 75) sector = 'orange';
   else if (deg < 105) sector = 'yellow';
   else if (deg < 170) sector = 'green';
   else if (deg < 215) sector = 'cyan';
   else if (deg < 275) sector = 'blue';
-  else if (deg < 320) sector = 'indigo';
+  else if (deg < 315) sector = 'indigo';
   else sector = 'magenta';
 
   return { sector, chroma, hueAngle: deg };
@@ -389,7 +389,13 @@ export function analyzeImageColorClusters(
   }
 
   const validRaw = rawClusters
-    .filter((c) => c.weight / Math.max(1e-5, totalWeight) >= 0.02)
+    .filter((c) => {
+      const wRatio = c.weight / Math.max(1e-5, totalWeight);
+      const cChroma = Math.hypot(c.lab.a, c.lab.b);
+      // Keep clusters with >= 1.0% area, or small high-chroma accent elements (>= 0.5% area with chroma >= 14)
+      // so small red hearts, red lips, eye accents, or graphic icons are never erased
+      return wRatio >= 0.010 || (cChroma >= 14 && wRatio >= 0.005);
+    })
     .map((c) => ({
       lab: c.lab,
       rgb: { r: c.r / c.weight, g: c.g / c.weight, b: c.b / c.weight },
@@ -440,7 +446,7 @@ export function analyzeImageColorClusters(
     hueSectorWeights[sector] += s.weight;
   }
   const essentialHues: HueSectorName[] = (Object.keys(hueSectorWeights) as HueSectorName[])
-    .filter((sec) => sec !== 'neutral' && hueSectorWeights[sec] / Math.max(1e-5, totalWeight) >= 0.025);
+    .filter((sec) => sec !== 'neutral' && hueSectorWeights[sec] / Math.max(1e-5, totalWeight) >= 0.008);
 
   const matchedHexSet = new Set<string>();
   let midtoneGreyWeight = 0;
@@ -528,7 +534,7 @@ export function analyzeImageColorClusters(
     clusters,
     intrinsicColorCount: Math.max(2, intrinsicColorCount),
     distinctMatchedSpoolCount: Math.max(2, matchedHexSet.size),
-    isMonochromeOrGreySubject: midtoneGreyWeight / Math.max(1e-5, midtoneTotalWeight) >= 0.58,
+    isMonochromeOrGreySubject: essentialHues.length === 0 && midtoneGreyWeight / Math.max(1e-5, midtoneTotalWeight) >= 0.58,
     essentialHues,
     hueSectorWeights,
   };
