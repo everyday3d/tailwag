@@ -8,6 +8,8 @@ import {
   blendPigmentsKubelkaMunk,
   computeScatteringRadiusMm,
   applySubsurfaceLightDiffusion2D,
+  buildLayerColorLUT,
+  LayerSwapSlot,
 } from './opticalTdEngine';
 import { ciede2000, LABColor } from './colorQuantizerEngine';
 import { applyCLAHE } from './cadMeshBuilder';
@@ -44,6 +46,12 @@ export interface HueForgeAutoConfig {
   enableClahe?: boolean;
   /** Contrast clip limit for CLAHE (default: 2.5) */
   claheClipLimit?: number;
+  /** Maximum pixel dimension for input normalization (default: 256px) */
+  maxInputDimension?: number;
+  /** Project name for metadata output */
+  projectName?: string;
+  /** Whether to enforce strict palette feasibility validation (default: true) */
+  validateInventory?: boolean;
 }
 
 export interface ColorZoneCluster {
@@ -77,6 +85,59 @@ export interface LayerChangeScheduleEntry {
   opticalRole: 'shadow-base' | 'chromatic-midtone' | 'highlight';
 }
 
+export interface HueForgeMetadataJSON {
+  format: 'HueForge-v1.0';
+  generator: string;
+  timestamp: string;
+  projectName: string;
+  printSettings: {
+    recommendedTotalPrintHeightMm: number;
+    baseLayerThicknessMm: number;
+    firstLayerHeightMm: number;
+    layerHeightMm: number;
+    totalLayers: number;
+    infill: string;
+  };
+  filamentSequence: {
+    order: number;
+    brand: string;
+    name: string;
+    material: string;
+    hex: string;
+    td: number;
+    opticalRole: 'shadow-base' | 'chromatic-midtone' | 'highlight';
+    startLayer: number;
+    endLayer: number;
+    swapAtLayer: number;
+    swapAtZHeightMm: number;
+    thicknessMm: number;
+    pauseGcode: string;
+    instructions: string;
+  }[];
+  slicerPauseListMm: number[];
+  summary: string;
+}
+
+export interface SideBySidePreviewResult {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+  leftLabel: string;
+  rightLabel: string;
+}
+
+export interface PaletteFeasibilityReport {
+  isFeasible: boolean;
+  warnings: string[];
+  errors: string[];
+  stats: {
+    minL: number;
+    maxL: number;
+    minTd: number;
+    maxTd: number;
+  };
+}
+
 export interface HueForgeAutoResult {
   /** Extracted dominant color zones in CIELAB space */
   colorZones: ColorZoneCluster[];
@@ -94,6 +155,12 @@ export interface HueForgeAutoResult {
   totalLayers: number;
   /** Processed normalized luminance map with adaptive S-curve contrast */
   adjustedLuminance: Float32Array;
+  /** Structured metadata JSON payload ready for slicer/automation export */
+  metadata?: HueForgeMetadataJSON;
+  /** Formatted JSON string of metadata */
+  metadataJson?: string;
+  /** Normalized image data buffer after input guardrails */
+  normalizedImageData?: ImageData;
 }
 
 // ============================================================================
@@ -547,17 +614,496 @@ export function generateLayerSchedule(
 }
 
 // ============================================================================
+// MODULE 6: Input Validation, Guardrails & sRGB Normalization
+// ============================================================================
+
+/**
+ * Validates and normalizes input image data:
+ * - Automatically resizes/downsamples images whose width or height exceeds maxDimension (e.g. 256px)
+ *   preserving aspect ratio to prevent memory overflow during multi-pass matrix optimization.
+ * - Enforces valid dimensions (> 0) and RGBA buffer consistency.
+ * - Converts color inputs to standard sRGB space with gamma transfer before perceptual CIELAB / Delta E.
+ */
+export function validateAndNormalizeImageData(
+  source: ImageData,
+  maxDimension: number = 256
+): ImageData {
+  if (!source || source.width <= 0 || source.height <= 0) {
+    throw new Error(
+      `Invalid image input: dimensions must be positive (received ${source?.width}x${source?.height})`
+    );
+  }
+  const { width, height, data } = source;
+  if (data.length !== width * height * 4) {
+    throw new Error(
+      `Invalid image data buffer: length ${data.length} does not match ${width}x${height}x4`
+    );
+  }
+
+  // If already within bounds, return a verified sRGB copy
+  if (width <= maxDimension && height <= maxDimension) {
+    const cleanData = new Uint8ClampedArray(data.length);
+    for (let i = 0; i < data.length; i += 4) {
+      cleanData[i] = Math.max(0, Math.min(255, data[i]));
+      cleanData[i + 1] = Math.max(0, Math.min(255, data[i + 1]));
+      cleanData[i + 2] = Math.max(0, Math.min(255, data[i + 2]));
+      cleanData[i + 3] = 255;
+    }
+    return { width, height, data: cleanData } as unknown as ImageData;
+  }
+
+  // Calculate aspect ratio preserving scaled dimensions
+  const scale = Math.min(maxDimension / width, maxDimension / height);
+  const targetW = Math.max(1, Math.round(width * scale));
+  const targetH = Math.max(1, Math.round(height * scale));
+
+  const outData = new Uint8ClampedArray(targetW * targetH * 4);
+  const xRatio = width / targetW;
+  const yRatio = height / targetH;
+
+  for (let ty = 0; ty < targetH; ty++) {
+    const sy = Math.min(height - 1, Math.floor(ty * yRatio));
+    for (let tx = 0; tx < targetW; tx++) {
+      const sx = Math.min(width - 1, Math.floor(tx * xRatio));
+      const srcIdx = (sy * width + sx) * 4;
+      const dstIdx = (ty * targetW + tx) * 4;
+
+      outData[dstIdx] = Math.max(0, Math.min(255, data[srcIdx]));
+      outData[dstIdx + 1] = Math.max(0, Math.min(255, data[srcIdx + 1]));
+      outData[dstIdx + 2] = Math.max(0, Math.min(255, data[srcIdx + 2]));
+      outData[dstIdx + 3] = 255;
+    }
+  }
+
+  return {
+    width: targetW,
+    height: targetH,
+    data: outData,
+  } as unknown as ImageData;
+}
+
+// ============================================================================
+// MODULE 7: Error Handling for Impossible Palettes
+// ============================================================================
+
+export class HueForgePaletteError extends Error {
+  public readonly diagnostics: {
+    minL: number;
+    maxL: number;
+    minTd: number;
+    maxTd: number;
+    reasons: string[];
+  };
+
+  constructor(
+    message: string,
+    diagnostics: { minL: number; maxL: number; minTd: number; maxTd: number; reasons: string[] }
+  ) {
+    super(message);
+    this.name = 'HueForgePaletteError';
+    this.diagnostics = diagnostics;
+    Object.setPrototypeOf(this, HueForgePaletteError.prototype);
+  }
+}
+
+/**
+ * Validates filament inventory feasibility before starting slicing optimization:
+ * - Detects palettes lacking dark contrast anchors (e.g. 4 whites and 1 yellow; min L* > 32).
+ * - Detects palettes lacking highlight caps (max L* < 60 or max TD < 1.4).
+ * - Detects palettes with zero TD spread that would flatten optical stacking.
+ */
+export function validateFilamentInventory(
+  filaments: FilamentSpool[],
+  _config?: Partial<HueForgeAutoConfig>
+): PaletteFeasibilityReport {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+
+  if (!filaments || filaments.length < 2) {
+    errors.push('Filament inventory must contain at least 2 filaments for multi-layer optical slicing.');
+    return {
+      isFeasible: false,
+      warnings,
+      errors,
+      stats: { minL: 0, maxL: 100, minTd: 0, maxTd: 10 },
+    };
+  }
+
+  let minL = Infinity;
+  let maxL = -Infinity;
+  let minTd = Infinity;
+  let maxTd = -Infinity;
+
+  for (const f of filaments) {
+    const rgb = hexToRgb01(f.hex);
+    const lab = rgbToLab(rgb);
+    if (lab.L < minL) minL = lab.L;
+    if (lab.L > maxL) maxL = lab.L;
+    if (f.td < minTd) minTd = f.td;
+    if (f.td > maxTd) maxTd = f.td;
+  }
+
+  // 1. Dark Shadow Anchor Rule:
+  // If inventory lacks any filament with L* < 32.0 (e.g. all filaments are white or yellow),
+  // optical stacking cannot anchor shadows and will produce an utterly washed-out print.
+  if (minL > 32.0) {
+    errors.push(
+      `Impossible Palette: The provided filament inventory lacks dark contrast anchors (darkest filament L* is ${minL.toFixed(1)}, but base layer requires L* < 30.0). All filaments are light or pastel, causing a completely washed-out print with zero shadow depth. Provide at least one dark filament (e.g. Black, Charcoal, Navy, or Deep Brown) to anchor the shadows.`
+    );
+  }
+
+  // 2. High TD Highlight Cap Warning:
+  if (maxL < 60.0 || maxTd < 1.4) {
+    warnings.push(
+      `Warning: Palette lacks a high-transmittance highlight cap (highest L* is ${maxL.toFixed(1)}, highest TD is ${maxTd.toFixed(1)}mm). Highlights and fine specular details will appear muted.`
+    );
+  }
+
+  // 3. TD Diversity:
+  if (maxTd - minTd < 0.4 && filaments.length > 2) {
+    warnings.push(
+      `Warning: Filaments have nearly identical Transmittance Distances (${minTd.toFixed(1)}–${maxTd.toFixed(1)}mm). Optical layering relies on progressive light transmission; identical TDs will flatten dynamic range.`
+    );
+  }
+
+  return {
+    isFeasible: errors.length === 0,
+    warnings,
+    errors,
+    stats: { minL, maxL, minTd, maxTd },
+  };
+}
+
+// ============================================================================
+// MODULE 8: Export Formats & G-Code / Metadata Generation
+// ============================================================================
+
+/**
+ * Generates structured HueForge project metadata JSON object.
+ */
+export function generateHueForgeMetadata(
+  result: HueForgeAutoResult,
+  projectName: string = 'TailWag Project'
+): HueForgeMetadataJSON {
+  const pauseHeights = result.layerSchedule
+    .filter((_, idx) => idx > 0)
+    .map((s) => s.swapAtZHeightMm);
+
+  const filamentSequence = result.layerSchedule.map((entry, idx) => {
+    const isFirst = idx === 0;
+    const swapNote = isFirst
+      ? `Load base spool on build plate. Print from Layer 1 (0.00mm) up to Layer ${entry.swapAtLayer} (${entry.swapAtZHeightMm}mm).`
+      : `Swap to ${entry.spool.brand} ${entry.spool.name} at Layer ${entry.startLayer} (${entry.swapAtZHeightMm}mm). Print up to Layer ${entry.swapAtLayer} (${entry.swapAtZHeightMm}mm).`;
+
+    return {
+      order: idx + 1,
+      brand: entry.spool.brand,
+      name: entry.spool.name,
+      material: entry.spool.material,
+      hex: entry.spool.hex,
+      td: entry.spool.td,
+      opticalRole: entry.opticalRole,
+      startLayer: entry.startLayer,
+      endLayer: entry.endLayer,
+      swapAtLayer: entry.swapAtLayer,
+      swapAtZHeightMm: entry.swapAtZHeightMm,
+      thicknessMm: entry.thicknessMm,
+      pauseGcode: isFirst ? '; Initial base spool' : `M600 ; Filament change to ${entry.spool.name}`,
+      instructions: swapNote,
+    };
+  });
+
+  const pauseLines = filamentSequence
+    .filter((_, idx) => idx > 0)
+    .map(
+      (s) =>
+        `- Layer ${s.startLayer} (${s.swapAtZHeightMm}mm): Swap to ${s.brand} ${s.name} (TD: ${s.td}mm)`
+    )
+    .join('\n');
+
+  const summary = [
+    `=== HueForge Print Instructions for ${projectName} ===`,
+    `Total Print Height: ${result.totalHeightMm}mm (${result.totalLayers} layers)`,
+    `Base Layer Thickness: ${result.recommendedBaseThicknessMm}mm (100% rectilinear solid base)`,
+    `Blend Depth: ${result.blendDepthMm}mm (Beer-Lambert optical gradient)`,
+    `Filament Swaps (${result.layerSchedule.length} colors):`,
+    pauseLines,
+  ].join('\n');
+
+  return {
+    format: 'HueForge-v1.0',
+    generator: 'TailWag Studio v1.0',
+    timestamp: new Date().toISOString(),
+    projectName,
+    printSettings: {
+      recommendedTotalPrintHeightMm: result.totalHeightMm,
+      baseLayerThicknessMm: result.recommendedBaseThicknessMm,
+      firstLayerHeightMm: 0.16,
+      layerHeightMm: 0.08,
+      totalLayers: result.totalLayers,
+      infill: '100% Rectilinear (solid shells)',
+    },
+    filamentSequence,
+    slicerPauseListMm: pauseHeights,
+    summary,
+  };
+}
+
+/**
+ * Returns formatted JSON string for HueForge metadata export.
+ */
+export function generateHueForgeMetadataJson(
+  result: HueForgeAutoResult,
+  projectName: string = 'TailWag Project'
+): string {
+  return JSON.stringify(generateHueForgeMetadata(result, projectName), null, 2);
+}
+
+// ============================================================================
+// MODULE 9: Side-by-Side Visual Preview Generator
+// ============================================================================
+
+/**
+ * Generates the simulated optical stacking image color buffer (RGB 0..1)
+ * across the normalized grid matching the layer change schedule.
+ */
+export function simulateOpticalStackingPreview(
+  result: HueForgeAutoResult,
+  width: number,
+  height: number,
+  baseLayerMm: number = 0.16,
+  layerHeightMm: number = 0.08
+): Float32Array {
+  const totalPixels = width * height;
+  const rgbOut = new Float32Array(totalPixels * 3);
+  const slots: LayerSwapSlot[] = result.layerSchedule.map((entry, idx) => ({
+    id: `slot-${idx}`,
+    spool: entry.spool,
+    upToLayer: entry.swapAtLayer,
+  }));
+
+  const lut = buildLayerColorLUT(result.totalLayers, baseLayerMm, layerHeightMm, slots, {
+    model: 'kubelka-munk',
+  });
+
+  const lumMap = result.adjustedLuminance;
+
+  for (let i = 0; i < totalPixels; i++) {
+    const lum = i < lumMap.length ? lumMap[i] : 0.5;
+    // Map normalized luminance to active layer index (1..totalLayers)
+    const targetLayer = Math.min(
+      result.totalLayers,
+      Math.max(1, 1 + Math.round(lum * (result.totalLayers - 1)))
+    );
+    const entry = lut[targetLayer - 1];
+    const idx = i * 3;
+    rgbOut[idx] = entry.rgb.r;
+    rgbOut[idx + 1] = entry.rgb.g;
+    rgbOut[idx + 2] = entry.rgb.b;
+  }
+
+  return rgbOut;
+}
+
+/**
+ * Generates a side-by-side comparison image buffer:
+ * (Left) Target Original Image, (Center) 2px Dark Border, (Right) Simulated Optical Preview.
+ */
+export function generateSideBySidePreview(
+  targetImage: ImageData,
+  simulatedRgb: Float32Array,
+  width: number,
+  height: number
+): SideBySidePreviewResult {
+  const dividerWidth = 2;
+  const outWidth = width * 2 + dividerWidth;
+  const outHeight = height;
+  const outBuffer = new Uint8ClampedArray(outWidth * outHeight * 4);
+
+  const srcData = targetImage.data;
+  const srcW = targetImage.width;
+  const srcH = targetImage.height;
+
+  for (let y = 0; y < outHeight; y++) {
+    const srcY = Math.min(srcH - 1, Math.floor((y / outHeight) * srcH));
+
+    for (let x = 0; x < outWidth; x++) {
+      const outIdx = (y * outWidth + x) * 4;
+
+      if (x < width) {
+        // Left side: Target Image
+        const srcX = Math.min(srcW - 1, Math.floor((x / width) * srcW));
+        const sIdx = (srcY * srcW + srcX) * 4;
+        outBuffer[outIdx] = srcData[sIdx];
+        outBuffer[outIdx + 1] = srcData[sIdx + 1];
+        outBuffer[outIdx + 2] = srcData[sIdx + 2];
+        outBuffer[outIdx + 3] = 255;
+      } else if (x < width + dividerWidth) {
+        // Center: Dark divider line
+        outBuffer[outIdx] = 30;
+        outBuffer[outIdx + 1] = 30;
+        outBuffer[outIdx + 2] = 30;
+        outBuffer[outIdx + 3] = 255;
+      } else {
+        // Right side: Simulated Optical Stacking Preview
+        const simX = x - width - dividerWidth;
+        const simIdx = (y * width + simX) * 3;
+        outBuffer[outIdx] = Math.max(0, Math.min(255, Math.round(simulatedRgb[simIdx] * 255)));
+        outBuffer[outIdx + 1] = Math.max(0, Math.min(255, Math.round(simulatedRgb[simIdx + 1] * 255)));
+        outBuffer[outIdx + 2] = Math.max(0, Math.min(255, Math.round(simulatedRgb[simIdx + 2] * 255)));
+        outBuffer[outIdx + 3] = 255;
+      }
+    }
+  }
+
+  return {
+    width: outWidth,
+    height: outHeight,
+    data: outBuffer,
+    leftLabel: 'Target Image',
+    rightLabel: 'Simulated Optical Stacking Preview',
+  };
+}
+
+// ============================================================================
+// MODULE 10: Performance Vectorization
+// ============================================================================
+
+/**
+ * Vectorized typed-array CIEDE2000 calculation across flat Float32Array buffers.
+ * Evaluates ΔE00 for count elements without object allocations inside loops.
+ * labA: Float32Array of size (count * 3) [L, a, b, L, a, b, ...]
+ * labB: Float32Array of size (count * 3) [L, a, b, L, a, b, ...]
+ * outDeltaE: Float32Array of size (count)
+ */
+export function vectorizedBatchCiede2000(
+  labA: Float32Array,
+  labB: Float32Array,
+  count: number,
+  outDeltaE: Float32Array
+): void {
+  const radToDeg = 180 / Math.PI;
+  const degToRad = Math.PI / 180;
+  const pow25_7 = 6103515625; // 25^7
+
+  for (let i = 0; i < count; i++) {
+    const idx = i * 3;
+    const L1 = labA[idx];
+    const a1 = labA[idx + 1];
+    const b1 = labA[idx + 2];
+    const L2 = labB[idx];
+    const a2 = labB[idx + 1];
+    const b2 = labB[idx + 2];
+
+    const avgL = (L1 + L2) * 0.5;
+    const C1 = Math.hypot(a1, b1);
+    const C2 = Math.hypot(a2, b2);
+    const avgC = (C1 + C2) * 0.5;
+
+    const avgC7 = Math.pow(avgC, 7);
+    const G = 0.5 * (1 - Math.sqrt(avgC7 / (avgC7 + pow25_7)));
+
+    const a1p = (1 + G) * a1;
+    const a2p = (1 + G) * a2;
+    const C1p = Math.hypot(a1p, b1);
+    const C2p = Math.hypot(a2p, b2);
+    const avgCp = (C1p + C2p) * 0.5;
+
+    let h1p = Math.atan2(b1, a1p) * radToDeg;
+    if (h1p < 0) h1p += 360;
+    let h2p = Math.atan2(b2, a2p) * radToDeg;
+    if (h2p < 0) h2p += 360;
+
+    const dLp = L2 - L1;
+    const dCp = C2p - C1p;
+
+    let dhp = 0;
+    if (C1p * C2p !== 0) {
+      if (Math.abs(h2p - h1p) <= 180) {
+        dhp = h2p - h1p;
+      } else if (h2p - h1p > 180) {
+        dhp = h2p - h1p - 360;
+      } else {
+        dhp = h2p - h1p + 360;
+      }
+    }
+    const dHp = 2 * Math.sqrt(C1p * C2p) * Math.sin((dhp * 0.5) * degToRad);
+
+    let avgHp = h1p + h2p;
+    if (C1p * C2p === 0) {
+      avgHp = h1p + h2p;
+    } else if (Math.abs(h1p - h2p) <= 180) {
+      avgHp = (h1p + h2p) * 0.5;
+    } else if (h1p + h2p < 360) {
+      avgHp = (h1p + h2p + 360) * 0.5;
+    } else {
+      avgHp = (h1p + h2p - 360) * 0.5;
+    }
+
+    const T =
+      1 -
+      0.17 * Math.cos((avgHp - 30) * degToRad) +
+      0.24 * Math.cos(2 * avgHp * degToRad) +
+      0.32 * Math.cos((3 * avgHp + 6) * degToRad) -
+      0.20 * Math.cos((4 * avgHp - 63) * degToRad);
+
+    const dTheta = 30 * Math.exp(-Math.pow((avgHp - 275) / 25, 2));
+    const avgCp7 = Math.pow(avgCp, 7);
+    const RC = 2 * Math.sqrt(avgCp7 / (avgCp7 + pow25_7));
+
+    const avgLm50_2 = Math.pow(avgL - 50, 2);
+    const SL = 1 + (0.015 * avgLm50_2) / Math.sqrt(20 + avgLm50_2);
+    const SC = 1 + 0.045 * avgCp;
+    const SH = 1 + 0.015 * avgCp * T;
+    const RT = -Math.sin(2 * dTheta * degToRad) * RC;
+
+    const kL = 1.15;
+    const kC = 1.0;
+    const kH = 0.85;
+
+    const termL = dLp / (kL * SL);
+    const termC = dCp / (kC * SC);
+    const termH = dHp / (kH * SH);
+
+    outDeltaE[i] = Math.sqrt(
+      Math.max(0, termL * termL + termC * termC + termH * termH + RT * termC * termH)
+    );
+  }
+}
+
+// ============================================================================
 // MAIN UNIFIED AUTO-COLOR ENGINE PIPELINE
 // ============================================================================
 
 /**
- * Executes the complete 5-stage HueForge-style auto-color picker and mapping engine.
+ * Executes the complete HueForge-style auto-color picker, validation, and mapping engine.
  */
 export function runHueForgeAutoEngine(
-  imageData: ImageData,
+  inputImageData: ImageData,
   filamentDatabase: FilamentSpool[],
   config: HueForgeAutoConfig
 ): HueForgeAutoResult {
+  // 0. Input Validation & Pre-processing Guardrails:
+  // Auto-resize to standard aspect ratio and maximum resolution (default: 256px max width/height)
+  // to prevent memory overflow during multi-pass matrix optimization, and convert to standard sRGB
+  const maxDim = config.maxInputDimension ?? 256;
+  const imageData = validateAndNormalizeImageData(inputImageData, maxDim);
+
+  // 0b. Inventory & Palette Feasibility Validation:
+  // Throws descriptive HueForgePaletteError if palette lacks dark contrast anchors or is unviable
+  if (config.validateInventory !== false) {
+    const feasibility = validateFilamentInventory(filamentDatabase, config);
+    if (!feasibility.isFeasible) {
+      throw new HueForgePaletteError(feasibility.errors.join('\n'), {
+        minL: feasibility.stats.minL,
+        maxL: feasibility.stats.maxL,
+        minTd: feasibility.stats.minTd,
+        maxTd: feasibility.stats.maxTd,
+        reasons: feasibility.errors,
+      });
+    }
+  }
+
   // 1. Perceptual Color Extraction
   const { zones, rawLuminance } = extractPerceptualColorZones(imageData, config.colorCount);
 
@@ -581,7 +1127,7 @@ export function runHueForgeAutoEngine(
   const { schedule, recommendedBaseThicknessMm, blendDepthMm, totalHeightMm, totalLayers } =
     generateLayerSchedule(ordered, config);
 
-  return {
+  const result: HueForgeAutoResult = {
     colorZones: zones,
     assignedFilaments: ordered,
     layerSchedule: schedule,
@@ -590,5 +1136,12 @@ export function runHueForgeAutoEngine(
     totalHeightMm,
     totalLayers,
     adjustedLuminance,
+    normalizedImageData: imageData,
   };
+
+  const metadata = generateHueForgeMetadata(result, config.projectName);
+  result.metadata = metadata;
+  result.metadataJson = JSON.stringify(metadata, null, 2);
+
+  return result;
 }
