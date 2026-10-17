@@ -31,22 +31,24 @@ export function rgb01ToHex(rgb: RGB): string {
 
 /**
  * Beer-Lambert + Kubelka-Munk Subsurface Scattering optical transmission curve.
- * In HueForge / filament painting, TD (Transmission Distance in mm) is the thickness
- * where light transmission drops to ~1% (5 steps of 2x attenuation).
- * Each single 0.08mm layer step contributes a controlled perceptual tint over the underlying base layer.
+ * In HueForge / 2.5D filament painting (0.16mm initial layer + 0.08mm layer height at 100% infill),
+ * incident light passes through each 0.08mm layer, reflects off the underlying pigment, and passes
+ * back through the upper layers (double-pass front-lit transmission + scattering).
+ * This allows a filament with a given TD to produce a continuous gradient of intermediate shades
+ * as successive 0.08mm layers are stacked on top of an under-color.
  */
 export function computeLayerOpacity(thicknessMm: number, tdMm: number): number {
   if (thicknessMm <= 0) return 0;
   const safeTd = Math.max(0.1, tdMm);
-  const ratio = thicknessMm / safeTd;
-  // Calibrated Kubelka-Munk scattering constant k = 2.75 for crisp multi-layer transitions
-  const raw = 1 - Math.exp(-2.75 * Math.pow(ratio, 0.88));
+  const effectiveTd = 0.16 + 0.18 * safeTd;
+  const ratio = thicknessMm / effectiveTd;
+  const raw = 1 - Math.exp(-2.2 * Math.pow(ratio, 0.85));
   return Math.max(0, Math.min(1, raw));
 }
 
 /**
  * Computes the exact composite RGB color for every discrete layer index (1..totalLayers)
- * given the baseLayerMm, layerHeightMm, and ordered LayerSwapSlots.
+ * given the baseLayerMm (0.16mm initial layer), layerHeightMm (0.08mm), and ordered LayerSwapSlots.
  */
 export function buildLayerColorLUT(
   totalLayers: number,
@@ -59,7 +61,7 @@ export function buildLayerColorLUT(
   const sortedSlots = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
   const lut: { layer: number; zHeightMm: number; rgb: RGB; hex: string; activeSpool: FilamentSpool }[] = [];
 
-  // Start with the first (bottom/base) filament at full saturation on the build plate
+  // Layer 1 (0.16mm initial layer) starts on the build plate with the base filament
   let currentColor = hexToRgb01(sortedSlots[0].spool.hex);
 
   for (let layer = 1; layer <= totalLayers; layer++) {
@@ -68,16 +70,14 @@ export function buildLayerColorLUT(
     const filamentRgb = hexToRgb01(slot.spool.hex);
 
     if (layer === 1) {
-      // Base layer provides solid backing
-      const baseAlpha = Math.max(0.94, computeLayerOpacity(baseLayerMm, slot.spool.td));
+      // Initial 0.16mm layer on build plate establishes the base shadow color
       currentColor = {
-        r: filamentRgb.r * baseAlpha,
-        g: filamentRgb.g * baseAlpha,
-        b: filamentRgb.b * baseAlpha,
+        r: filamentRgb.r,
+        g: filamentRgb.g,
+        b: filamentRgb.b,
       };
     } else {
-      // Single layer step blending via Beer-Lambert TD transmission in perceptual sRGB space (gamma 1.35)
-      // so dark Brown/Orange layers over Black retain rich warm chroma instead of turning muddy
+      // Each 0.08mm layer optically blends with the underlying color according to its TD value
       const stepAlpha = computeLayerOpacity(layerHeightMm, slot.spool.td);
       const gamma = 1.35;
       const blendChannel = (prev: number, next: number) => {

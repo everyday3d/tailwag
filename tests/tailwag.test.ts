@@ -164,18 +164,59 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
 
     for (const colorCount of [4, 8, 12, 16] as const) {
       const t0 = performance.now();
-      const recipes = solveOptimalPalettes(imgData, parsed.spools, 32, 0.64, 0.08, colorCount);
+      const recipes = solveOptimalPalettes(imgData, parsed.spools, 24, 0.16, 0.08, colorCount);
       const elapsed = performance.now() - t0;
       expect(elapsed).toBeLessThan(150);
-      expect(recipes[0].slots.length).toBe(colorCount);
-      if (colorCount === 4) {
-        const names = recipes[0].slots.map((s) => `${s.spool.brand} - ${s.spool.name}`).join(' -> ');
-        console.log('Solved 4-Color Model Accurate Stack:', names);
-        expect(names.toLowerCase()).toContain('brown');
+      expect(recipes[0].slots.length).toBeGreaterThanOrEqual(4);
+      expect(recipes[0].slots.length).toBeLessThanOrEqual(colorCount);
+
+      const names = recipes[0].slots.map((s) => `${s.spool.brand} - ${s.spool.name}`).join(' -> ');
+      if (colorCount === 4 || colorCount === 8) {
+        console.log(`Solved ${colorCount}-Color Model Accurate Stack:`, names);
       }
+      // Must NEVER include alien hues (Mint Green, Sakura Pink, Indigo, Metallic Blue) on a brown portrait
+      expect(names.toLowerCase()).not.toContain('green');
+      expect(names.toLowerCase()).not.toContain('pink');
+      expect(names.toLowerCase()).not.toContain('indigo');
+      expect(names.toLowerCase()).toContain('brown');
+
+      // Must advise user that more than 4 colors are not needed for this 4-cluster image
+      expect(recipes[0].recommendedColors).toBe(4);
+      expect(recipes[0].colorCountAdvisory).toContain('4 colors');
     }
 
-    const cmyk = solveCmykPalette(imgData, parsed.spools, 32, 0.64, 0.08, 4);
+    // Also test a real multi-hue Blue & Green nature/logo image to prove universal hue support
+    const blueGreenRgba = new Uint8ClampedArray(size * size * 4);
+    for (let i = 0; i < size * size; i++) {
+      const f = i / (size * size);
+      if (f < 0.22) {
+        blueGreenRgba[i * 4] = 12;
+        blueGreenRgba[i * 4 + 1] = 14;
+        blueGreenRgba[i * 4 + 2] = 18;
+      } else if (f < 0.52) {
+        // Forest Green cluster
+        blueGreenRgba[i * 4] = 45;
+        blueGreenRgba[i * 4 + 1] = 145;
+        blueGreenRgba[i * 4 + 2] = 65;
+      } else if (f < 0.80) {
+        // Sky / Light Blue cluster
+        blueGreenRgba[i * 4] = 80;
+        blueGreenRgba[i * 4 + 1] = 210;
+        blueGreenRgba[i * 4 + 2] = 245;
+      } else {
+        blueGreenRgba[i * 4] = 250;
+        blueGreenRgba[i * 4 + 1] = 250;
+        blueGreenRgba[i * 4 + 2] = 250;
+      }
+      blueGreenRgba[i * 4 + 3] = 255;
+    }
+    const bgImgData = { data: blueGreenRgba, width: size, height: size, colorSpace: 'srgb' } as ImageData;
+    const bgRecipes = solveOptimalPalettes(bgImgData, parsed.spools, 24, 0.16, 0.08, 4);
+    const bgNames = bgRecipes[0].slots.map((s) => `${s.spool.brand} - ${s.spool.name}`).join(' -> ');
+    console.log('Solved 4-Color Blue/Green Image Stack:', bgNames);
+    expect(bgNames.toLowerCase()).toMatch(/green|blue/);
+
+    const cmyk = solveCmykPalette(imgData, parsed.spools, 24, 0.16, 0.08, 4);
     expect(cmyk.slots).toHaveLength(4);
   });
 });

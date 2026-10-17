@@ -465,8 +465,8 @@ export function generateNative3mfPackage(params: {
   ps.sparse_infill_density = '100%';
   ps.sparse_infill_pattern = 'alignedrectilinear';
   ps.wall_loops = '1';
-  ps.top_shell_layers = '3';
-  ps.bottom_shell_layers = '3';
+  ps.top_shell_layers = '999';
+  ps.bottom_shell_layers = '999';
   ps.enable_support = '0';
   ps.brim_type = 'no_brim';
   ps.enable_prime_tower = '1';

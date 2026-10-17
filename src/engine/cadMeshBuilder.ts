@@ -185,15 +185,12 @@ export function buildHeightmapGrid(params: {
   const bottomZ = new Float32Array(cols * rows);
   const normLum = new Float32Array(cols * rows);
 
-  // Sample raw luminance + warm-subject chroma boost (HueForge Color-Aware Portrait Mapping)
-  // Outdoor pet photos often have bright green grass (G > R, G > B) that overpowers warm brown/fawn fur (R > G > B) in standard BT.709 luminance.
-  // We suppress excess green-grass dominance and boost warm coat tones so the dog's coat spans the full midtone relief!
+  // Sample raw luminance + universal chroma-aware saturation map (works for any subject color: portraits, pets, landscapes, logos)
   const rawLum = new Float32Array(cols * rows);
+  const isChromaticSubjectMask = new Uint8Array(cols * rows);
   const srcW = imageData.width;
   const srcH = imageData.height;
   const srcData = imageData.data;
-
-  const isWarmCoatMask = new Uint8Array(cols * rows);
 
   for (let r = 0; r < rows; r++) {
     const v = r / Math.max(1, rows - 1);
@@ -206,22 +203,19 @@ export function buildHeightmapGrid(params: {
       const green = srcData[idx + 1] / 255;
       const blue = srcData[idx + 2] / 255;
 
-      // Perceptual luminance
-      let lum = 0.299 * red + 0.587 * green + 0.114 * blue;
+      // Standard perceptual luminance
+      let lum = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 
-      // Detect foliage/grass pixels (green significantly higher than red and blue) and gently compress them
-      const greenExcess = Math.max(0, green - Math.max(red, blue * 1.1));
-      if (greenExcess > 0.04) {
-        lum = Math.max(0.08, lum - greenExcess * 0.55);
-      }
-
-      // Identify non-white warm brown/coat pixels (red > green, noticeable chroma, blue < 0.65)
+      // Universal chromaticity detection (all hues: red, orange, yellow, green, cyan, blue, purple, brown, skin tones)
+      // Distinguishes saturated colored pixels from true achromatic white highlights (where R, G, B are all high and close together)
       const maxC = Math.max(red, green, blue);
       const minC = Math.min(red, green, blue);
       const chroma = maxC - minC;
+      const sat = chroma / Math.max(1e-4, maxC);
       const cellIdx = r * cols + c;
-      if (red > green && green >= blue * 0.82 && chroma > 0.12 && blue < 0.65) {
-        isWarmCoatMask[cellIdx] = 1;
+
+      if (chroma > 0.13 && sat > 0.20 && minC < 0.72) {
+        isChromaticSubjectMask[cellIdx] = 1;
       }
 
       if (invertLuminance) lum = 1.0 - lum;
@@ -229,8 +223,8 @@ export function buildHeightmapGrid(params: {
     }
   }
 
-  // Auto-Levels Histogram Normalization (2nd to 98th percentile stretch)
-  // Ensures dark masks/pupils always hit Layer 1 (Black) and bright catchlights/blazes hit Layer N (White)
+  // Auto-Levels Histogram Normalization (2nd to 98.5th percentile stretch)
+  // Ensures dark shadows hit Layer 1 and bright highlights hit Layer N
   const sortedSample: number[] = [];
   const sampleStep = Math.max(1, Math.floor((cols * rows) / 2500));
   for (let i = 0; i < cols * rows; i += sampleStep) {
@@ -245,7 +239,16 @@ export function buildHeightmapGrid(params: {
     rawLum[i] = Math.max(0, Math.min(1, (rawLum[i] - pLow) / dynRange));
   }
 
-  // Local unsharp-mask fur/detail pop + Gamma & Contrast curve
+  // Check if the image actually contains bright low-saturation white highlights
+  let hasWhiteHighlights = false;
+  for (let i = 0; i < cols * rows; i += sampleStep) {
+    if (rawLum[i] > 0.75 && isChromaticSubjectMask[i] === 0) {
+      hasWhiteHighlights = true;
+      break;
+    }
+  }
+
+  // Local unsharp-mask detail pop + Gamma & Contrast curve
   const enhancedLum = new Float32Array(cols * rows);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -266,10 +269,11 @@ export function buildHeightmapGrid(params: {
       lum = (lum - 0.5) * contrast + 0.5;
       lum = Math.max(0, Math.min(1, lum));
 
-      // Keep saturated brown/coat pixels below the top White highlight zone (<= 0.68)
-      // so White filament only prints on true white fur (blaze, chest, catchlights) and never washes out brown fur
-      if (!invertLuminance && isWarmCoatMask[i] === 1) {
-        lum = Math.min(0.68, 0.16 + lum * 0.66);
+      // Universal Chroma-Preserving Ceiling:
+      // When the image has white highlights, keep saturated chromatic pixels (any hue) within the chromatic midtone layers (<= 0.70)
+      // so the top White filament layer prints ONLY on true white highlights and never washes out saturated colors!
+      if (!invertLuminance && hasWhiteHighlights && isChromaticSubjectMask[i] === 1 && lum > 0.16) {
+        lum = Math.min(0.70, 0.16 + (lum - 0.16) * 0.68);
       }
 
       enhancedLum[i] = lum;
@@ -321,8 +325,9 @@ export function buildHeightmapGrid(params: {
         }
       }
 
+      const minBaseLayer = Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
       let cellLum = enhancedLum[idx];
-      let discreteLayer = 1 + Math.round(cellLum * (totalLayers - 1));
+      let discreteLayer = minBaseLayer + Math.round(cellLum * (totalLayers - minBaseLayer));
       let zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
 
       // Clock stencil numerals raised to top layer

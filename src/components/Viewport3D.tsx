@@ -276,9 +276,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       const clampedZ = Math.min(rawZ, maxSliceZ);
       posArr[v * 3 + 2] = clampedZ * zVisualScale;
 
+      const minBaseLayer = Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
       const cellLayer = Math.max(
         1,
-        Math.min(maxAllowedLayer, 1 + Math.round(normLum[idx] * (totalLayers - 1)))
+        Math.min(maxAllowedLayer, minBaseLayer + Math.round(normLum[idx] * (totalLayers - minBaseLayer)))
       );
       const lutEntry = layerLUT[cellLayer - 1] || layerLUT[layerLUT.length - 1];
 

@@ -822,6 +822,43 @@ export const App: React.FC = () => {
                   : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
             </button>
 
+            {/* Color Count Advisory when >4 colors are not needed */}
+            {solverRecipes[0]?.colorCountAdvisory && (
+              <div
+                className={`p-2 rounded-lg border text-[11px] flex flex-col gap-1.5 ${
+                  solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                    : 'bg-emerald-500/12 border-emerald-500/30 text-emerald-200'
+                }`}
+              >
+                <div className="font-bold flex items-center justify-between gap-1">
+                  <span>
+                    {solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
+                      ? `Advisory: ${solverRecipes[0].recommendedColors ?? 4} Colors Recommended`
+                      : '✓ 4 Colors Optimal (Single AMS)'}
+                  </span>
+                  {solverRecipes[0].detectedClusterCount && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30">
+                      {solverRecipes[0].detectedClusterCount} Clusters
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] leading-relaxed opacity-90">
+                  {solverRecipes[0].colorCountAdvisory}
+                </p>
+                {solverColorCount > (solverRecipes[0].recommendedColors ?? 4) && (
+                  <button
+                    onClick={() =>
+                      handleRunAiSolver(undefined, solverRecipes[0].recommendedColors ?? 4)
+                    }
+                    className="mt-0.5 py-1 px-2 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] transition self-start shadow"
+                  >
+                    Switch to {solverRecipes[0].recommendedColors ?? 4} Colors (Recommended)
+                  </button>
+                )}
+              </div>
+            )}
+
             {solverRecipes.length > 0 && (
               <div className="space-y-1.5 pt-1">
                 {solverRecipes.map((recipe) => (
@@ -902,27 +939,27 @@ export const App: React.FC = () => {
 
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-[10px] text-slate-400">Base Z (mm)</label>
+                <label className="text-[10px] text-slate-400">Initial Layer</label>
                 <select
                   value={baseLayerMm}
                   onChange={(e) => setLayerParams(parseFloat(e.target.value), layerHeightMm, totalLayers)}
                   className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white font-mono"
                 >
-                  <option value={0.48}>0.48mm</option>
-                  <option value={0.64}>0.64mm</option>
-                  <option value={0.80}>0.80mm</option>
-                  <option value={1.00}>1.00mm</option>
+                  <option value={0.16}>0.16mm (HF)</option>
+                  <option value={0.20}>0.20mm</option>
+                  <option value={0.24}>0.24mm</option>
+                  <option value={0.32}>0.32mm</option>
                 </select>
               </div>
               <div>
-                <label className="text-[10px] text-slate-400">Layer (mm)</label>
+                <label className="text-[10px] text-slate-400">Layer Height</label>
                 <select
                   value={layerHeightMm}
                   onChange={(e) => setLayerParams(baseLayerMm, parseFloat(e.target.value), totalLayers)}
                   className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white font-mono"
                 >
                   <option value={0.04}>0.04mm (Ultra)</option>
-                  <option value={0.08}>0.08mm (Std)</option>
+                  <option value={0.08}>0.08mm (HF)</option>
                   <option value={0.12}>0.12mm (Fast)</option>
                 </select>
               </div>
@@ -939,6 +976,13 @@ export const App: React.FC = () => {
                   className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
                 />
               </div>
+            </div>
+
+            <div className="px-2 py-1 rounded bg-slate-900/90 border border-slate-800 text-[10px] text-slate-300 font-mono flex items-center justify-between">
+              <span>100% Rectilinear Infill • 1 Wall</span>
+              <span className="text-orange-400">
+                Max Z: {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm
+              </span>
             </div>
 
             <div>
