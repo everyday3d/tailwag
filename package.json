@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/build-electron.mjs",
+    "build": "tsc && vite build && node scripts/build-electron.mjs && codegraph sync",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite --port 5188\" \"wait-on tcp:5188 && electron .\"",
     "electron:pack": "npm run build && electron-builder --dir && powershell -ExecutionPolicy Bypass -File scripts/update-desktop-shortcut.ps1",
