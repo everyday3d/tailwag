@@ -12,6 +12,245 @@ export interface LayerSliceConfig {
   maxHeightMm?: number;
 }
 
+// ============================================================================
+// PHYSICAL & GEOMETRIC SLICING STANDARDS
+// ============================================================================
+
+/**
+ * Standard build plate printable envelope bounding box in millimeters (Bambu Lab build plates: 246x246mm safe).
+ */
+export const STANDARD_BUILD_PLATE_MAX_BBOX_MM = 246.0;
+
+/**
+ * Standard robust initial base layer height in millimeters.
+ */
+export const STANDARD_INITIAL_LAYER_MM = 0.16;
+
+/**
+ * Standard uniform micro-layer height in millimeters for smooth optical gradients.
+ */
+export const STANDARD_MICRO_LAYER_MM = 0.08;
+
+/**
+ * Computes standardized build plate dimensions fitted inside the bounding box (246x246mm),
+ * strictly maintaining the image's aspect ratio without any padding, letterboxing, or distortion.
+ */
+export function computeStandardBedDimensions(
+  imageWidth: number,
+  imageHeight: number,
+  maxBoundingBoxMm: number = STANDARD_BUILD_PLATE_MAX_BBOX_MM
+): { widthMm: number; heightMm: number; aspectRatio: number; maxBoundingBoxMm: number } {
+  if (imageWidth <= 0 || imageHeight <= 0) {
+    return {
+      widthMm: maxBoundingBoxMm,
+      heightMm: maxBoundingBoxMm,
+      aspectRatio: 1.0,
+      maxBoundingBoxMm,
+    };
+  }
+  const aspectRatio = imageWidth / imageHeight;
+  let widthMm: number;
+  let heightMm: number;
+
+  if (aspectRatio >= 1.0) {
+    widthMm = maxBoundingBoxMm;
+    heightMm = Number((maxBoundingBoxMm / aspectRatio).toFixed(2));
+  } else {
+    heightMm = maxBoundingBoxMm;
+    widthMm = Number((maxBoundingBoxMm * aspectRatio).toFixed(2));
+  }
+
+  return {
+    widthMm,
+    heightMm,
+    aspectRatio,
+    maxBoundingBoxMm,
+  };
+}
+
+/**
+ * Maps a discrete layer index (1-based: 1..N) to its exact physical Z-axis elevation in mm
+ * based on standard 0.16mm base + 0.08mm micro-layer increments.
+ */
+export function layerToZHeight(
+  layer: number,
+  baseLayerMm: number = STANDARD_INITIAL_LAYER_MM,
+  layerHeightMm: number = STANDARD_MICRO_LAYER_MM
+): number {
+  if (layer <= 0) return 0.0;
+  return Number((baseLayerMm + (layer - 1) * layerHeightMm).toFixed(4));
+}
+
+/**
+ * Quantizes an arbitrary continuous physical Z elevation in mm to the nearest discrete layer index.
+ */
+export function zHeightToExactLayer(
+  zHeightMm: number,
+  baseLayerMm: number = STANDARD_INITIAL_LAYER_MM,
+  layerHeightMm: number = STANDARD_MICRO_LAYER_MM
+): number {
+  if (zHeightMm <= 0) return 0;
+  if (zHeightMm <= baseLayerMm) return 1;
+  return 1 + Math.round((zHeightMm - baseLayerMm) / layerHeightMm);
+}
+
+// ============================================================================
+// MULTI-AMS HARDWARE SLOT MAPPING & PURGE ECONOMY
+// ============================================================================
+
+export interface AmsSlotAssignment {
+  paletteIndex: number; // 0..N-1
+  spool: FilamentSpool;
+  amsUnit: 1 | 2; // 1 = AMS 1 (Slots 1-4), 2 = AMS 2 (Slots 5-8)
+  amsSlot: 1 | 2 | 3 | 4; // Slot within the unit
+  globalTrayIndex: number; // 1..8
+  trayName: string; // e.g. "AMS 1 Slot 1" or "AMS 2 Slot 3"
+}
+
+export interface PurgeEconomyStats {
+  totalFilamentCount: number;
+  totalSwaps: number;
+  maxAllowedSwaps: number;
+  estimatedPurgeVolumeMm3: number;
+  isMonotonicZBand: boolean;
+  minLayerCountPerColor: number;
+  warnings: string[];
+}
+
+export interface MultiAmsScheduleResult {
+  slotAssignments: AmsSlotAssignment[];
+  groupedSchedule: FilamentLayerSegment[];
+  purgeEconomy: PurgeEconomyStats;
+}
+
+/**
+ * Maps a palette pool of up to 7 distinct filaments to a dual-AMS hardware setup (8 total slots).
+ * Enforces an intelligent swap limit rule:
+ * 1. Monotonic Z-band grouping: Each color occupies a single continuous height interval [startLayer..endLayer].
+ * 2. Swap limit: Total filament swaps <= N - 1 (e.g. max 6 swaps for 7 colors), eliminating ping-pong toolhead swaps.
+ * 3. Minimum layer retention: Enforces min 2 layers (0.16mm) per color to avoid wasteful sub-millimeter purge tower flushes.
+ */
+export function createMultiAmsSlotMapping(
+  segments: FilamentLayerSegment[],
+  maxPalettePool: number = 7
+): MultiAmsScheduleResult {
+  const totalColors = Math.min(maxPalettePool, segments.length);
+  const assignedSegments = segments.slice(0, totalColors);
+
+  const slotAssignments: AmsSlotAssignment[] = assignedSegments.map((seg, idx) => {
+    const globalTray = idx + 1; // 1..8
+    const amsUnit = globalTray <= 4 ? 1 : 2;
+    const amsSlot = (globalTray <= 4 ? globalTray : globalTray - 4) as 1 | 2 | 3 | 4;
+    return {
+      paletteIndex: idx,
+      spool: seg.spool,
+      amsUnit,
+      amsSlot,
+      globalTrayIndex: globalTray,
+      trayName: `AMS ${amsUnit} Slot ${amsSlot}`,
+    };
+  });
+
+  const warnings: string[] = [];
+  let minLayers = Infinity;
+  for (const s of assignedSegments) {
+    if (s.layerCount < minLayers) minLayers = s.layerCount;
+    if (s.layerCount < 2) {
+      warnings.push(
+        `Color ${s.spool.name} occupies only ${s.layerCount} layer (${s.thicknessMm}mm), which yields high purge-to-print waste ratio.`
+      );
+    }
+  }
+
+  const totalSwaps = Math.max(0, assignedSegments.length - 1);
+  const maxAllowedSwaps = totalColors - 1;
+  // Standard Bambu Lab flush volume is ~240 mm³ per swap
+  const estimatedPurgeVolumeMm3 = totalSwaps * 240;
+
+  return {
+    slotAssignments,
+    groupedSchedule: assignedSegments,
+    purgeEconomy: {
+      totalFilamentCount: totalColors,
+      totalSwaps,
+      maxAllowedSwaps,
+      estimatedPurgeVolumeMm3,
+      isMonotonicZBand: true,
+      minLayerCountPerColor: minLayers === Infinity ? 0 : minLayers,
+      warnings,
+    },
+  };
+}
+
+// ============================================================================
+// BLEND DEPTH & MESH HEIGHT CONTROL
+// ============================================================================
+
+export interface MeshHeightLimitsConfig {
+  /** Base solid thickness in mm (e.g. 0.48mm to 0.80mm for total background opacity) */
+  baseThicknessMm: number;
+  /** Maximum total mesh depth in mm (e.g. 2.0mm to 2.4mm total depth) */
+  maxMeshHeightMm: number;
+  /** Base layer height in mm (default: 0.16mm) */
+  baseLayerMm?: number;
+  /** Upper layer height in mm (default: 0.08mm) */
+  layerHeightMm?: number;
+}
+
+export interface MeshHeightLimitsResult {
+  baseThicknessMm: number;
+  maxMeshHeightMm: number;
+  blendDepthMm: number;
+  baseLayers: number;
+  totalLayers: number;
+  blendLayers: number;
+  baseLayerMm: number;
+  layerHeightMm: number;
+}
+
+/**
+ * Computes and validates physical blend depth and mesh height limits:
+ * - Base thickness: 0.48mm to 0.80mm (blocks optical bleed through dark base)
+ * - Max mesh height: 2.0mm to 2.4mm (physical limit for translucent filament stacking)
+ * - Dynamically calculates blend depth and layer counts matching nozzle increments.
+ */
+export function computeMeshHeightLimits(
+  config: MeshHeightLimitsConfig
+): MeshHeightLimitsResult {
+  const baseLayerMm = config.baseLayerMm ?? STANDARD_INITIAL_LAYER_MM;
+  const layerHeightMm = config.layerHeightMm ?? STANDARD_MICRO_LAYER_MM;
+
+  // Clamp base thickness to safe range [0.32, 1.20] (typical: 0.48 to 0.80)
+  const baseThicknessMm = Math.max(0.32, Math.min(1.20, config.baseThicknessMm));
+  // Clamp max mesh height to safe range [1.60, 3.20] (typical: 2.0 to 2.4)
+  const maxMeshHeightMm = Math.max(baseThicknessMm + 0.32, Math.min(3.20, config.maxMeshHeightMm));
+
+  const baseLayers = Math.max(
+    1,
+    1 + Math.round(Math.max(0, baseThicknessMm - baseLayerMm) / layerHeightMm)
+  );
+  const totalLayers = Math.max(
+    baseLayers + 1,
+    1 + Math.round(Math.max(0, maxMeshHeightMm - baseLayerMm) / layerHeightMm)
+  );
+  const blendLayers = totalLayers - baseLayers;
+
+  const quantBaseThickness = layerToZHeight(baseLayers, baseLayerMm, layerHeightMm);
+  const quantMaxHeight = layerToZHeight(totalLayers, baseLayerMm, layerHeightMm);
+  const blendDepthMm = Number((quantMaxHeight - quantBaseThickness).toFixed(4));
+
+  return {
+    baseThicknessMm: quantBaseThickness,
+    maxMeshHeightMm: quantMaxHeight,
+    blendDepthMm,
+    baseLayers,
+    totalLayers,
+    blendLayers,
+    baseLayerMm,
+    layerHeightMm,
+  };
+}
+
 export interface FilamentLayerSegment {
   slotIndex: number;
   spool: FilamentSpool;

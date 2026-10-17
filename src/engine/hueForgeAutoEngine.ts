@@ -14,6 +14,22 @@ import {
 import { ciede2000, LABColor } from './colorQuantizerEngine';
 import { applyCLAHE } from './cadMeshBuilder';
 import { computeSwapEconomyPenalty, computeHighFrequencyEdgeMap } from './autoSolver';
+import {
+  STANDARD_BUILD_PLATE_MAX_BBOX_MM,
+  STANDARD_INITIAL_LAYER_MM,
+  STANDARD_MICRO_LAYER_MM,
+  computeStandardBedDimensions,
+  layerToZHeight,
+  zHeightToExactLayer,
+  createMultiAmsSlotMapping,
+  computeMeshHeightLimits,
+  AmsSlotAssignment,
+  PurgeEconomyStats,
+  MultiAmsScheduleResult,
+  MeshHeightLimitsConfig,
+  MeshHeightLimitsResult,
+  FilamentLayerSegment,
+} from './layerSliceConverter';
 
 export {
   computeKubelkaMunkReflectance,
@@ -23,10 +39,25 @@ export {
   applyCLAHE,
   computeSwapEconomyPenalty,
   computeHighFrequencyEdgeMap,
+  STANDARD_BUILD_PLATE_MAX_BBOX_MM,
+  STANDARD_INITIAL_LAYER_MM,
+  STANDARD_MICRO_LAYER_MM,
+  computeStandardBedDimensions,
+  layerToZHeight,
+  zHeightToExactLayer,
+  createMultiAmsSlotMapping,
+  computeMeshHeightLimits,
+};
+export type {
+  AmsSlotAssignment,
+  PurgeEconomyStats,
+  MultiAmsScheduleResult,
+  MeshHeightLimitsConfig,
+  MeshHeightLimitsResult,
 };
 
 export interface HueForgeAutoConfig {
-  /** Target number of filament colors (e.g. 4, 5, or 6) */
+  /** Target number of filament colors (e.g. 4, 5, 6, or 7 for dual-AMS setups) */
   colorCount: number;
   /** First layer height on build plate in mm (default: 0.16mm) */
   baseLayerMm?: number;
@@ -36,6 +67,12 @@ export interface HueForgeAutoConfig {
   totalLayers?: number;
   /** Total physical print depth in mm (e.g. 2.0mm to 2.4mm max height) */
   totalDepthMm?: number;
+  /** Base solid foundation thickness in mm (e.g. 0.48mm to 0.80mm for total background opacity) */
+  baseThicknessMm?: number;
+  /** Maximum allowable model height in mm (e.g. 2.0mm to 2.4mm total depth) */
+  maxMeshHeightMm?: number;
+  /** Maximum palette pool limit for multi-material hardware (default: 7 for dual-AMS setups) */
+  maxPalettePool?: number;
   /** Contrast intensity parameter for adaptive S-curve (default: 1.25) */
   sCurveSteepness?: number;
   /** S-curve midpoint bias (default: 0.48) */
@@ -105,6 +142,7 @@ export interface HueForgeMetadataJSON {
     material: string;
     hex: string;
     td: number;
+    amsTray?: string;
     opticalRole: 'shadow-base' | 'chromatic-midtone' | 'highlight';
     startLayer: number;
     endLayer: number;
@@ -115,6 +153,12 @@ export interface HueForgeMetadataJSON {
     instructions: string;
   }[];
   slicerPauseListMm: number[];
+  multiAms?: {
+    totalSwaps: number;
+    estimatedPurgeVolumeMm3: number;
+    isMonotonicZBand: boolean;
+    slots: { tray: string; filament: string; hex: string; td: number }[];
+  };
   summary: string;
 }
 
@@ -161,6 +205,10 @@ export interface HueForgeAutoResult {
   metadataJson?: string;
   /** Normalized image data buffer after input guardrails */
   normalizedImageData?: ImageData;
+  /** Multi-AMS hardware slot mapping and purge economy statistics */
+  multiAmsResult?: MultiAmsScheduleResult;
+  /** Physical mesh height and blend depth parameters */
+  heightLimits?: MeshHeightLimitsResult;
 }
 
 // ============================================================================
@@ -523,6 +571,8 @@ export function orderFilamentStack(assignments: MatchedFilamentAssignment[]): Ma
 
 /**
  * Generates exact layer swap heights, solid base foundation, and blend depth schedule.
+ * Enforces fixed layer height architecture (0.16mm base + 0.08mm micro-layers),
+ * blend depth / base thickness physical scaling, and multi-AMS slot mapping.
  */
 export function generateLayerSchedule(
   orderedFilaments: MatchedFilamentAssignment[],
@@ -533,29 +583,30 @@ export function generateLayerSchedule(
   blendDepthMm: number;
   totalHeightMm: number;
   totalLayers: number;
+  multiAmsResult: MultiAmsScheduleResult;
+  heightLimits: MeshHeightLimitsResult;
 } {
-  const {
-    baseLayerMm = 0.16,
-    layerHeightMm = 0.08,
-    totalDepthMm,
-    minBaseThicknessMm = 0.48,
-  } = config;
+  const baseThicknessParam = config.baseThicknessMm ?? config.minBaseThicknessMm ?? 0.48;
+  const maxHeightParam = config.maxMeshHeightMm ?? config.totalDepthMm ?? 2.0;
 
+  const heightLimits = computeMeshHeightLimits({
+    baseThicknessMm: baseThicknessParam,
+    maxMeshHeightMm: maxHeightParam,
+    baseLayerMm: config.baseLayerMm ?? STANDARD_INITIAL_LAYER_MM,
+    layerHeightMm: config.layerHeightMm ?? STANDARD_MICRO_LAYER_MM,
+  });
+
+  const baseLayerMm = heightLimits.baseLayerMm;
+  const layerHeightMm = heightLimits.layerHeightMm;
   const totalLayers =
-    totalDepthMm !== undefined
-      ? Math.max(4, 1 + Math.round(Math.max(0, totalDepthMm - baseLayerMm) / layerHeightMm))
-      : config.totalLayers ?? 24;
+    config.totalDepthMm !== undefined || config.maxMeshHeightMm !== undefined
+      ? heightLimits.totalLayers
+      : config.totalLayers ?? heightLimits.totalLayers;
 
   const count = orderedFilaments.length;
-  const totalHeightMm = Number((baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(3));
-
-  // Minimum solid base foundation layers (e.g. 0.48mm = Layer 1 (0.16) + 4 layers (0.08) = 5 layers)
-  const baseLayersCount = Math.max(
-    1,
-    1 + Math.round(Math.max(0, minBaseThicknessMm - baseLayerMm) / layerHeightMm)
-  );
-  const minBaseLayer = Math.min(Math.max(1, totalLayers - count), baseLayersCount);
-  const recommendedBaseThicknessMm = Number((baseLayerMm + (minBaseLayer - 1) * layerHeightMm).toFixed(3));
+  const totalHeightMm = layerToZHeight(totalLayers, baseLayerMm, layerHeightMm);
+  const minBaseLayer = heightLimits.baseLayers;
+  const recommendedBaseThicknessMm = heightLimits.baseThicknessMm;
   const blendDepthMm = Number((totalHeightMm - recommendedBaseThicknessMm).toFixed(3));
 
   // Allocate layers across filaments:
@@ -574,7 +625,7 @@ export function generateLayerSchedule(
     } else if (i === count - 1) {
       endLayer = totalLayers;
     } else {
-      const frac = (i) / (count - 1);
+      const frac = i / (count - 1);
       endLayer = Math.min(totalLayers - (count - 1 - i), minBaseLayer + Math.round(frac * remainingLayers));
       if (endLayer <= currentStartLayer) {
         endLayer = currentStartLayer + 1;
@@ -585,8 +636,8 @@ export function generateLayerSchedule(
     const startZMm =
       currentStartLayer === 1
         ? 0
-        : Number((baseLayerMm + (currentStartLayer - 2) * layerHeightMm).toFixed(3));
-    const topZMm = Number((baseLayerMm + (endLayer - 1) * layerHeightMm).toFixed(3));
+        : layerToZHeight(currentStartLayer - 1, baseLayerMm, layerHeightMm);
+    const topZMm = layerToZHeight(endLayer, baseLayerMm, layerHeightMm);
     const thicknessMm = Number((topZMm - startZMm).toFixed(3));
 
     schedule.push({
@@ -604,12 +655,27 @@ export function generateLayerSchedule(
     currentStartLayer = endLayer + 1;
   }
 
+  const segments: FilamentLayerSegment[] = schedule.map((s, idx) => ({
+    slotIndex: idx,
+    spool: s.spool,
+    startLayer: s.startLayer,
+    endLayer: s.endLayer,
+    layerCount: s.layerCount,
+    startZMm: s.startLayer === 1 ? 0 : layerToZHeight(s.startLayer - 1, baseLayerMm, layerHeightMm),
+    topZMm: s.swapAtZHeightMm,
+    thicknessMm: s.thicknessMm,
+  }));
+
+  const multiAmsResult = createMultiAmsSlotMapping(segments, config.maxPalettePool ?? 7);
+
   return {
     schedule,
     recommendedBaseThicknessMm,
     blendDepthMm,
     totalHeightMm,
     totalLayers,
+    multiAmsResult,
+    heightLimits,
   };
 }
 
@@ -791,9 +857,12 @@ export function generateHueForgeMetadata(
 
   const filamentSequence = result.layerSchedule.map((entry, idx) => {
     const isFirst = idx === 0;
+    const amsAssignment = result.multiAmsResult?.slotAssignments[idx];
+    const amsTray = amsAssignment?.trayName;
+    const amsPrefix = amsTray ? `[${amsTray}] ` : '';
     const swapNote = isFirst
-      ? `Load base spool on build plate. Print from Layer 1 (0.00mm) up to Layer ${entry.swapAtLayer} (${entry.swapAtZHeightMm}mm).`
-      : `Swap to ${entry.spool.brand} ${entry.spool.name} at Layer ${entry.startLayer} (${entry.swapAtZHeightMm}mm). Print up to Layer ${entry.swapAtLayer} (${entry.swapAtZHeightMm}mm).`;
+      ? `Load base spool on build plate (${amsPrefix}${entry.spool.brand} ${entry.spool.name}). Print from Layer 1 (0.00mm) up to Layer ${entry.swapAtLayer} (${entry.swapAtZHeightMm}mm).`
+      : `Swap to ${amsPrefix}${entry.spool.brand} ${entry.spool.name} at Layer ${entry.startLayer} (${entry.swapAtZHeightMm}mm). Print up to Layer ${entry.swapAtLayer} (${entry.swapAtZHeightMm}mm).`;
 
     return {
       order: idx + 1,
@@ -802,6 +871,7 @@ export function generateHueForgeMetadata(
       material: entry.spool.material,
       hex: entry.spool.hex,
       td: entry.spool.td,
+      amsTray,
       opticalRole: entry.opticalRole,
       startLayer: entry.startLayer,
       endLayer: entry.endLayer,
@@ -817,15 +887,25 @@ export function generateHueForgeMetadata(
     .filter((_, idx) => idx > 0)
     .map(
       (s) =>
-        `- Layer ${s.startLayer} (${s.swapAtZHeightMm}mm): Swap to ${s.brand} ${s.name} (TD: ${s.td}mm)`
+        `- Layer ${s.startLayer} (${s.swapAtZHeightMm}mm): Swap to ${s.amsTray ? `[${s.amsTray}] ` : ''}${s.brand} ${s.name} (TD: ${s.td}mm)`
     )
     .join('\n');
+
+  const multiAmsSummaryLines = result.multiAmsResult
+    ? [
+        `Hardware: Dual-AMS Slot Mapping (${result.multiAmsResult.slotAssignments.length} spools, ${result.multiAmsResult.purgeEconomy.totalSwaps} swaps, ~${result.multiAmsResult.purgeEconomy.estimatedPurgeVolumeMm3} mm³ purge):`,
+        ...result.multiAmsResult.slotAssignments.map(
+          (a) => `  - ${a.trayName}: ${a.spool.brand} ${a.spool.name} (${a.spool.hex}, TD: ${a.spool.td}mm)`
+        ),
+      ]
+    : [];
 
   const summary = [
     `=== HueForge Print Instructions for ${projectName} ===`,
     `Total Print Height: ${result.totalHeightMm}mm (${result.totalLayers} layers)`,
     `Base Layer Thickness: ${result.recommendedBaseThicknessMm}mm (100% rectilinear solid base)`,
     `Blend Depth: ${result.blendDepthMm}mm (Beer-Lambert optical gradient)`,
+    ...multiAmsSummaryLines,
     `Filament Swaps (${result.layerSchedule.length} colors):`,
     pauseLines,
   ].join('\n');
@@ -845,6 +925,19 @@ export function generateHueForgeMetadata(
     },
     filamentSequence,
     slicerPauseListMm: pauseHeights,
+    multiAms: result.multiAmsResult
+      ? {
+          totalSwaps: result.multiAmsResult.purgeEconomy.totalSwaps,
+          estimatedPurgeVolumeMm3: result.multiAmsResult.purgeEconomy.estimatedPurgeVolumeMm3,
+          isMonotonicZBand: result.multiAmsResult.purgeEconomy.isMonotonicZBand,
+          slots: result.multiAmsResult.slotAssignments.map((a) => ({
+            tray: a.trayName,
+            filament: `${a.spool.brand} ${a.spool.name}`,
+            hex: a.spool.hex,
+            td: a.spool.td,
+          })),
+        }
+      : undefined,
     summary,
   };
 }
@@ -1124,8 +1217,15 @@ export function runHueForgeAutoEngine(
   const ordered = orderFilamentStack(matched);
 
   // 5. Output Generation
-  const { schedule, recommendedBaseThicknessMm, blendDepthMm, totalHeightMm, totalLayers } =
-    generateLayerSchedule(ordered, config);
+  const {
+    schedule,
+    recommendedBaseThicknessMm,
+    blendDepthMm,
+    totalHeightMm,
+    totalLayers,
+    multiAmsResult,
+    heightLimits,
+  } = generateLayerSchedule(ordered, config);
 
   const result: HueForgeAutoResult = {
     colorZones: zones,
@@ -1137,6 +1237,8 @@ export function runHueForgeAutoEngine(
     totalLayers,
     adjustedLuminance,
     normalizedImageData: imageData,
+    multiAmsResult,
+    heightLimits,
   };
 
   const metadata = generateHueForgeMetadata(result, config.projectName);

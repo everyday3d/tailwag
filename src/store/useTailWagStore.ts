@@ -185,8 +185,8 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   backlitLithoMode: false,
   slicePreviewMaxLayer: 24,
 
-  widthMm: 180,
-  heightMm: 180,
+  widthMm: 246,
+  heightMm: 246,
   lockAspect: true,
   baseLayerMm: 0.16,
   baseSolidThicknessMm: 0.48,

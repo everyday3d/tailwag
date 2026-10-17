@@ -38,6 +38,10 @@ import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
+import {
+  computeStandardBedDimensions,
+  STANDARD_BUILD_PLATE_MAX_BBOX_MM,
+} from './engine/layerSliceConverter';
 
 export const App: React.FC = () => {
   const defaultImg = useMemo(() => createDefaultPortraitImageData(320), []);
@@ -46,7 +50,7 @@ export const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
-  const [solverColorCount, setSolverColorCount] = useState<4 | 8 | 12 | 16>(4);
+  const [solverColorCount, setSolverColorCount] = useState<4 | 7 | 8 | 12 | 16>(4);
   const [solverColorMode, setSolverColorMode] = useState<'natural' | 'cmyk' | 'manual'>('natural');
   const [manualDragOverIdx, setManualDragOverIdx] = useState<number | 'append' | null>(null);
   const [manualDraggingSlotIdx, setManualDraggingSlotIdx] = useState<number | null>(null);
@@ -189,13 +193,13 @@ export const App: React.FC = () => {
         setSourceImageData(newImgData);
         setSourceDataUrl(dataUrl);
 
-        // Match physical print aspect ratio to uploaded photo (longest side = 180mm)
-        const aspect = img.width / Math.max(1, img.height);
-        if (aspect >= 1) {
-          setDimensions(180, Math.max(40, Math.round(180 / aspect)));
-        } else {
-          setDimensions(Math.max(40, Math.round(180 * aspect)), 180);
-        }
+        // Standardized 246x246mm build plate envelope sizing preserving exact aspect ratio
+        const { widthMm: stdW, heightMm: stdH } = computeStandardBedDimensions(
+          img.width,
+          img.height,
+          STANDARD_BUILD_PLATE_MAX_BBOX_MM
+        );
+        setDimensions(stdW, stdH);
 
         // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode & color count
         setViewportMode('3d-mesh');
@@ -245,7 +249,7 @@ export const App: React.FC = () => {
 
   const handleRunAiSolver = (
     modeOverride?: 'owned' | 'shown',
-    colorCountOverride?: 4 | 8 | 12 | 16,
+    colorCountOverride?: 4 | 7 | 8 | 12 | 16,
     colorModeOverride?: 'natural' | 'cmyk' | 'manual'
   ) => {
     const activeMode = modeOverride ?? effectiveSolverPoolMode;
@@ -1134,17 +1138,17 @@ export const App: React.FC = () => {
                   )}
                 </div>
 
-                {/* Palette Color Count Selector: 4 / 8 / 12 / 16 Colors */}
+                {/* Palette Color Count Selector: 4 / 7 / 8 / 12 / 16 Colors */}
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                     Palette Color Count (AMS Stack)
                   </span>
-                  <div className="grid grid-cols-4 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                    {([4, 8, 12, 16] as const).map((cnt) => (
+                  <div className="grid grid-cols-5 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                    {([4, 7, 8, 12, 16] as const).map((cnt) => (
                       <button
                         key={cnt}
                         onClick={() => handleRunAiSolver(undefined, cnt)}
-                        className={`relative py-1.5 px-1 rounded-md text-[11px] font-bold transition flex flex-col items-center justify-center ${
+                        className={`relative py-1.5 px-0.5 rounded-md text-[10px] font-bold transition flex flex-col items-center justify-center ${
                           solverColorCount === cnt
                             ? 'bg-orange-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
@@ -1152,15 +1156,22 @@ export const App: React.FC = () => {
                         title={
                           cnt === 4
                             ? 'Standard 4-color single-AMS print'
-                            : cnt === 8
-                              ? 'Recommended for best photographic quality and smooth Beer-Lambert layer blending'
-                              : `${cnt}-color multi-AMS ultra-high definition stack`
+                            : cnt === 7
+                              ? '7-color Dual-AMS configuration (leaving 1 slot open for support/purge)'
+                              : cnt === 8
+                                ? 'Recommended for best photographic quality and smooth Beer-Lambert layer blending'
+                                : `${cnt}-color multi-AMS ultra-high definition stack`
                         }
                       >
                         <span className="leading-tight">{cnt} Colors</span>
                         {cnt === 8 && (
                           <span className="text-[8px] font-extrabold text-amber-300 uppercase tracking-tighter mt-0.5">
                             ★ Best
+                          </span>
+                        )}
+                        {cnt === 7 && (
+                          <span className="text-[8px] font-extrabold text-sky-400 uppercase tracking-tighter mt-0.5">
+                            2 AMS
                           </span>
                         )}
                         {cnt === 4 && (
