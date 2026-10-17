@@ -11,6 +11,8 @@ export interface HueForgeAutoConfig {
   layerHeightMm?: number;
   /** Total number of layers (default: 24 layers = 2.00mm) */
   totalLayers?: number;
+  /** Total physical print depth in mm (e.g. 2.0mm to 2.4mm max height) */
+  totalDepthMm?: number;
   /** Contrast intensity parameter for adaptive S-curve (default: 1.25) */
   sCurveSteepness?: number;
   /** S-curve midpoint bias (default: 0.48) */
@@ -405,8 +407,9 @@ export function orderFilamentStack(assignments: MatchedFilamentAssignment[]): Ma
     }
 
     // Crisp White Highlight (L > 88, chroma < 8): must always print last (rank 0.9..1.0)
+    // Higher TD white prints last as top cap for subtle specular highlights (Requirement 2)
     if (lab.L > 88 && chroma < 8) {
-      return 0.90 + lab.L * 0.001 + (1.0 / Math.max(0.5, spool.td)) * 0.01;
+      return 0.90 + lab.L * 0.001 + Math.min(0.05, spool.td * 0.005);
     }
 
     // Chromatics & midtone greys ordered by luminance and TD so dark shades blend into light
@@ -442,9 +445,14 @@ export function generateLayerSchedule(
   const {
     baseLayerMm = 0.16,
     layerHeightMm = 0.08,
-    totalLayers = 24,
+    totalDepthMm,
     minBaseThicknessMm = 0.48,
   } = config;
+
+  const totalLayers =
+    totalDepthMm !== undefined
+      ? Math.max(4, 1 + Math.round(Math.max(0, totalDepthMm - baseLayerMm) / layerHeightMm))
+      : config.totalLayers ?? 24;
 
   const count = orderedFilaments.length;
   const totalHeightMm = Number((baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(3));

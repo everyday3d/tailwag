@@ -75,6 +75,8 @@ export const App: React.FC = () => {
     setBaseSolidThicknessMm,
     layerHeightMm,
     totalLayers,
+    totalDepthMm,
+    setTotalDepthMm,
     setLayerParams,
     setSlicePreviewMaxLayer,
     meshResolution,
@@ -227,7 +229,8 @@ export const App: React.FC = () => {
                 baseLayerMm,
                 layerHeightMm,
                 solverColorCount,
-                baseSolidThicknessMm
+                baseSolidThicknessMm,
+                totalDepthMm
               );
         setSolverRecipes(recipes);
         if (recipes.length > 0) {
@@ -286,7 +289,8 @@ export const App: React.FC = () => {
             baseLayerMm,
             layerHeightMm,
             activeColors,
-            baseSolidThicknessMm
+            baseSolidThicknessMm,
+            totalDepthMm
           );
     setSolverRecipes(recipes);
     if (recipes.length > 0) {
@@ -396,7 +400,9 @@ export const App: React.FC = () => {
             effectiveLayers,
             baseLayerMm,
             layerHeightMm,
-            solverColorCount
+            solverColorCount,
+            baseSolidThicknessMm,
+            totalDepthMm
           );
           setSolverRecipes(recipes);
           if (recipes.length > 0) {
@@ -1380,6 +1386,41 @@ export const App: React.FC = () => {
                 <span className="text-orange-400">
                   Max Z: {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm
                 </span>
+              </div>
+            </div>
+
+            {/* Total Print Depth (Dynamic Height Stretch Control) */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-semibold text-slate-300">
+                  Total Print Depth (Max Height)
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0.8}
+                    max={4.0}
+                    step={layerHeightMm}
+                    value={totalDepthMm}
+                    onChange={(e) => setTotalDepthMm(parseFloat(e.target.value) || 2.0)}
+                    className="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-cyan-400 font-mono text-right"
+                  />
+                  <span className="text-[10px] text-slate-400 font-mono">mm</span>
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0.8}
+                max={3.6}
+                step={layerHeightMm}
+                value={totalDepthMm}
+                onInput={(e) => setTotalDepthMm(parseFloat((e.target as HTMLInputElement).value))}
+                onChange={(e) => setTotalDepthMm(parseFloat(e.target.value))}
+                className="w-full accent-cyan-500 h-1.5 cursor-pointer"
+              />
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span>{totalLayers} Total Layers</span>
+                <span className="text-cyan-400 font-semibold">{totalDepthMm.toFixed(2)}mm Depth</span>
               </div>
             </div>
 

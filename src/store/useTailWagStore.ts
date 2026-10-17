@@ -30,6 +30,7 @@ export interface TailWagState {
   baseSolidThicknessMm: number;
   layerHeightMm: number;
   totalLayers: number;
+  totalDepthMm: number;
   meshResolution: number;
 
   // Pre-Press Image Enhancement Parameters
@@ -55,6 +56,7 @@ export interface TailWagState {
   setSlicePreviewMaxLayer: (layer: number) => void;
   setDimensions: (widthMm: number, heightMm: number) => void;
   setLayerParams: (baseLayerMm: number, layerHeightMm: number, totalLayers: number) => void;
+  setTotalDepthMm: (depthMm: number) => void;
   setBaseSolidThicknessMm: (thicknessMm: number) => void;
   setMeshResolution: (res: number) => void;
   setPrePress: (partial: Partial<{ gamma: number; contrast: number; detailEnhance: number; invertLuminance: boolean }>) => void;
@@ -190,6 +192,7 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   baseSolidThicknessMm: 0.48,
   layerHeightMm: 0.08,
   totalLayers: 24,
+  totalDepthMm: 2.00,
   meshResolution: 240,
 
   gamma: 1.08,
@@ -235,11 +238,33 @@ export const useTailWagStore = create<TailWagState>((set) => ({
           ? { ...s, upToLayer: totalLayers }
           : { ...s, upToLayer: Math.min(totalLayers - 1, s.upToLayer) }
       );
+      const totalDepthMm = Number((baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2));
       return {
         baseLayerMm,
         layerHeightMm,
         totalLayers,
+        totalDepthMm,
         slicePreviewMaxLayer: totalLayers,
+        slots: updatedSlots,
+      };
+    }),
+  setTotalDepthMm: (depthMm) =>
+    set((state) => {
+      const clampedMm = Math.max(0.6, Math.min(6.0, Number(depthMm) || 2.0));
+      const nextTotalLayers = Math.max(
+        4,
+        1 + Math.round(Math.max(0, clampedMm - state.baseLayerMm) / state.layerHeightMm)
+      );
+      const snappedMm = Number((state.baseLayerMm + (nextTotalLayers - 1) * state.layerHeightMm).toFixed(2));
+      const updatedSlots = state.slots.map((s, idx) =>
+        idx === state.slots.length - 1
+          ? { ...s, upToLayer: nextTotalLayers }
+          : { ...s, upToLayer: Math.min(nextTotalLayers - 1, s.upToLayer) }
+      );
+      return {
+        totalDepthMm: snappedMm,
+        totalLayers: nextTotalLayers,
+        slicePreviewMaxLayer: nextTotalLayers,
         slots: updatedSlots,
       };
     }),
@@ -253,6 +278,7 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       const snappedMm = Number((state.baseLayerMm + (baseLayers - 1) * state.layerHeightMm).toFixed(2));
       const N = state.slots.length;
       const nextTotalLayers = Math.max(state.totalLayers, baseLayers + Math.max(8, N * 2));
+      const nextTotalDepthMm = Number((state.baseLayerMm + (nextTotalLayers - 1) * state.layerHeightMm).toFixed(2));
       const nextSlots = state.slots.map((s) => ({ ...s }));
       if (N > 1) {
         const baseSlotEnd = Math.max(1, Math.min(nextTotalLayers - (N - 1), baseLayers + 1));
@@ -272,6 +298,7 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       return {
         baseSolidThicknessMm: snappedMm,
         totalLayers: nextTotalLayers,
+        totalDepthMm: nextTotalDepthMm,
         slicePreviewMaxLayer: nextTotalLayers,
         slots: nextSlots,
       };

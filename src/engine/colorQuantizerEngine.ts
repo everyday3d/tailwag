@@ -57,6 +57,15 @@ export function getHueSector(lab: LABColor): { sector: HueSectorName; chroma: nu
   return { sector, chroma, hueAngle: deg };
 }
 
+export function isSkinToneLab(lab: LABColor): boolean {
+  if (lab.L < 30 || lab.L > 84) return false;
+  const chroma = Math.hypot(lab.a, lab.b);
+  if (chroma < 7.0 || chroma > 42.0) return false;
+  let deg = (Math.atan2(lab.b, lab.a) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  return deg >= 20 && deg <= 78 && lab.a >= 3.0 && lab.b >= 7.0;
+}
+
 export interface ImageColorAnalysis {
   clusters: ImageColorCluster[];
   /** Number of genuinely distinct color clusters needed to represent >=94% of the subject */
@@ -69,6 +78,10 @@ export interface ImageColorAnalysis {
   essentialHues: HueSectorName[];
   /** Saliency-weighted sum across entire image by hue sector */
   hueSectorWeights: Record<HueSectorName, number>;
+  /** Whether the image features a prominent human face or skin-tone subject */
+  hasSkinToneSubject: boolean;
+  /** Estimated luminance range of the skin tone subject [minL, maxL] */
+  skinToneLuminanceRange?: [number, number];
 }
 
 /**
@@ -294,6 +307,7 @@ export function analyzeImageColorClusters(
         magenta: 0,
         neutral: 0,
       },
+      hasSkinToneSubject: false,
     };
   }
 
@@ -580,6 +594,23 @@ export function analyzeImageColorClusters(
     if (cumWeight >= 0.92) break;
   }
 
+  // 5. Detect face & human skin-tone subject presence and protected luminance range
+  let skinToneWeight = 0;
+  let minSkinL = 100;
+  let maxSkinL = 0;
+  for (const s of samples) {
+    if (isSkinToneLab(s.lab)) {
+      skinToneWeight += s.weight;
+      if (s.lab.L < minSkinL) minSkinL = s.lab.L;
+      if (s.lab.L > maxSkinL) maxSkinL = s.lab.L;
+    }
+  }
+  const skinWeightRatio = skinToneWeight / Math.max(1e-5, totalWeight);
+  const hasSkinToneSubject = skinWeightRatio >= 0.035;
+  const skinToneLuminanceRange: [number, number] | undefined = hasSkinToneSubject
+    ? [Math.max(32, minSkinL), Math.min(80, maxSkinL)]
+    : undefined;
+
   return {
     clusters,
     intrinsicColorCount: Math.max(2, intrinsicColorCount),
@@ -587,5 +618,7 @@ export function analyzeImageColorClusters(
     isMonochromeOrGreySubject: essentialHues.length === 0 && midtoneGreyWeight / Math.max(1e-5, midtoneTotalWeight) >= 0.58,
     essentialHues,
     hueSectorWeights,
+    hasSkinToneSubject,
+    skinToneLuminanceRange,
   };
 }

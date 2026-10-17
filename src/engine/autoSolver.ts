@@ -8,6 +8,7 @@ import {
   analyzeImageColorClusters,
   getHueSector,
   HueSectorName,
+  isSkinToneLab,
 } from './colorQuantizerEngine';
 
 export interface SolverRecipe {
@@ -35,6 +36,115 @@ export function extractImageHistogramSamples(imageData: ImageData): WeightedSamp
 function getSpoolLuminance(spool: FilamentSpool): number {
   const rgb = hexToRgb01(spool.hex);
   return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+}
+
+/**
+ * Transmittance Distance (TD) Tier classification (Requirement 1):
+ * Tier 0: Opaque Anchor (TD <= 0.8mm)
+ * Tier 1: Dense Midtone (0.8mm < TD <= 2.2mm)
+ * Tier 2: Translucent Blend (2.2mm < TD <= 5.5mm)
+ * Tier 3: High-Transmittance Highlight (TD > 5.5mm)
+ */
+export function getTdTier(td: number): number {
+  if (td <= 0.8) return 0;
+  if (td <= 2.2) return 1;
+  if (td <= 5.5) return 2;
+  return 3;
+}
+
+/**
+ * Computes TD tiering and spacing penalties across a physical filament stack (Requirement 1):
+ * 1. Penalizes adjacent midtone layers with nearly identical TD (|TD_{i+1} - TD_i| < 0.35mm),
+ *    which fight each other optically and flatten dynamic range.
+ * 2. Penalizes optical occlusion inversions (e.g. placing dense opaque filament TD < 0.5mm on top of translucent filament TD > 2.0mm).
+ */
+export function computeTdSpacingPenalty(ordered: FilamentSpool[]): number {
+  let penalty = 0.0;
+  for (let i = 1; i < ordered.length - 2; i++) {
+    const sLower = ordered[i];
+    const sUpper = ordered[i + 1];
+    const tdDiff = Math.abs(sUpper.td - sLower.td);
+    // Crowded TD in midtones:
+    if (tdDiff < 0.35 && sLower.td > 0.35 && sUpper.td > 0.35) {
+      penalty += 18.0 * ((0.35 - tdDiff) / 0.35);
+    }
+    // Severe TD occlusion inversion (dense opaque over high-transmittance):
+    if (sLower.td > 2.2 && sUpper.td < 0.5) {
+      penalty += 30.0;
+    }
+  }
+  return penalty;
+}
+
+/**
+ * Subtractive Optical Blend Penalty Matrix between two consecutive layers (Requirement 4).
+ * Heavily penalizes color combinations known to create ugly chemical-looking blends (e.g. yellow over cool dark blue).
+ * Favors neutral gray/beige transitions as optical stepping stones when jumping between contrasting color families.
+ */
+export function computeSubtractiveBlendPenalty(
+  sLower: FilamentSpool,
+  sUpper: FilamentSpool
+): number {
+  const labLower = rgbToLab(hexToRgb01(sLower.hex));
+  const labUpper = rgbToLab(hexToRgb01(sUpper.hex));
+  const lumLower = getSpoolLuminance(sLower);
+  const lumUpper = getSpoolLuminance(sUpper);
+  const chromaLower = Math.hypot(labLower.a, labLower.b);
+  const chromaUpper = Math.hypot(labUpper.a, labUpper.b);
+
+  const hueLower = getHueSector(labLower);
+  const hueUpper = getHueSector(labUpper);
+
+  // 1. Neutral Buffer Exemption:
+  // If either layer is an optical neutral buffer (neutral gray, ash gray, or beige stepping stone),
+  // the neutral buffer absorbs and diffuses the light transition, preventing ugly subtractive cross-color mud!
+  const isLowerNeutral =
+    (chromaLower <= 7.0 && lumLower >= 0.12) ||
+    (sLower.name.toLowerCase().includes('gray') && chromaLower <= 14);
+  const isUpperNeutral =
+    (chromaUpper <= 7.0 && lumUpper >= 0.12) ||
+    (sUpper.name.toLowerCase().includes('gray') && chromaUpper <= 14) ||
+    (hueUpper.sector === 'yellow' && chromaUpper <= 18 && sUpper.name.toLowerCase().includes('beige'));
+
+  if (isLowerNeutral || isUpperNeutral) {
+    return 0.0;
+  }
+
+  let penalty = 0.0;
+
+  // 2. High-TD Warm Yellow/Gold directly over Cool Dark Blue / Cyan / Indigo (Ugly Chemical Green/Gray Mud)
+  const isCoolDarkBlueLower =
+    (hueLower.sector === 'blue' || hueLower.sector === 'cyan' || hueLower.sector === 'indigo') &&
+    lumLower < 0.55;
+  const isHighTdYellowUpper =
+    (hueUpper.sector === 'yellow' || (labUpper.b > 20 && labUpper.a < 10)) &&
+    sUpper.td > 1.8;
+  if (isCoolDarkBlueLower && isHighTdYellowUpper) {
+    penalty += 55.0;
+  }
+
+  // 3. High-TD Warm Yellow/Gold directly over Black Base without warm insulator
+  if (lumLower < 0.08 && isHighTdYellowUpper) {
+    penalty += 35.0;
+  }
+
+  // 4. Cool Green / Cyan directly over Warm Skin / Tan / Brown (Necrotic Zombie Skin)
+  const isWarmLower = labLower.a >= 5.0 && labLower.b >= 8.0;
+  const isCoolGreenCyanUpper =
+    hueUpper.sector === 'green' || hueUpper.sector === 'cyan' || labUpper.a < -6.0;
+  if (isWarmLower && isCoolGreenCyanUpper) {
+    penalty += 45.0;
+  }
+
+  // 5. Direct Contrasting Chromatic Jump without Neutral Buffer:
+  // If angle difference between hues is >= 110° (e.g. Red over Green, Purple over Yellow, Cyan over Orange)
+  let angleDiff = Math.abs(hueUpper.hueAngle - hueLower.hueAngle);
+  if (angleDiff > 180) angleDiff = 360 - angleDiff;
+  if (angleDiff >= 110 && chromaLower >= 10 && chromaUpper >= 10) {
+    penalty += 35.0 * (angleDiff / 180.0);
+  }
+
+  return penalty;
 }
 
 /**
@@ -158,12 +268,18 @@ export function solveCmykPalette(
 export function solveOptimalPalettes(
   imageData: ImageData,
   candidateSpools: FilamentSpool[],
-  totalLayers: number,
+  requestedTotalLayers: number,
   baseLayerMm: number,
   layerHeightMm: number,
   maxColors: number = 4,
-  baseSolidThicknessMm?: number
+  baseSolidThicknessMm?: number,
+  totalDepthMm?: number
 ): SolverRecipe[] {
+  const totalLayers =
+    totalDepthMm !== undefined
+      ? Math.max(4, 1 + Math.round(Math.max(0, totalDepthMm - baseLayerMm) / layerHeightMm))
+      : requestedTotalLayers;
+
   const samples = extractPerceptualSamples(imageData);
   if (samples.length === 0 || candidateSpools.length < 2) return [];
 
@@ -173,7 +289,15 @@ export function solveOptimalPalettes(
 
   // 1. Run CIE LAB K-Means++ Color Quantization Engine on the image
   const clusterAnalysis = analyzeImageColorClusters(samples, activePool, 8);
-  const { clusters, intrinsicColorCount, isMonochromeOrGreySubject, essentialHues, hueSectorWeights } = clusterAnalysis;
+  const {
+    clusters,
+    intrinsicColorCount,
+    isMonochromeOrGreySubject,
+    essentialHues,
+    hueSectorWeights,
+    hasSkinToneSubject,
+    skinToneLuminanceRange,
+  } = clusterAnalysis;
 
   // Pre-aggregate image samples into `totalLayers` weighted LAB buckets
   // matching the user-configured solid starting base thickness
@@ -187,10 +311,21 @@ export function solveOptimalPalettes(
   const bucketB = new Float64Array(totalLayers);
   const bucketW = new Float64Array(totalLayers);
 
+  // Dynamic Range Stretch via Depth Mapping (Requirement 5):
+  // Compute robust luminance percentiles (2nd & 98th) to dynamically stretch the image's
+  // histogram across the full available layer stack, avoiding bunching in the lower layers.
+  const sampleLums = samples.map((s) => s.luminance).sort((a, b) => a - b);
+  const pLow = sampleLums[Math.floor(sampleLums.length * 0.02)] ?? 0.0;
+  const pHigh = sampleLums[Math.floor(sampleLums.length * 0.98)] ?? 1.0;
+  const dynRange = Math.max(0.18, pHigh - pLow);
+
   let totalSampleWeight = 0;
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
-    const layerNumber = minBaseLayer + Math.round(s.luminance * (totalLayers - minBaseLayer));
+    const normLum = Math.max(0, Math.min(1, (s.luminance - pLow) / dynRange));
+    // S-curve tone mapping to preserve highlight and shadow separation
+    const stretchedLum = 0.5 * (1.0 - Math.cos(normLum * Math.PI));
+    const layerNumber = minBaseLayer + Math.round(stretchedLum * (totalLayers - minBaseLayer));
     const layerIdx = Math.max(0, Math.min(totalLayers - 1, layerNumber - 1));
     bucketL[layerIdx] += s.lab.L * s.weight;
     bucketA[layerIdx] += s.lab.a * s.weight;
@@ -211,6 +346,11 @@ export function solveOptimalPalettes(
       layerBuckets.push({ lab: { L: (l / totalLayers) * 100, a: 0, b: 0 }, weight: 0 });
     }
   }
+
+  // Pre-calculate skin tone layer boundaries if face/skin detected (Requirement 3)
+  const skinRange = skinToneLuminanceRange ?? [34, 80];
+  const skinStartLayer = minBaseLayer + Math.round((skinRange[0] / 100) * (totalLayers - minBaseLayer));
+  const skinEndLayer = minBaseLayer + Math.round((skinRange[1] / 100) * (totalLayers - minBaseLayer));
 
   // Precompute 4-layer sliding elevation windows across the midtone relief [minBaseLayer .. 84% height]
   // Because a 2.5D print can only extrude ONE filament color per layer Z-height, a chromatic filament
@@ -398,12 +538,53 @@ export function solveOptimalPalettes(
     const lum = getSpoolLuminance(s);
     if (info.isBlack) return lum * 0.05 + s.td * 0.005;
     if (info.isWhite) {
-      return 0.90 + lum * 0.07 + (1 / Math.max(0.5, s.td)) * 0.02;
+      return 0.90 + lum * 0.05 + Math.min(0.04, s.td * 0.005);
     }
     const sLab = rgbToLab(hexToRgb01(s.hex));
     const sHue = getHueSector(sLab);
-    const hueOffset = (sHue.sector === 'green' || sHue.sector === 'cyan') ? -0.10 : 0;
-    return 0.20 + lum * 0.65 + hueOffset;
+
+    // Contiguous Hue Family Optical Progression:
+    // Groups same-hue spools together so they print as cohesive contiguous relief layers,
+    // avoiding erratic cross-color jumping (e.g. Green -> Blue -> Green)
+    let familyBase = 0.35;
+    if (info.isNeutral) {
+      familyBase = 0.52; // Neutral greys/silvers act as transition buffers
+    } else {
+      switch (sHue.sector) {
+        case 'green':
+          familyBase = 0.20;
+          break;
+        case 'yellow':
+          familyBase = 0.32;
+          break;
+        case 'orange':
+          familyBase = 0.38;
+          break;
+        case 'red':
+          familyBase = 0.44;
+          break;
+        case 'magenta':
+          familyBase = 0.60;
+          break;
+        case 'indigo':
+          familyBase = 0.65;
+          break;
+        case 'blue':
+          familyBase = 0.70;
+          break;
+        case 'cyan':
+          familyBase = 0.76;
+          break;
+        default:
+          familyBase = 0.50;
+          break;
+      }
+    }
+
+    // Within each hue family, sort ascending by luminance and transmittance distance (TD)
+    // so dense opaque under-layers print before translucent upper blending layers
+    const tdOffset = Math.min(0.06, s.td * 0.012);
+    return familyBase + lum * 0.05 + tdOffset;
   };
 
   /**
@@ -413,7 +594,7 @@ export function solveOptimalPalettes(
   const evaluateStack = (
     spools: FilamentSpool[],
     optimizeBoundaries: boolean = false
-  ): { avgDe: number; slots: LayerSwapSlot[] } => {
+  ): { avgDe: number; visualDe: number; slots: LayerSwapSlot[] } => {
     const ordered = [...spools].sort((a, b) => getOpticalStackOrder(a) - getOpticalStackOrder(b));
     const count = ordered.length;
 
@@ -465,7 +646,7 @@ export function solveOptimalPalettes(
     }
     layerEnds[layerEnds.length - 1] = totalLayers;
 
-    const scoreEnds = (ends: number[]): { avgDe: number; slots: LayerSwapSlot[] } => {
+    const scoreEnds = (ends: number[]): { avgDe: number; visualDe: number; slots: LayerSwapSlot[] } => {
       const slots: LayerSwapSlot[] = ordered.map((spool, idx) => ({
         id: `slot-${idx}`,
         spool,
@@ -501,9 +682,7 @@ export function solveOptimalPalettes(
         clusterCoverageError += minClusterD * effectiveWeight * totalSampleWeight;
       }
 
-      // Subtractive Inter-Layer Mud Penalty:
-      // Penalizes unwanted muddy cross-blends (e.g., high-TD warm colors over dark cool bases,
-      // cool green/cyan over warm skin, or simulated olive green distortion on human faces)
+      // Subtractive Inter-Layer Mud Penalty & Blend Matrix (Requirement 4):
       let mudPenalty = 0;
       for (let i = 0; i < ordered.length - 1; i++) {
         const sLower = ordered[i];
@@ -536,6 +715,9 @@ export function solveOptimalPalettes(
         if (lowerLum < 0.08 && isHighTdWarmYellow) {
           mudPenalty += 30.0 * totalSampleWeight;
         }
+
+        // Subtractive Optical Blend Matrix Penalty with Neutral Buffer Exemption (Requirement 4)
+        mudPenalty += computeSubtractiveBlendPenalty(sLower, sUpper) * totalSampleWeight;
       }
 
       // Mud Penalty D: Forward-Simulated Hue Distortion on Warm Human Skin Tones:
@@ -560,9 +742,39 @@ export function solveOptimalPalettes(
         }
       }
 
-      const compositeError = totalWeightedError * 0.60 + clusterCoverageError * 0.40 + mudPenalty;
+      // Requirement 1: TD Spacing and Occlusion Inversion Penalty across stack
+      const tdSpacingPenalty = computeTdSpacingPenalty(ordered) * totalSampleWeight;
+
+      // Requirement 3: Face & Skin-Tone Protection Clamping
+      let skinProtectionPenalty = 0;
+      if (hasSkinToneSubject) {
+        // Base layer must not creep up into mid-face layers (causing zombie bruises)
+        if (ends[0] > skinStartLayer + 1) {
+          skinProtectionPenalty += 45.0 * (ends[0] - skinStartLayer) * totalSampleWeight;
+        }
+        // Top cap white layer must not dump directly into mid-face region (causing chalky washouts)
+        if (ends.length >= 2 && ends[ends.length - 2] < skinEndLayer - 1) {
+          skinProtectionPenalty += 40.0 * (skinEndLayer - ends[ends.length - 2]) * totalSampleWeight;
+        }
+        // Mid-face layer shades must retain healthy warm tones
+        for (let l = skinStartLayer; l <= skinEndLayer && l < totalLayers; l++) {
+          const simLab = lutLabs[l];
+          if (simLab.L < 28) {
+            skinProtectionPenalty += 35.0 * (28 - simLab.L) * (bucketW[l] || 1);
+          } else if (simLab.L > 92) {
+            skinProtectionPenalty += 30.0 * (simLab.L - 92) * (bucketW[l] || 1);
+          }
+        }
+      }
+
+      const visualDe =
+        (totalWeightedError * 0.60 + clusterCoverageError * 0.40) / Math.max(1e-5, totalSampleWeight);
+      const compositeCost =
+        visualDe +
+        (mudPenalty + tdSpacingPenalty + skinProtectionPenalty) / Math.max(1e-5, totalSampleWeight);
       return {
-        avgDe: compositeError / Math.max(1e-5, totalSampleWeight),
+        avgDe: compositeCost,
+        visualDe,
         slots,
       };
     };
@@ -609,7 +821,7 @@ export function solveOptimalPalettes(
     pool: FilamentSpool[],
     chromaBoost: number,
     desiredCount: number
-  ): { avgDe: number; slots: LayerSwapSlot[]; distinctChromaticsCount: number } => {
+  ): { avgDe: number; visualDe: number; slots: LayerSwapSlot[]; distinctChromaticsCount: number } => {
     const countLimit = Math.max(2, Math.min(desiredCount, totalLayers, pool.length));
 
     const blacks = pool
@@ -820,10 +1032,32 @@ export function solveOptimalPalettes(
       addSpool(c, false, false);
     }
 
-    // 6. Second filler pass (if user requested more slots than distinct compatible hexes exist)
-    for (const f of [...blacks.slice(1), ...rankedRemainingChromatics, ...shadowGreys, ...whites.slice(1)]) {
+    // 6. Neutral filler pass: add remaining neutral spools for smooth graduated tonal steps
+    const neutralFillers = pool.filter((s) => classifyAndScoreSpool(s).isNeutral);
+    for (const nf of [...shadowGreys, ...whites.slice(1), ...blacks.slice(1), ...neutralFillers]) {
       if (picked.length >= countLimit) break;
-      addSpool(f, true, false);
+      addSpool(nf, true, false);
+    }
+
+    // 7. Essential image hue filler pass: add spools sharing essential image hues
+    const essentialHueFillers = pool.filter((s) => {
+      const hue = getSpoolHue(s);
+      return essentialHues.includes(hue.sector);
+    });
+    for (const ef of essentialHueFillers) {
+      if (picked.length >= countLimit) break;
+      addSpool(ef, true, false);
+    }
+
+    // 8. Third filler pass: only accept spools that do not trigger severe subtractive cross-color mud (Requirement 4)
+    for (const s of pool) {
+      if (picked.length >= countLimit) break;
+      const createsMud = picked.some(
+        (p) => computeSubtractiveBlendPenalty(p, s) >= 35.0 || computeSubtractiveBlendPenalty(s, p) >= 35.0
+      );
+      if (!createsMud) {
+        addSpool(s, true, false);
+      }
     }
 
     for (const s of pool) {
@@ -920,6 +1154,26 @@ export function solveOptimalPalettes(
           }
         }
 
+        // When a warm skin-tone or portrait/pet subject is present (Requirement 3):
+        // At least one midtone slot must represent the warm skin/fur hue family (orange/red/tan/brown/beige)
+        if (hasWarmSkinSubject) {
+          const isWarmI =
+            hueI === 'orange' ||
+            hueI === 'red' ||
+            validMids[i].name.toLowerCase().includes('brown') ||
+            validMids[i].name.toLowerCase().includes('beige') ||
+            validMids[i].name.toLowerCase().includes('bronze');
+          const isWarmJ =
+            hueJ === 'orange' ||
+            hueJ === 'red' ||
+            validMids[j].name.toLowerCase().includes('brown') ||
+            validMids[j].name.toLowerCase().includes('beige') ||
+            validMids[j].name.toLowerCase().includes('bronze');
+          if (!isWarmI && !isWarmJ) {
+            continue;
+          }
+        }
+
         const trial = evaluateStack([b0, validMids[i], validMids[j], w0], true);
         if (trial.avgDe < best4ColorMatch.avgDe) {
           best4ColorMatch = {
@@ -986,9 +1240,9 @@ export function solveOptimalPalettes(
     {
       id: 'recipe-accurate',
       name: `Model Accurate (${bestLibraryMatch.slots.length} Colors)`,
-      badge: `Best Match • ΔE00 ${bestLibraryMatch.avgDe.toFixed(1)}`,
+      badge: `Best Match • ΔE00 ${bestLibraryMatch.visualDe.toFixed(1)}`,
       description: 'K-Means++ cluster & Beer-Lambert optical solver using your selected library.',
-      scoreDeltaE: bestLibraryMatch.avgDe,
+      scoreDeltaE: Number(bestLibraryMatch.visualDe.toFixed(2)),
       slots: bestLibraryMatch.slots,
       recommendedColors,
       colorCountAdvisory,
@@ -999,7 +1253,7 @@ export function solveOptimalPalettes(
       name: `Vibrant Subject (${vibrantEval.slots.length} Colors)`,
       badge: 'High Chroma',
       description: 'Boosts subject saturation and midtone color separation across all hues.',
-      scoreDeltaE: vibrantEval.avgDe,
+      scoreDeltaE: Number(vibrantEval.visualDe.toFixed(2)),
       slots: vibrantEval.slots,
       recommendedColors,
       colorCountAdvisory,
@@ -1010,7 +1264,7 @@ export function solveOptimalPalettes(
       name: `Archival Monochrome (${monoEval.slots.length} Colors)`,
       badge: 'High Contrast B&W',
       description: 'Graduated charcoal-to-grey-to-white tonal stack for razor-sharp relief detail.',
-      scoreDeltaE: monoEval.avgDe,
+      scoreDeltaE: Number(monoEval.visualDe.toFixed(2)),
       slots: monoEval.slots,
       recommendedColors: 4,
       colorCountAdvisory,
