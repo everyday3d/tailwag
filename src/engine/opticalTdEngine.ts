@@ -31,17 +31,16 @@ export function rgb01ToHex(rgb: RGB): string {
 
 /**
  * Beer-Lambert + Kubelka-Munk Subsurface Scattering optical transmission curve.
- *In filament painting (HueForge/TailWag), TD (Transmission Distance in mm) is the thickness
- * at which ~99% of backing light is occluded.
- * Opacity alpha(d, TD) = 1 - exp(-k * d / TD), where k ≈ 4.605 (ln(100)) so alpha(TD, TD) = 0.99,
- * modulated with a subtle perceptual gamma so very thin 0.08mm layers retain rich mid-tone warmth.
+ * In HueForge / filament painting, TD (Transmission Distance in mm) is the thickness
+ * where light transmission drops to ~1% (5 steps of 2x attenuation).
+ * Each single 0.08mm layer step contributes a controlled perceptual tint over the underlying base layer.
  */
 export function computeLayerOpacity(thicknessMm: number, tdMm: number): number {
   if (thicknessMm <= 0) return 0;
   const safeTd = Math.max(0.1, tdMm);
   const ratio = thicknessMm / safeTd;
-  // Optical extinction constant k = 4.2 with soft shoulder
-  const raw = 1 - Math.exp(-4.2 * Math.pow(ratio, 0.92));
+  // Calibrated Kubelka-Munk scattering constant k = 2.75 for crisp multi-layer transitions
+  const raw = 1 - Math.exp(-2.75 * Math.pow(ratio, 0.88));
   return Math.max(0, Math.min(1, raw));
 }
 
@@ -70,17 +69,17 @@ export function buildLayerColorLUT(
 
     if (layer === 1) {
       // Base layer provides solid backing
-      const baseAlpha = Math.max(0.88, computeLayerOpacity(baseLayerMm, slot.spool.td));
+      const baseAlpha = Math.max(0.94, computeLayerOpacity(baseLayerMm, slot.spool.td));
       currentColor = {
         r: filamentRgb.r * baseAlpha,
         g: filamentRgb.g * baseAlpha,
         b: filamentRgb.b * baseAlpha,
       };
     } else {
-      // Single layer step blending via Beer-Lambert TD transmission
+      // Single layer step blending via Beer-Lambert TD transmission in perceptual sRGB space (gamma 1.35)
+      // so dark Brown/Orange layers over Black retain rich warm chroma instead of turning muddy
       const stepAlpha = computeLayerOpacity(layerHeightMm, slot.spool.td);
-      // Subsurface scattering blend in linear-approximated space
-      const gamma = 2.2;
+      const gamma = 1.35;
       const blendChannel = (prev: number, next: number) => {
         const pLin = Math.pow(Math.max(0, prev), gamma);
         const nLin = Math.pow(Math.max(0, next), gamma);

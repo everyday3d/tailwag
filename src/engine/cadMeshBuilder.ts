@@ -185,7 +185,9 @@ export function buildHeightmapGrid(params: {
   const bottomZ = new Float32Array(cols * rows);
   const normLum = new Float32Array(cols * rows);
 
-  // Sample raw luminance from source image
+  // Sample raw luminance + warm-subject chroma boost (HueForge Color-Aware Portrait Mapping)
+  // Outdoor pet photos often have bright green grass (G > R, G > B) that overpowers warm brown/fawn fur (R > G > B) in standard BT.709 luminance.
+  // We suppress excess green-grass dominance and boost warm coat tones so the dog's coat spans the full midtone relief!
   const rawLum = new Float32Array(cols * rows);
   const srcW = imageData.width;
   const srcH = imageData.height;
@@ -201,13 +203,42 @@ export function buildHeightmapGrid(params: {
       const red = srcData[idx] / 255;
       const green = srcData[idx + 1] / 255;
       const blue = srcData[idx + 2] / 255;
-      let lum = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+
+      // Perceptual portrait-weighted luminance (strong red/warm channel weight, controlled green weight)
+      let lum = 0.38 * red + 0.48 * green + 0.14 * blue;
+
+      // Detect foliage/grass pixels (green significantly higher than red and blue) and gently compress them into low-mid relief
+      const greenExcess = Math.max(0, green - Math.max(red, blue * 1.1));
+      if (greenExcess > 0.04) {
+        lum = Math.max(0.08, lum - greenExcess * 0.55);
+      }
+
+      // Boost warm coat/skin midtones (where red > green > blue) so brown & fawn fur separate cleanly from black shadows
+      const warmSignal = Math.max(0, red - blue) * Math.max(0, red - green * 0.75);
+      lum = Math.min(1.0, lum + warmSignal * 0.28);
+
       if (invertLuminance) lum = 1.0 - lum;
       rawLum[r * cols + c] = lum;
     }
   }
 
-  // Optional local unsharp-mask fur/detail pop
+  // Auto-Levels Histogram Normalization (2nd to 98th percentile stretch)
+  // Ensures dark masks/pupils always hit Layer 1 (Black) and bright catchlights/blazes hit Layer N (White)
+  const sortedSample: number[] = [];
+  const sampleStep = Math.max(1, Math.floor((cols * rows) / 2500));
+  for (let i = 0; i < cols * rows; i += sampleStep) {
+    sortedSample.push(rawLum[i]);
+  }
+  sortedSample.sort((a, b) => a - b);
+  const pLow = sortedSample[Math.floor(sortedSample.length * 0.02)] ?? 0.0;
+  const pHigh = sortedSample[Math.floor(sortedSample.length * 0.985)] ?? 1.0;
+  const dynRange = Math.max(0.15, pHigh - pLow);
+
+  for (let i = 0; i < cols * rows; i++) {
+    rawLum[i] = Math.max(0, Math.min(1, (rawLum[i] - pLow) / dynRange));
+  }
+
+  // Local unsharp-mask fur/detail pop + Gamma & Contrast curve
   const enhancedLum = new Float32Array(cols * rows);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -220,7 +251,7 @@ export function buildHeightmapGrid(params: {
             rawLum[r * cols + (c - 1)] +
             rawLum[r * cols + (c + 1)]) *
           0.25;
-        lum = lum + (lum - neighbors) * (detailEnhance * 2.4);
+        lum = lum + (lum - neighbors) * (detailEnhance * 2.2);
       }
       // Gamma & S-curve contrast
       lum = Math.max(0, Math.min(1, lum));
