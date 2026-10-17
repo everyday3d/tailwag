@@ -6,6 +6,8 @@ import {
   ciede2000,
   extractPerceptualSamples,
   analyzeImageColorClusters,
+  getHueSector,
+  HueSectorName,
 } from './colorQuantizerEngine';
 
 export interface SolverRecipe {
@@ -171,7 +173,7 @@ export function solveOptimalPalettes(
 
   // 1. Run CIE LAB K-Means++ Color Quantization Engine on the image
   const clusterAnalysis = analyzeImageColorClusters(samples, activePool, 8);
-  const { clusters, intrinsicColorCount, isMonochromeOrGreySubject } = clusterAnalysis;
+  const { clusters, intrinsicColorCount, isMonochromeOrGreySubject, essentialHues, hueSectorWeights } = clusterAnalysis;
 
   // Pre-aggregate image samples into `totalLayers` weighted LAB buckets
   // matching the user-configured solid starting base thickness
@@ -353,26 +355,29 @@ export function solveOptimalPalettes(
     return res;
   };
 
-  // Filter candidate pool to spools supported by the image's K-Means++ clusters
-  // or coherent 1D luminance-to-height elevation windows
+  // Filter candidate pool to spools supported by the image's K-Means++ clusters,
+  // essential image hues, or direct pixel support
   const imageCompatiblePool = activePool.filter((s) => {
     const info = classifyAndScoreSpool(s);
     if (info.isBlack || info.isWhite || info.isNeutral) return true;
 
-    // A chromatic spool is compatible if:
-    // 1. It is the direct best match for an image K-Means++ cluster with significant area (>=2.5%)
-    // AND has coherent elevation band support (minBandDe00 <= 24) so it can be physically printed
-    // without corrupting adjacent elevation layers
+    // 1. Spool is the direct best match for an image K-Means++ cluster (>=2.0% area)
     const matchesStrongCluster = clusters.some(
-      (c) => c.bestSpool?.id === s.id && c.weightRatio >= 0.025 && (c.bestSpoolDeltaE00 ?? 99) <= 22
+      (c) => c.bestSpool?.id === s.id && c.weightRatio >= 0.020 && (c.bestSpoolDeltaE00 ?? 99) <= 22
     );
-    if (matchesStrongCluster && info.minBandDe00 <= 24.0) return true;
+    if (matchesStrongCluster) return true;
 
-    // 2. Or it matches a discovered cluster or sample hue with elevation band support
-    return (
-      info.minBandDe00 <= 24.0 &&
-      (info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.035)
-    );
+    // 2. Or it matches an Essential Image Hue (e.g. green grass, blue sky, red suit) that exists in the image
+    const sLab = rgbToLab(hexToRgb01(s.hex));
+    const sHue = getHueSector(sLab);
+    if (essentialHues.includes(sHue.sector)) {
+      if (info.minClusterDe00 <= 24.0 || info.hueSupportRatio >= 0.020) {
+        return true;
+      }
+    }
+
+    // 3. Or it has solid hue support ratio (>= 3.5%) in the image
+    return info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.035;
   });
 
   const effectivePool = imageCompatiblePool.length >= 4 ? imageCompatiblePool : activePool;
@@ -461,19 +466,34 @@ export function solveOptimalPalettes(
         upToLayer: ends[idx],
       }));
       const lut = buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots);
+      const lutLabs = lut.map((entry) => rgbToLab(entry.rgb));
+
       let totalWeightedError = 0;
       for (let l = 0; l < totalLayers; l++) {
         const bucket = layerBuckets[l];
         if (bucket.weight <= 0) continue;
-        // Evaluate primarily against `lutLab` — the true TD-blended color at layer `l`!
-        const lutLab = rgbToLab(lut[l].rgb);
+        const lutLab = lutLabs[l];
         const activeSpoolLab = rgbToLab(hexToRgb01(lut[l].activeSpool.hex));
         const blendErr = ciede2000(bucket.lab, lutLab);
         const surfaceErr = ciede2000(bucket.lab, activeSpoolLab);
         totalWeightedError += (blendErr * 0.82 + surfaceErr * 0.18) * bucket.weight;
       }
+
+      // Cluster Hue Coverage Error: ensures the physical stack achieves the genuine chromatic colors
+      let clusterCoverageError = 0;
+      for (const c of clusters) {
+        if (c.weightRatio < 0.02) continue;
+        let minClusterD = Infinity;
+        for (let l = 0; l < totalLayers; l++) {
+          const d = ciede2000(c.lab, lutLabs[l]);
+          if (d < minClusterD) minClusterD = d;
+        }
+        clusterCoverageError += minClusterD * c.weightRatio * totalSampleWeight;
+      }
+
+      const compositeError = totalWeightedError * 0.60 + clusterCoverageError * 0.40;
       return {
-        avgDe: totalWeightedError / Math.max(1e-5, totalSampleWeight),
+        avgDe: compositeError / Math.max(1e-5, totalSampleWeight),
         slots,
       };
     };
@@ -546,27 +566,53 @@ export function solveOptimalPalettes(
     const picked: FilamentSpool[] = [];
     const usedIds = new Set<string>();
     const usedHexes = new Set<string>();
+    const usedHues = new Set<HueSectorName>();
 
-    const addSpool = (s?: FilamentSpool, allowDuplicateHex: boolean = false) => {
+    const getSpoolHue = (s: FilamentSpool): { sector: HueSectorName; chroma: number } => {
+      const lab = rgbToLab(hexToRgb01(s.hex));
+      return getHueSector(lab);
+    };
+
+    const addSpool = (
+      s?: FilamentSpool,
+      allowDuplicateHex: boolean = false,
+      enforceHueDiversity: boolean = true
+    ) => {
       if (!s || usedIds.has(s.id) || picked.length >= countLimit) return;
       const h = s.hex.toLowerCase();
       if (!allowDuplicateHex && usedHexes.has(h)) return;
+
+      const hue = getSpoolHue(s);
+      if (enforceHueDiversity && hue.sector !== 'neutral') {
+        // Hue Family Diversity Rule:
+        // Do not add a 2nd or 3rd spool in an already-used hue family
+        // if there are still unpicked Essential Image Hues present in the candidate pool!
+        if (usedHues.has(hue.sector)) {
+          const hasUnpickedEssential = essentialHues.some(
+            (eh) => !usedHues.has(eh) && pool.some((ps) => getSpoolHue(ps).sector === eh)
+          );
+          if (hasUnpickedEssential) return;
+        }
+      }
+
       usedIds.add(s.id);
       usedHexes.add(h);
+      if (hue.sector !== 'neutral') {
+        usedHues.add(hue.sector);
+      }
       picked.push(s);
     };
 
     // 1. Primary Black Shadow Base + Primary Crisp White Highlight
-    addSpool(blacks[0] || pool[0]);
-    addSpool(whites[0] || pool[pool.length - 1]);
+    addSpool(blacks[0] || pool[0], false, false);
+    addSpool(whites[0] || pool[pool.length - 1], false, false);
 
     // 2. High-Priority Cluster Spools:
-    // Add distinct chromatic spools that were directly matched to genuine image K-Means++ clusters (>=2.5% area)
+    // Add distinct chromatic spools directly matched to image K-Means++ clusters (>=2.0% area)
     const clusterMatchedSpools = clusters
       .filter((c) => {
-        if (!c.bestSpool || c.weightRatio < 0.025 || (c.bestSpoolDeltaE00 ?? 99) > 22) return false;
-        const info = classifyAndScoreSpool(c.bestSpool);
-        return info.minBandDe00 <= 24.0;
+        if (!c.bestSpool || c.weightRatio < 0.020 || (c.bestSpoolDeltaE00 ?? 99) > 22) return false;
+        return true;
       })
       .map((c) => c.bestSpool!)
       .filter((s) => !classifyAndScoreSpool(s).isBlack && !classifyAndScoreSpool(s).isWhite)
@@ -578,7 +624,31 @@ export function solveOptimalPalettes(
       if (countLimit <= 4 && picked.length >= 3 && clusterMatchedSpools.length >= 2) {
         break;
       }
-      addSpool(cs, false);
+      addSpool(cs, false, true);
+    }
+
+    // 2b. Ensure Essential Image Hues (e.g. green grass, blue sky, red suit) each get representation
+    for (const eh of essentialHues) {
+      if (picked.length >= countLimit) break;
+      if (usedHues.has(eh)) continue;
+      // In 4-color mode, only cover up to 2 distinct chromatic essential hues to preserve base/highlight
+      if (countLimit <= 4 && usedHues.size >= 2) break;
+
+      let bestHueSpool: FilamentSpool | undefined;
+      let bestHueScore = Infinity;
+      for (const s of chromatics) {
+        if (usedIds.has(s.id) || usedHexes.has(s.hex.toLowerCase())) continue;
+        if (getSpoolHue(s).sector !== eh) continue;
+        const info = classifyAndScoreSpool(s);
+        const score = info.minClusterDe00 - Math.min(8, info.hueSupportRatio * 50);
+        if (score < bestHueScore) {
+          bestHueScore = score;
+          bestHueSpool = s;
+        }
+      }
+      if (bestHueSpool) {
+        addSpool(bestHueSpool, false, false);
+      }
     }
 
     // 3. Sub-Band Elevation Matching: divide the chromatic midtone range [16%..72%] into M sub-bands
@@ -615,6 +685,14 @@ export function solveOptimalPalettes(
       let bestScore = Infinity;
       for (const c of chromatics) {
         if (usedIds.has(c.id) || usedHexes.has(c.hex.toLowerCase())) continue;
+        const cHue = getSpoolHue(c);
+        // Anti-hallucination guard: if image has < 1.5% pixels in this hue sector, skip alien spool!
+        if (
+          cHue.sector !== 'neutral' &&
+          (hueSectorWeights[cHue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) < 0.015
+        ) {
+          continue;
+        }
         // In 4-color mode, prefer core midtone spools (lum <= 0.68) over pale transition spools
         if (countLimit <= 4 && getSpoolLuminance(c) > 0.68 && distinctChromaticHexes.size >= 2) {
           continue;
@@ -627,47 +705,52 @@ export function solveOptimalPalettes(
         }
       }
       if (bestCand) {
-        addSpool(bestCand, false);
+        addSpool(bestCand, false, true);
       }
     }
 
-    // 4. Add any remaining distinct-hex chromatic spools that match clusters or elevation bands
-    const rankedRemainingChromatics = [...chromatics].sort(
-      (a, b) => {
+    // 4. Add any remaining distinct-hex chromatic spools that have image support
+    const rankedRemainingChromatics = [...chromatics]
+      .filter((c) => {
+        const hue = getSpoolHue(c);
+        if (hue.sector === 'neutral') return true;
+        return (hueSectorWeights[hue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) >= 0.015;
+      })
+      .sort((a, b) => {
         const scoreA = Math.min(classifyAndScoreSpool(a).minClusterDe00, classifyAndScoreSpool(a).minBandDe00);
         const scoreB = Math.min(classifyAndScoreSpool(b).minClusterDe00, classifyAndScoreSpool(b).minBandDe00);
         return scoreA - scoreB;
-      }
-    );
+      });
+
     for (const c of rankedRemainingChromatics) {
       if (picked.length >= countLimit) break;
       const info = classifyAndScoreSpool(c);
-      if (info.minBandDe00 <= 18.0 && (info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.04)) {
-        addSpool(c, false);
+      if (info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.035) {
+        addSpool(c, false, true);
       }
     }
 
     // 5. First filler pass: graduated neutral Greys and secondary Whites for smooth tonal transitions
     for (const f of [...shadowGreys, ...whites.slice(1)]) {
       if (picked.length >= countLimit) break;
-      addSpool(f, false);
+      addSpool(f, false, false);
     }
 
-    // 5. Remaining valid chromatics if still below countLimit
+    // 5b. Remaining valid chromatics if still below countLimit
     for (const c of rankedRemainingChromatics) {
       if (picked.length >= countLimit) break;
-      addSpool(c, false);
+      addSpool(c, false, false);
     }
 
     // 6. Second filler pass (if user requested more slots than distinct compatible hexes exist)
     for (const f of [...blacks.slice(1), ...rankedRemainingChromatics, ...shadowGreys, ...whites.slice(1)]) {
       if (picked.length >= countLimit) break;
-      addSpool(f, true);
+      addSpool(f, true, false);
     }
 
     for (const s of pool) {
       if (picked.length >= countLimit) break;
-      addSpool(s, true);
+      addSpool(s, true, false);
     }
 
     const evalRes = evaluateStack(picked, true);
@@ -690,8 +773,17 @@ export function solveOptimalPalettes(
       const info = classifyAndScoreSpool(s);
       if (info.isBlack || info.isWhite) return false;
       if (info.isNeutral && !allowNeutralMidsIn4) return false;
-      if (!info.isNeutral && getSpoolLuminance(s) > 0.68 && best4ColorMatch.distinctChromaticsCount >= 2) {
-        return false;
+      if (!info.isNeutral) {
+        const sHue = getHueSector(rgbToLab(hexToRgb01(s.hex)));
+        if (
+          sHue.sector !== 'neutral' &&
+          (hueSectorWeights[sHue.sector] ?? 0) / Math.max(1e-5, totalSampleWeight) < 0.015
+        ) {
+          return false;
+        }
+        if (getSpoolLuminance(s) > 0.68 && best4ColorMatch.distinctChromaticsCount >= 2) {
+          return false;
+        }
       }
       return true;
     });

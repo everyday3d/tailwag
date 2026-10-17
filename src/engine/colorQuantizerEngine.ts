@@ -17,9 +17,43 @@ export interface ImageColorCluster {
   meanLuminance: number;
   /** Chroma (saturation) in CIE LAB */
   chroma: number;
+  /** Hue sector */
+  hueSector: HueSectorName;
   /** Best matching spool from the active library */
   bestSpool?: FilamentSpool;
   bestSpoolDeltaE00?: number;
+}
+
+export type HueSectorName =
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'cyan'
+  | 'blue'
+  | 'indigo'
+  | 'magenta'
+  | 'neutral';
+
+export function getHueSector(lab: LABColor): { sector: HueSectorName; chroma: number; hueAngle: number } {
+  const chroma = Math.hypot(lab.a, lab.b);
+  if (chroma < 7.0) {
+    return { sector: 'neutral', chroma, hueAngle: 0 };
+  }
+  let deg = (Math.atan2(lab.b, lab.a) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+
+  let sector: HueSectorName;
+  if (deg >= 345 || deg < 25) sector = 'red';
+  else if (deg < 65) sector = 'orange';
+  else if (deg < 105) sector = 'yellow';
+  else if (deg < 170) sector = 'green';
+  else if (deg < 215) sector = 'cyan';
+  else if (deg < 275) sector = 'blue';
+  else if (deg < 320) sector = 'indigo';
+  else sector = 'magenta';
+
+  return { sector, chroma, hueAngle: deg };
 }
 
 export interface ImageColorAnalysis {
@@ -30,6 +64,10 @@ export interface ImageColorAnalysis {
   distinctMatchedSpoolCount: number;
   /** Whether the midtone clusters are predominantly neutral/achromatic (B&W photo, grey pet, monochrome logo) */
   isMonochromeOrGreySubject: boolean;
+  /** Essential chromatic hue sectors with >= 2.5% image area support */
+  essentialHues: HueSectorName[];
+  /** Saliency-weighted sum across entire image by hue sector */
+  hueSectorWeights: Record<HueSectorName, number>;
 }
 
 /**
@@ -200,115 +238,18 @@ export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[
     }
   }
 
-  // Compute 12-bin (30 deg) chromatic hue distribution on the 4 outer frame edges vs. inner portrait region
-  // so surrounding outdoor backdrops (lawn grass, trees, sky that occupy >=24% of the rim across >=3 edges)
-  // are automatically suppressed while preserving faces, pets, and foreground objects (e.g. a tray of donuts).
-  const NUM_HUE_BINS = 12;
-  const borderHueBins = new Float64Array(NUM_HUE_BINS);
-  const coreHueBins = new Float64Array(NUM_HUE_BINS);
-  const edgeHuePresence = Array.from({ length: NUM_HUE_BINS }, () => [0, 0, 0, 0]); // [top, bottom, left, right]
-  let borderCount = 0;
-  let coreCount = 0;
-
-  const borderPixels: RawPixel[] = [];
-  const corePixels: RawPixel[] = [];
-
-  for (const p of rawPixels) {
-    const isTop = p.ny < -0.74;
-    const isBottom = p.ny > 0.74;
-    const isLeft = p.nx < -0.74;
-    const isRight = p.nx > 0.74;
-    const isOuterPerimeter = isTop || isBottom || isLeft || isRight;
-    const isInnerCore = (p.nx / 0.40) ** 2 + (p.ny / 0.62) ** 2 <= 1.0;
-    const labChroma = Math.hypot(p.lab.a, p.lab.b);
-
-    if (isOuterPerimeter) {
-      borderCount++;
-      borderPixels.push(p);
-      if (labChroma >= 8.5) {
-        let deg = (Math.atan2(p.lab.b, p.lab.a) * 180) / Math.PI;
-        if (deg < 0) deg += 360;
-        const bin = Math.floor(deg / 30) % NUM_HUE_BINS;
-        const prevBin = (bin + NUM_HUE_BINS - 1) % NUM_HUE_BINS;
-        const nextBin = (bin + 1) % NUM_HUE_BINS;
-        borderHueBins[bin] += 1.0;
-        borderHueBins[nextBin] += 0.35;
-        borderHueBins[prevBin] += 0.35;
-        for (const bIdx of [bin, prevBin, nextBin]) {
-          if (isTop) edgeHuePresence[bIdx][0]++;
-          if (isBottom) edgeHuePresence[bIdx][1]++;
-          if (isLeft) edgeHuePresence[bIdx][2]++;
-          if (isRight) edgeHuePresence[bIdx][3]++;
-        }
-      }
-    }
-    if (isInnerCore) {
-      coreCount++;
-      corePixels.push(p);
-      if (labChroma >= 8.5) {
-        let deg = (Math.atan2(p.lab.b, p.lab.a) * 180) / Math.PI;
-        if (deg < 0) deg += 360;
-        const bin = Math.floor(deg / 30) % NUM_HUE_BINS;
-        coreHueBins[bin] += 1.0;
-        coreHueBins[(bin + 1) % NUM_HUE_BINS] += 0.35;
-        coreHueBins[(bin + NUM_HUE_BINS - 1) % NUM_HUE_BINS] += 0.35;
-      }
-    }
-  }
-
   return rawPixels.map((p) => {
     const normL = Math.max(0, Math.min(1, (p.rawLum - pLow) / dynRange));
 
-    const distCenter = Math.hypot(p.nx, p.ny * 0.82);
-    let weight = distCenter <= 0.68 ? 2.8 : 0.75;
+    // Balanced radial saliency lens without hue discrimination:
+    // gentle center focus (1.35x) to edge (0.85x) so natural outdoor backdrops
+    // (lawn grass, sky, trees) are preserved fairly alongside subjects.
+    const distCenter = Math.hypot(p.nx, p.ny * 0.85);
+    let weight = distCenter <= 0.60 ? 1.35 : distCenter <= 0.88 ? 1.0 : 0.85;
 
     const labChroma = Math.hypot(p.lab.a, p.lab.b);
-    let isSuppressedBackdrop = false;
-
-    if (borderCount >= 12 && coreCount >= 12) {
-      // 1. Multi-edge perimeter hue suppression for surrounding backdrops (lawn grass, foliage, sky)
-      // Never suppress warm skin/fur/subject tones (a* > 3.5 && b* > 3.5)
-      const isWarmSubjectTone = p.lab.a > 3.5 && p.lab.b > 3.5;
-      if (labChroma >= 8.5 && !isWarmSubjectTone) {
-        let deg = (Math.atan2(p.lab.b, p.lab.a) * 180) / Math.PI;
-        if (deg < 0) deg += 360;
-        const bin = Math.floor(deg / 30) % NUM_HUE_BINS;
-        const bDensity = borderHueBins[bin] / borderCount;
-        const cDensity = coreHueBins[bin] / coreCount;
-        const activeEdges = edgeHuePresence[bin].filter((cnt) => cnt >= 3).length;
-
-        if (activeEdges >= 3 && bDensity >= 0.22 && bDensity > cDensity * 1.25) {
-          weight *= distCenter <= 0.38 ? 0.15 : 0.05;
-          isSuppressedBackdrop = true;
-        }
-      }
-
-      // 2. Direct LAB neighborhood check for outer-rim background clutter
-      if (!isSuppressedBackdrop && distCenter > 0.62) {
-        let borderSim = 0;
-        const bStep = Math.max(1, Math.floor(borderPixels.length / 20));
-        for (let i = 0; i < borderPixels.length; i += bStep) {
-          const bp = borderPixels[i].lab;
-          const d2 = (p.lab.L - bp.L) ** 2 + (p.lab.a - bp.a) ** 2 + (p.lab.b - bp.b) ** 2;
-          if (d2 < 144) borderSim++;
-        }
-        let coreSim = 0;
-        const cStep = Math.max(1, Math.floor(corePixels.length / 20));
-        for (let i = 0; i < corePixels.length; i += cStep) {
-          const cp = corePixels[i].lab;
-          const d2 = (p.lab.L - cp.L) ** 2 + (p.lab.a - cp.a) ** 2 + (p.lab.b - cp.b) ** 2;
-          if (d2 < 144) coreSim++;
-        }
-        if (borderSim > coreSim * 1.8) {
-          weight *= 0.22;
-          isSuppressedBackdrop = true;
-        }
-      }
-    }
-
-    // Preserve chromatic subject features (skin tones, pet coats, food/foreground items) against grey clothing
-    if (!isSuppressedBackdrop && labChroma >= 18 && distCenter <= 0.78) {
-      weight *= 1.35;
+    if (labChroma >= 12.0) {
+      weight *= 1.25;
     }
 
     return {
@@ -336,6 +277,18 @@ export function analyzeImageColorClusters(
       intrinsicColorCount: 4,
       distinctMatchedSpoolCount: 4,
       isMonochromeOrGreySubject: false,
+      essentialHues: [],
+      hueSectorWeights: {
+        red: 0,
+        orange: 0,
+        yellow: 0,
+        green: 0,
+        cyan: 0,
+        blue: 0,
+        indigo: 0,
+        magenta: 0,
+        neutral: 0,
+      },
     };
   }
 
@@ -470,12 +423,33 @@ export function analyzeImageColorClusters(
   // Sort clusters from darkest to lightest
   merged.sort((a, b) => a.lum - b.lum);
 
+  // 4. Compute global hue sector distribution across all sampled pixels
+  const hueSectorWeights: Record<HueSectorName, number> = {
+    red: 0,
+    orange: 0,
+    yellow: 0,
+    green: 0,
+    cyan: 0,
+    blue: 0,
+    indigo: 0,
+    magenta: 0,
+    neutral: 0,
+  };
+  for (const s of samples) {
+    const { sector } = getHueSector(s.lab);
+    hueSectorWeights[sector] += s.weight;
+  }
+  const essentialHues: HueSectorName[] = (Object.keys(hueSectorWeights) as HueSectorName[])
+    .filter((sec) => sec !== 'neutral' && hueSectorWeights[sec] / Math.max(1e-5, totalWeight) >= 0.025);
+
   const matchedHexSet = new Set<string>();
   let midtoneGreyWeight = 0;
   let midtoneTotalWeight = 0;
 
   const clusters: ImageColorCluster[] = merged.map((m, idx) => {
     const chroma = Math.hypot(m.lab.a, m.lab.b);
+    const { sector } = getHueSector(m.lab);
+
     if (m.lum >= 0.16 && m.lum <= 0.80) {
       midtoneTotalWeight += m.weight;
       if (chroma < 7.5) midtoneGreyWeight += m.weight;
@@ -483,14 +457,46 @@ export function analyzeImageColorClusters(
 
     let bestSpool: FilamentSpool | undefined;
     let bestD = Infinity;
+
     for (const s of candidateSpools) {
       const sLab = rgbToLab(hexToRgb01(s.hex));
-      const d = ciede2000(m.lab, sLab);
-      if (d < bestD) {
-        bestD = d;
+      const sChroma = Math.hypot(sLab.a, sLab.b);
+      const rawD = ciede2000(m.lab, sLab);
+      let adjustedD = rawD;
+
+      if (chroma >= 7.0) {
+        // Cluster is chromatic (green grass, blue sky, red suit, etc.)
+        if (sChroma < 6.0) {
+          // Candidate spool is neutral (gray/black/white) -> HEAVY PENALTY!
+          // Neutral spools should NEVER steal a chromatic cluster!
+          adjustedD += 18.0;
+        } else {
+          // Both are chromatic: check angular hue alignment
+          const cosSim = (m.lab.a * sLab.a + m.lab.b * sLab.b) / (chroma * sChroma);
+          if (cosSim < 0.25) {
+            // Alien hue family (e.g. green vs purple, blue vs red) -> HEAVY PENALTY!
+            adjustedD += 25.0;
+          } else if (cosSim >= 0.65) {
+            // Same hue family (e.g. grass to green spool, sky to blue spool)
+            // Under Beer-Lambert transmission, translucent filaments thin out and desaturate,
+            // so give a healthy bonus to true hue matches even if spool is more saturated
+            adjustedD -= Math.min(8.0, (cosSim - 0.5) * 12.0);
+          }
+        }
+      } else {
+        // Cluster is neutral/achromatic (B&W fur, grey rock, white shirt)
+        if (sChroma >= 12.0) {
+          // Candidate spool is saturated -> penalize to avoid contaminating neutral regions
+          adjustedD += 15.0;
+        }
+      }
+
+      if (adjustedD < bestD) {
+        bestD = adjustedD;
         bestSpool = s;
       }
     }
+
     if (bestSpool && bestD < 24) {
       matchedHexSet.add(bestSpool.hex.toLowerCase());
     }
@@ -502,6 +508,7 @@ export function analyzeImageColorClusters(
       weightRatio: m.weight / Math.max(1e-5, totalWeight),
       meanLuminance: m.lum,
       chroma,
+      hueSector: sector,
       bestSpool,
       bestSpoolDeltaE00: bestD,
     };
@@ -522,5 +529,7 @@ export function analyzeImageColorClusters(
     intrinsicColorCount: Math.max(2, intrinsicColorCount),
     distinctMatchedSpoolCount: Math.max(2, matchedHexSet.size),
     isMonochromeOrGreySubject: midtoneGreyWeight / Math.max(1e-5, midtoneTotalWeight) >= 0.58,
+    essentialHues,
+    hueSectorWeights,
   };
 }
