@@ -145,6 +145,110 @@ function renderClockStencilMask(cols: number, rows: number, style: ClockStencilS
 }
 
 /**
+ * Contrast Limited Adaptive Histogram Equalization (CLAHE).
+ * Enhances local micro-contrasts in low-contrast zones (dark hair against dark background,
+ * subtle fabric folds, deep shadows) while preventing noise over-amplification.
+ */
+export function applyCLAHE(
+  inputLum: Float32Array,
+  cols: number,
+  rows: number,
+  clipLimit: number = 2.5,
+  tilesX: number = 8,
+  tilesY: number = 8,
+  blendRatio: number = 0.70
+): Float32Array {
+  const result = new Float32Array(cols * rows);
+  const numBins = 256;
+  const tileW = cols / Math.max(1, tilesX);
+  const tileH = rows / Math.max(1, tilesY);
+
+  // 1. Build clipped histograms and CDFs for each contextual tile
+  const cdfs: Float32Array[] = [];
+  for (let ty = 0; ty < tilesY; ty++) {
+    for (let tx = 0; tx < tilesX; tx++) {
+      const startX = Math.floor(tx * tileW);
+      const endX = Math.min(cols, Math.floor((tx + 1) * tileW));
+      const startY = Math.floor(ty * tileH);
+      const endY = Math.min(rows, Math.floor((ty + 1) * tileH));
+      const tilePixels = (endX - startX) * (endY - startY);
+
+      if (tilePixels <= 0) {
+        cdfs.push(new Float32Array(numBins));
+        continue;
+      }
+
+      const hist = new Int32Array(numBins);
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const val = inputLum[y * cols + x];
+          const bin = Math.max(0, Math.min(numBins - 1, Math.round(val * (numBins - 1))));
+          hist[bin]++;
+        }
+      }
+
+      // Clip histogram based on clipLimit
+      const clipThreshold = Math.max(1, Math.round((clipLimit * tilePixels) / numBins));
+      let excess = 0;
+      for (let b = 0; b < numBins; b++) {
+        if (hist[b] > clipThreshold) {
+          excess += hist[b] - clipThreshold;
+          hist[b] = clipThreshold;
+        }
+      }
+
+      // Redistribute excess evenly across all bins
+      const bonusPerBin = Math.floor(excess / numBins);
+      const remainder = excess % numBins;
+      for (let b = 0; b < numBins; b++) {
+        hist[b] += bonusPerBin;
+        if (b < remainder) hist[b]++;
+      }
+
+      // Compute normalized Cumulative Distribution Function (CDF)
+      const cdf = new Float32Array(numBins);
+      let cum = 0;
+      for (let b = 0; b < numBins; b++) {
+        cum += hist[b];
+        cdf[b] = Math.max(0, Math.min(1, cum / tilePixels));
+      }
+      cdfs.push(cdf);
+    }
+  }
+
+  // 2. Bilinear interpolation across contextual tile centers to eliminate grid seams
+  for (let y = 0; y < rows; y++) {
+    const ty = (y + 0.5) / tileH - 0.5;
+    const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(ty)));
+    const ty1 = Math.max(0, Math.min(tilesY - 1, ty0 + 1));
+    const fy = Math.max(0, Math.min(1, ty - ty0));
+
+    for (let x = 0; x < cols; x++) {
+      const tx = (x + 0.5) / tileW - 0.5;
+      const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(tx)));
+      const tx1 = Math.max(0, Math.min(tilesX - 1, tx0 + 1));
+      const fx = Math.max(0, Math.min(1, tx - tx0));
+
+      const val = inputLum[y * cols + x];
+      const bin = Math.max(0, Math.min(numBins - 1, Math.round(val * (numBins - 1))));
+
+      const cdf00 = cdfs[ty0 * tilesX + tx0][bin];
+      const cdf01 = cdfs[ty0 * tilesX + tx1][bin];
+      const cdf10 = cdfs[ty1 * tilesX + tx0][bin];
+      const cdf11 = cdfs[ty1 * tilesX + tx1][bin];
+
+      const top = cdf00 * (1 - fx) + cdf01 * fx;
+      const bot = cdf10 * (1 - fx) + cdf11 * fx;
+      const claheVal = top * (1 - fy) + bot * fy;
+
+      result[y * cols + x] = Math.max(0, Math.min(1, val * (1 - blendRatio) + claheVal * blendRatio));
+    }
+  }
+
+  return result;
+}
+
+/**
  * Builds the 2.5D heightmap grid combining image luminance, pre-press contrast/detail curves,
  * parametric shape silhouette, border frame, clock shaft bore, stencil numerals, and rear cavities.
  */
@@ -241,10 +345,14 @@ export function buildHeightmapGrid(params: {
     rawLum[i] = Math.max(0, Math.min(1, (rawLum[i] - pLow) / dynRange));
   }
 
+  // Apply Contrast-Limited Adaptive Histogram Equalization (CLAHE) to enhance local micro-contrasts
+  // in shadow zones, dark hair, clothing folds, and low-contrast regions prior to height mapping
+  const baseLum = applyCLAHE(rawLum, cols, rows, 2.5, 8, 8, 0.65);
+
   // Check if the image actually contains bright low-saturation white highlights
   let hasWhiteHighlights = false;
   for (let i = 0; i < cols * rows; i += sampleStep) {
-    if (rawLum[i] > 0.75 && isChromaticSubjectMask[i] === 0) {
+    if (baseLum[i] > 0.75 && isChromaticSubjectMask[i] === 0) {
       hasWhiteHighlights = true;
       break;
     }
@@ -255,13 +363,13 @@ export function buildHeightmapGrid(params: {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
-      let lum = rawLum[i];
+      let lum = baseLum[i];
       if (detailEnhance > 0.01 && r > 0 && r < rows - 1 && c > 0 && c < cols - 1) {
         const neighbors =
-          (rawLum[(r - 1) * cols + c] +
-            rawLum[(r + 1) * cols + c] +
-            rawLum[r * cols + (c - 1)] +
-            rawLum[r * cols + (c + 1)]) *
+          (baseLum[(r - 1) * cols + c] +
+            baseLum[(r + 1) * cols + c] +
+            baseLum[r * cols + (c - 1)] +
+            baseLum[r * cols + (c + 1)]) *
           0.25;
         lum = lum + (lum - neighbors) * (detailEnhance * 2.2);
       }

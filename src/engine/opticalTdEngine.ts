@@ -108,6 +108,164 @@ export function blendColorsThroughThickness(
 }
 
 /**
+ * Computes the spectral reflectance R(t) of a polymer layer of thickness t over a substrate Rg
+ * using the Kubelka-Munk two-flux light transport equation.
+ * Models real-world physical pigment density and organic non-linear color shifting in melted plastics.
+ */
+export function computeKubelkaMunkReflectance(
+  rg: number,
+  rInf: number,
+  thicknessMm: number,
+  tdMm: number
+): number {
+  if (thicknessMm <= 0) return Math.max(0, Math.min(1, rg));
+  const safeRg = Math.max(0.001, Math.min(0.999, rg));
+  const safeRInf = Math.max(0.001, Math.min(0.999, rInf));
+  const safeTd = Math.max(0.05, tdMm);
+
+  // Kubelka-Munk auxiliary coefficients
+  const a = 0.5 * (safeRInf + 1.0 / safeRInf);
+  const b = 0.5 * (1.0 / safeRInf - safeRInf);
+
+  // Scattering coefficient S calibrated to polymer Transmittance Distance (TD):
+  // In 3D filaments, S relates inversely to TD (high-TD translucent filaments scatter light over larger depths)
+  const s = 2.65 / safeTd;
+  const u = b * s * thicknessMm;
+
+  let bc: number;
+  if (u > 14.0) {
+    bc = b;
+  } else if (u < 1e-4) {
+    // Exact asymptotic limit as u -> 0 (or b -> 0 for low absorption white)
+    bc = 1.0 / Math.max(1e-7, s * thicknessMm);
+  } else {
+    const expPos = Math.exp(u);
+    const expNeg = Math.exp(-u);
+    const cothVal = (expPos + expNeg) / Math.max(1e-7, expPos - expNeg);
+    bc = b * cothVal;
+  }
+
+  const numerator = 1.0 - safeRg * (a - bc);
+  const denominator = a + bc - safeRg;
+  const r = numerator / Math.max(1e-7, denominator);
+
+  return Math.max(0.0, Math.min(1.0, r));
+}
+
+/**
+ * Blends an underlying plastic color with an overlay pigment layer using the
+ * physical Kubelka-Munk two-flux model, simulating real melted polymer interactions.
+ */
+export function blendPigmentsKubelkaMunk(
+  baseRgb01: RGB,
+  topColor01: RGB,
+  topTdMm: number,
+  thicknessMm: number
+): RGB {
+  return {
+    r: computeKubelkaMunkReflectance(baseRgb01.r, topColor01.r, thicknessMm, topTdMm),
+    g: computeKubelkaMunkReflectance(baseRgb01.g, topColor01.g, thicknessMm, topTdMm),
+    b: computeKubelkaMunkReflectance(baseRgb01.b, topColor01.b, thicknessMm, topTdMm),
+  };
+}
+
+/**
+ * Computes the physical lateral subsurface scattering radius in millimeters.
+ * Increases with the square root of Transmittance Distance and height above opaque base.
+ */
+export function computeScatteringRadiusMm(tdMm: number, heightAboveBaseMm: number): number {
+  if (heightAboveBaseMm <= 0 || tdMm <= 0) return 0;
+  const beta = 0.28; // Empirical polymer lateral diffusion factor for PLA/PETG
+  return Number((beta * Math.sqrt(Math.max(0.1, tdMm) * heightAboveBaseMm)).toFixed(3));
+}
+
+/**
+ * 2D Subsurface Light Diffusion Matrix.
+ * Accurately models lateral light scattering inside high-TD translucent polymer layers.
+ * When translucent highlights sit above dark under-bases, light scatters outward horizontally,
+ * softening harsh digital stair-stepping pixelation on fine details (eyes, edges, micro-contrast).
+ */
+export function applySubsurfaceLightDiffusion2D(
+  colorsRgb: Float32Array,
+  heightsAboveBaseMm: Float32Array,
+  activeTdsMm: Float32Array,
+  cols: number,
+  rows: number,
+  pixelPitchMm: number
+): Float32Array {
+  const output = new Float32Array(colorsRgb.length);
+  const pitch = Math.max(0.05, pixelPitchMm);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const h = heightsAboveBaseMm[idx];
+      const td = activeTdsMm[idx];
+      const radiusMm = computeScatteringRadiusMm(td, h);
+      // Determine local effective scattering radius from this cell and its immediate neighbors
+      let effRadiusMm = radiusMm;
+      for (let dy = -1; dy <= 1; dy++) {
+        const nr = r + dy;
+        if (nr < 0 || nr >= rows) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nc = c + dx;
+          if (nc < 0 || nc >= cols) continue;
+          const nIdx = nr * cols + nc;
+          const nR = computeScatteringRadiusMm(activeTdsMm[nIdx], heightsAboveBaseMm[nIdx]);
+          if (nR > effRadiusMm) effRadiusMm = nR;
+        }
+      }
+      const radiusPx = effRadiusMm / pitch;
+
+      const outIdx = idx * 3;
+
+      // If scattering radius is sub-pixel (< 0.5px), preserve crisp verbatim value
+      if (radiusPx < 0.5) {
+        output[outIdx] = colorsRgb[outIdx];
+        output[outIdx + 1] = colorsRgb[outIdx + 1];
+        output[outIdx + 2] = colorsRgb[outIdx + 2];
+        continue;
+      }
+
+      // Discrete 2D kernel radius (1 to 2 cells maximum for high performance)
+      const kRadius = Math.min(2, Math.round(radiusPx));
+      const sigma = Math.max(0.6, radiusPx * 0.75);
+      const twoSigmaSq = 2 * sigma * sigma;
+
+      let rSum = 0;
+      let gSum = 0;
+      let bSum = 0;
+      let wSum = 0;
+
+      for (let dy = -kRadius; dy <= kRadius; dy++) {
+        const nr = r + dy;
+        if (nr < 0 || nr >= rows) continue;
+        for (let dx = -kRadius; dx <= kRadius; dx++) {
+          const nc = c + dx;
+          if (nc < 0 || nc >= cols) continue;
+
+          const nIdx = nr * cols + nc;
+          const distSq = dx * dx + dy * dy;
+          const weight = Math.exp(-distSq / twoSigmaSq);
+
+          const nRgbIdx = nIdx * 3;
+          rSum += colorsRgb[nRgbIdx] * weight;
+          gSum += colorsRgb[nRgbIdx + 1] * weight;
+          bSum += colorsRgb[nRgbIdx + 2] * weight;
+          wSum += weight;
+        }
+      }
+
+      output[outIdx] = wSum > 0 ? rSum / wSum : colorsRgb[outIdx];
+      output[outIdx + 1] = wSum > 0 ? gSum / wSum : colorsRgb[outIdx + 1];
+      output[outIdx + 2] = wSum > 0 ? bSum / wSum : colorsRgb[outIdx + 2];
+    }
+  }
+
+  return output;
+}
+
+/**
  * Computes the exact composite RGB color for every discrete layer index (1..totalLayers)
  * given the baseLayerMm (0.16mm initial layer), layerHeightMm (0.08mm), and ordered LayerSwapSlots.
  */
@@ -115,12 +273,14 @@ export function buildLayerColorLUT(
   totalLayers: number,
   baseLayerMm: number,
   layerHeightMm: number,
-  slots: LayerSwapSlot[]
+  slots: LayerSwapSlot[],
+  options?: { model?: 'hybrid-gamma' | 'kubelka-munk' }
 ): { layer: number; zHeightMm: number; rgb: RGB; hex: string; activeSpool: FilamentSpool }[] {
   if (slots.length === 0) return [];
 
   const sortedSlots = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
   const lut: { layer: number; zHeightMm: number; rgb: RGB; hex: string; activeSpool: FilamentSpool }[] = [];
+  const model = options?.model ?? 'hybrid-gamma';
 
   // Layer 1 (0.16mm initial layer) starts on the build plate with the base filament
   let currentColor = hexToRgb01(sortedSlots[0].spool.hex);
@@ -137,6 +297,9 @@ export function buildLayerColorLUT(
         g: filamentRgb.g,
         b: filamentRgb.b,
       };
+    } else if (model === 'kubelka-munk') {
+      // Real physical Kubelka-Munk spectral polymer pigment model
+      currentColor = blendPigmentsKubelkaMunk(currentColor, filamentRgb, slot.spool.td, layerHeightMm);
     } else {
       // Each 0.08mm layer optically blends with the underlying color according to its TD value
       const stepAlpha = computeLayerOpacity(layerHeightMm, slot.spool.td);

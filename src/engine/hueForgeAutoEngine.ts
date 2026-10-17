@@ -1,6 +1,27 @@
 import { FilamentSpool } from '../data/filamentCatalog';
-import { RGB, hexToRgb01, rgb01ToHex, rgbToLab } from './opticalTdEngine';
+import {
+  RGB,
+  hexToRgb01,
+  rgb01ToHex,
+  rgbToLab,
+  computeKubelkaMunkReflectance,
+  blendPigmentsKubelkaMunk,
+  computeScatteringRadiusMm,
+  applySubsurfaceLightDiffusion2D,
+} from './opticalTdEngine';
 import { ciede2000, LABColor } from './colorQuantizerEngine';
+import { applyCLAHE } from './cadMeshBuilder';
+import { computeSwapEconomyPenalty, computeHighFrequencyEdgeMap } from './autoSolver';
+
+export {
+  computeKubelkaMunkReflectance,
+  blendPigmentsKubelkaMunk,
+  computeScatteringRadiusMm,
+  applySubsurfaceLightDiffusion2D,
+  applyCLAHE,
+  computeSwapEconomyPenalty,
+  computeHighFrequencyEdgeMap,
+};
 
 export interface HueForgeAutoConfig {
   /** Target number of filament colors (e.g. 4, 5, or 6) */
@@ -19,6 +40,10 @@ export interface HueForgeAutoConfig {
   sCurveMidpoint?: number;
   /** Minimum solid base thickness in mm (default: 0.48mm) */
   minBaseThicknessMm?: number;
+  /** Whether to apply Contrast Limited Adaptive Histogram Equalization (default: false unless requested) */
+  enableClahe?: boolean;
+  /** Contrast clip limit for CLAHE (default: 2.5) */
+  claheClipLimit?: number;
 }
 
 export interface ColorZoneCluster {
@@ -539,9 +564,12 @@ export function runHueForgeAutoEngine(
   // 2. Delta E Filament Matching
   const matched = matchFilamentRolls(zones, filamentDatabase);
 
-  // 3. Tone-Curve & Contrast Adjustment
+  // 3. Tone-Curve & Contrast Adjustment (with optional CLAHE local histogram equalization)
+  const baseLuminance = config.enableClahe
+    ? applyCLAHE(rawLuminance, imageData.width, imageData.height, config.claheClipLimit ?? 2.5)
+    : rawLuminance;
   const adjustedLuminance = applyAdaptiveSCurve(
-    rawLuminance,
+    baseLuminance,
     config.sCurveSteepness ?? 1.25,
     config.sCurveMidpoint ?? 0.48
   );

@@ -148,6 +148,99 @@ export function computeSubtractiveBlendPenalty(
 }
 
 /**
+ * Filament Swap Economy & Purge Optimization Penalty:
+ * Penalizes proposing extra filament swaps (beyond 4 colors) unless the visual Delta E
+ * improvement is significant enough to justify the additional purge waste and AMS print time.
+ */
+export function computeSwapEconomyPenalty(
+  colorCount: number,
+  visualDe: number,
+  benchmark4ColorDe?: number
+): number {
+  if (colorCount <= 4) return 0.0;
+  const extraSwaps = colorCount - 4;
+
+  // Base swap penalty for purge waste and toolhead changes (8.0 points per extra swap)
+  const basePurgePenalty = extraSwaps * 8.0;
+
+  if (benchmark4ColorDe === undefined || benchmark4ColorDe <= 0) {
+    return basePurgePenalty;
+  }
+
+  // Required visual ΔE reduction: each extra swap must yield at least 0.85 ΔE drop to break even
+  const visualGain = Math.max(0, benchmark4ColorDe - visualDe);
+  const requiredGain = extraSwaps * 0.85;
+
+  if (visualGain >= requiredGain) {
+    // Significant visual improvement meeting or exceeding required threshold: fully exempt penalty!
+    return 0.0;
+  }
+
+  // Pro-rated penalty: if visual gain is negligible (< 0.2 ΔE), full penalty applies
+  const efficiencyRatio = Math.min(1.0, visualGain / Math.max(0.1, requiredGain));
+  return Number((basePurgePenalty * (1.0 - efficiencyRatio)).toFixed(2));
+}
+
+/**
+ * Computes a normalized high-frequency Sobel edge gradient map [0..1]
+ * from an ImageData buffer at target resolution.
+ * Used in Pass 2 (Micro) optimization to detect critical micro-features (faces, eyes, text, sharp lines).
+ */
+export function computeHighFrequencyEdgeMap(
+  imageData: ImageData,
+  targetWidth: number,
+  targetHeight: number
+): Float32Array {
+  const srcW = imageData.width;
+  const srcH = imageData.height;
+  const src = imageData.data;
+  const lumMap = new Float32Array(targetWidth * targetHeight);
+
+  // 1. Compute downsampled perceptual luminance
+  for (let y = 0; y < targetHeight; y++) {
+    const sy = Math.min(srcH - 1, Math.floor((y / Math.max(1, targetHeight - 1)) * srcH));
+    for (let x = 0; x < targetWidth; x++) {
+      const sx = Math.min(srcW - 1, Math.floor((x / Math.max(1, targetWidth - 1)) * srcW));
+      const idx = (sy * srcW + sx) * 4;
+      lumMap[y * targetWidth + x] =
+        0.2126 * (src[idx] / 255) + 0.7152 * (src[idx + 1] / 255) + 0.0722 * (src[idx + 2] / 255);
+    }
+  }
+
+  // 2. 3x3 Sobel edge filter: Gx and Gy
+  const edgeMap = new Float32Array(targetWidth * targetHeight);
+  let maxGrad = 0;
+
+  for (let y = 1; y < targetHeight - 1; y++) {
+    for (let x = 1; x < targetWidth - 1; x++) {
+      const p00 = lumMap[(y - 1) * targetWidth + (x - 1)];
+      const p01 = lumMap[(y - 1) * targetWidth + x];
+      const p02 = lumMap[(y - 1) * targetWidth + (x + 1)];
+      const p10 = lumMap[y * targetWidth + (x - 1)];
+      const p12 = lumMap[y * targetWidth + (x + 1)];
+      const p20 = lumMap[(y + 1) * targetWidth + (x - 1)];
+      const p21 = lumMap[(y + 1) * targetWidth + x];
+      const p22 = lumMap[(y + 1) * targetWidth + (x + 1)];
+
+      const gx = -p00 + p02 - 2 * p10 + 2 * p12 - p20 + p22;
+      const gy = -p00 - 2 * p01 - p02 + p20 + 2 * p21 + p22;
+      const grad = Math.hypot(gx, gy);
+      edgeMap[y * targetWidth + x] = grad;
+      if (grad > maxGrad) maxGrad = grad;
+    }
+  }
+
+  // Normalize edge gradient
+  if (maxGrad > 1e-4) {
+    for (let i = 0; i < edgeMap.length; i++) {
+      edgeMap[i] = Math.min(1.0, edgeMap[i] / maxGrad);
+    }
+  }
+
+  return edgeMap;
+}
+
+/**
  * Builds a dedicated CMYK palette stack (Black/Key + Cyan + Magenta + Yellow + White, or scaled to maxColors)
  * as a completely separate option from the natural filament solver.
  */
