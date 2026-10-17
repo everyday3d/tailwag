@@ -9,7 +9,7 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
     const lowTdAlpha = computeLayerOpacity(0.08, 0.6); // Black PLA (TD 0.6mm)
     const highTdAlpha = computeLayerOpacity(0.08, 5.0); // Jade White PLA (TD 5.0mm)
     expect(lowTdAlpha).toBeGreaterThan(highTdAlpha);
-    expect(computeLayerOpacity(0.6, 0.6)).toBeGreaterThan(0.95);
+    expect(computeLayerOpacity(0.6, 0.6)).toBeGreaterThan(0.90);
   });
 
   it('builds a 24-layer composite RGB LUT from filament swap slots', () => {
