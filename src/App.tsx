@@ -22,7 +22,7 @@ import {
 import { useTailWagStore } from './store/useTailWagStore';
 import { createDefaultPortraitImageData } from './utils/defaultPortrait';
 import { buildHeightmapGrid, MeshShapeMode, FrameStyle, ClockStencilStyle } from './engine/cadMeshBuilder';
-import { solveOptimalPalettes, SolverRecipe } from './engine/autoSolver';
+import { solveOptimalPalettes, solveCmykPalette, SolverRecipe } from './engine/autoSolver';
 import { parseFilamentLibraryJson, serializeFilamentLibraryJson } from './utils/filamentJsonIO';
 import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
@@ -37,6 +37,7 @@ export const App: React.FC = () => {
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
   const [solverColorCount, setSolverColorCount] = useState<4 | 8 | 12 | 16>(4);
+  const [solverColorMode, setSolverColorMode] = useState<'natural' | 'cmyk'>('natural');
   const [jsonImportBanner, setJsonImportBanner] = useState<string | null>(null);
   const [solverRecipes, setSolverRecipes] = useState<SolverRecipe[]>([]);
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
@@ -179,14 +180,17 @@ export const App: React.FC = () => {
           setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
         }
         const pool = getCandidatePoolForMode(effectiveSolverPoolMode);
-        const recipes = solveOptimalPalettes(
-          newImgData,
-          pool,
-          effectiveLayers,
-          baseLayerMm,
-          layerHeightMm,
-          solverColorCount
-        );
+        const recipes =
+          solverColorMode === 'cmyk'
+            ? [solveCmykPalette(newImgData, pool, effectiveLayers, baseLayerMm, layerHeightMm, solverColorCount)]
+            : solveOptimalPalettes(
+                newImgData,
+                pool,
+                effectiveLayers,
+                baseLayerMm,
+                layerHeightMm,
+                solverColorCount
+              );
         setSolverRecipes(recipes);
         if (recipes.length > 0) {
           setSlots(recipes[0].slots);
@@ -200,29 +204,37 @@ export const App: React.FC = () => {
 
   const handleRunAiSolver = (
     modeOverride?: 'owned' | 'shown',
-    colorCountOverride?: 4 | 8 | 12 | 16
+    colorCountOverride?: 4 | 8 | 12 | 16,
+    colorModeOverride?: 'natural' | 'cmyk'
   ) => {
     const activeMode = modeOverride ?? effectiveSolverPoolMode;
     const activeColors = colorCountOverride ?? solverColorCount;
+    const activeColorMode = colorModeOverride ?? solverColorMode;
     if (modeOverride) {
       setSolverPoolMode(modeOverride);
     }
     if (colorCountOverride) {
       setSolverColorCount(colorCountOverride);
     }
+    if (colorModeOverride) {
+      setSolverColorMode(colorModeOverride);
+    }
     const effectiveLayers = Math.max(totalLayers, activeColors * 2);
     if (effectiveLayers !== totalLayers) {
       setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
     }
     const pool = getCandidatePoolForMode(activeMode);
-    const recipes = solveOptimalPalettes(
-      sourceImageData,
-      pool,
-      effectiveLayers,
-      baseLayerMm,
-      layerHeightMm,
-      activeColors
-    );
+    const recipes =
+      activeColorMode === 'cmyk'
+        ? [solveCmykPalette(sourceImageData, pool, effectiveLayers, baseLayerMm, layerHeightMm, activeColors)]
+        : solveOptimalPalettes(
+            sourceImageData,
+            pool,
+            effectiveLayers,
+            baseLayerMm,
+            layerHeightMm,
+            activeColors
+          );
     setSolverRecipes(recipes);
     if (recipes.length > 0) {
       setSlots(recipes[0].slots);
@@ -745,6 +757,37 @@ export const App: React.FC = () => {
               )}
             </div>
 
+            {/* Solver Color Mode: Library Best Match vs CMYK Process */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Solver Color Mode
+              </span>
+              <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                <button
+                  onClick={() => handleRunAiSolver(undefined, undefined, 'natural')}
+                  className={`py-1 px-2 rounded-md text-[11px] font-bold transition ${
+                    solverColorMode === 'natural'
+                      ? 'bg-orange-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Solve using the best matching natural filament colors from your selected library"
+                >
+                  Library Best Match
+                </button>
+                <button
+                  onClick={() => handleRunAiSolver(undefined, undefined, 'cmyk')}
+                  className={`py-1 px-2 rounded-md text-[11px] font-bold transition ${
+                    solverColorMode === 'cmyk'
+                      ? 'bg-sky-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Separate CMYK process stack (Cyan, Magenta, Yellow, White/Black)"
+                >
+                  CMYK Mode
+                </button>
+              </div>
+            </div>
+
             {/* Palette Color Count Selector: 4 / 8 / 12 / 16 Colors */}
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -772,9 +815,11 @@ export const App: React.FC = () => {
               className="w-full py-1.5 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              {effectiveSolverPoolMode === 'owned'
-                ? `Auto-Solve (${solverColorCount} Colors • Owned ${ownedSpools.length})`
-                : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
+              {solverColorMode === 'cmyk'
+                ? `Auto-Solve CMYK (${solverColorCount} Colors)`
+                : effectiveSolverPoolMode === 'owned'
+                  ? `Auto-Solve (${solverColorCount} Colors • Owned ${ownedSpools.length})`
+                  : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
             </button>
 
             {solverRecipes.length > 0 && (

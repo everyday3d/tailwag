@@ -19,8 +19,8 @@ export function createDefaultPortraitImageData(size: number = 360): { imageData:
   const cx = size * 0.5;
   const cy = size * 0.52;
 
-  // Shoulders / Collar
-  ctx.fillStyle = '#7c4728';
+  // Shoulders / Collar (Rich Earth Brown)
+  ctx.fillStyle = '#684432';
   ctx.beginPath();
   ctx.ellipse(cx, size * 0.9, size * 0.34, size * 0.22, 0, Math.PI, 0, false);
   ctx.fill();
@@ -29,14 +29,14 @@ export function createDefaultPortraitImageData(size: number = 360): { imageData:
   const chestGrad = ctx.createRadialGradient(cx, size * 0.86, 4, cx, size * 0.88, size * 0.18);
   chestGrad.addColorStop(0, '#f8fafc');
   chestGrad.addColorStop(0.7, '#d6d3d1');
-  chestGrad.addColorStop(1, '#7c4728');
+  chestGrad.addColorStop(1, '#684432');
   ctx.fillStyle = chestGrad;
   ctx.beginPath();
   ctx.ellipse(cx, size * 0.87, size * 0.14, size * 0.16, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Boxer Floppy Ears (Dark Charcoal/Mahogany)
-  ctx.fillStyle = '#241812';
+  // Boxer Floppy Ears (Dark Espresso Brown)
+  ctx.fillStyle = '#362219';
   ctx.beginPath();
   ctx.ellipse(cx - size * 0.24, cy - size * 0.12, size * 0.1, size * 0.22, 0.35, 0, Math.PI * 2);
   ctx.fill();
@@ -44,11 +44,11 @@ export function createDefaultPortraitImageData(size: number = 360): { imageData:
   ctx.ellipse(cx + size * 0.24, cy - size * 0.12, size * 0.1, size * 0.22, -0.35, 0, Math.PI * 2);
   ctx.fill();
 
-  // Main Head Dome (Warm Fawn / Boxer Orange-Tan)
+  // Main Head Dome (Rich Natural Boxer Brown Coat — Chestnut to Earth Brown)
   const headGrad = ctx.createRadialGradient(cx, cy - size * 0.08, size * 0.04, cx, cy, size * 0.28);
-  headGrad.addColorStop(0, '#f59e0b');
-  headGrad.addColorStop(0.55, '#b45309');
-  headGrad.addColorStop(1, '#582811');
+  headGrad.addColorStop(0, '#9c7358');
+  headGrad.addColorStop(0.55, '#78503c');
+  headGrad.addColorStop(1, '#482d20');
   ctx.fillStyle = headGrad;
   ctx.beginPath();
   ctx.ellipse(cx, cy - size * 0.04, size * 0.23, size * 0.25, 0, 0, Math.PI * 2);

@@ -155,11 +155,18 @@ function saveStoreDataToStorage(catalog: FilamentSpool[], importedLibraries: Imp
 
 const initialStoreData = loadInitialStoreData();
 
+const findOwnedOrBuiltIn = (predicate: (s: FilamentSpool) => boolean, fallbackId: string): FilamentSpool => {
+  return (
+    initialStoreData.catalog.find((s) => Boolean(s.libraryId) && predicate(s)) ||
+    VERIFIED_FILAMENT_CATALOG.find((s) => s.id === fallbackId)!
+  );
+};
+
 const defaultSpools = [
-  VERIFIED_FILAMENT_CATALOG.find((s) => s.id === 'bambu-pla-black')!,
-  VERIFIED_FILAMENT_CATALOG.find((s) => s.id === 'bambu-pla-brown')!,
-  VERIFIED_FILAMENT_CATALOG.find((s) => s.id === 'bambu-pla-orange')!,
-  VERIFIED_FILAMENT_CATALOG.find((s) => s.id === 'bambu-pla-jade-white')!,
+  findOwnedOrBuiltIn((s) => s.name.toLowerCase() === 'black', 'bambu-pla-black'),
+  findOwnedOrBuiltIn((s) => s.name.toLowerCase().includes('earth brown'), 'bambu-pla-brown'),
+  findOwnedOrBuiltIn((s) => s.name.toLowerCase().includes('light brown'), 'bambu-pla-latte-brown'),
+  findOwnedOrBuiltIn((s) => s.name.toLowerCase().includes('jade white'), 'bambu-pla-jade-white'),
 ];
 
 export const useTailWagStore = create<TailWagState>((set) => ({

@@ -193,6 +193,8 @@ export function buildHeightmapGrid(params: {
   const srcH = imageData.height;
   const srcData = imageData.data;
 
+  const isWarmCoatMask = new Uint8Array(cols * rows);
+
   for (let r = 0; r < rows; r++) {
     const v = r / Math.max(1, rows - 1);
     const sy = Math.min(srcH - 1, Math.floor(v * srcH));
@@ -204,21 +206,26 @@ export function buildHeightmapGrid(params: {
       const green = srcData[idx + 1] / 255;
       const blue = srcData[idx + 2] / 255;
 
-      // Perceptual portrait-weighted luminance (strong red/warm channel weight, controlled green weight)
-      let lum = 0.38 * red + 0.48 * green + 0.14 * blue;
+      // Perceptual luminance
+      let lum = 0.299 * red + 0.587 * green + 0.114 * blue;
 
-      // Detect foliage/grass pixels (green significantly higher than red and blue) and gently compress them into low-mid relief
+      // Detect foliage/grass pixels (green significantly higher than red and blue) and gently compress them
       const greenExcess = Math.max(0, green - Math.max(red, blue * 1.1));
       if (greenExcess > 0.04) {
         lum = Math.max(0.08, lum - greenExcess * 0.55);
       }
 
-      // Boost warm coat/skin midtones (where red > green > blue) so brown & fawn fur separate cleanly from black shadows
-      const warmSignal = Math.max(0, red - blue) * Math.max(0, red - green * 0.75);
-      lum = Math.min(1.0, lum + warmSignal * 0.28);
+      // Identify non-white warm brown/coat pixels (red > green, noticeable chroma, blue < 0.65)
+      const maxC = Math.max(red, green, blue);
+      const minC = Math.min(red, green, blue);
+      const chroma = maxC - minC;
+      const cellIdx = r * cols + c;
+      if (red > green && green >= blue * 0.82 && chroma > 0.12 && blue < 0.65) {
+        isWarmCoatMask[cellIdx] = 1;
+      }
 
       if (invertLuminance) lum = 1.0 - lum;
-      rawLum[r * cols + c] = lum;
+      rawLum[cellIdx] = lum;
     }
   }
 
@@ -257,7 +264,15 @@ export function buildHeightmapGrid(params: {
       lum = Math.max(0, Math.min(1, lum));
       lum = Math.pow(lum, 1 / Math.max(0.2, gamma));
       lum = (lum - 0.5) * contrast + 0.5;
-      enhancedLum[i] = Math.max(0, Math.min(1, lum));
+      lum = Math.max(0, Math.min(1, lum));
+
+      // Keep saturated brown/coat pixels below the top White highlight zone (<= 0.68)
+      // so White filament only prints on true white fur (blaze, chest, catchlights) and never washes out brown fur
+      if (!invertLuminance && isWarmCoatMask[i] === 1) {
+        lum = Math.min(0.68, 0.16 + lum * 0.66);
+      }
+
+      enhancedLum[i] = lum;
     }
   }
 

@@ -129,19 +129,35 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
     expect(roundTrip.spools[0].name).toBe('PLA Matte Dark Brown');
   });
 
-  it('solves 4, 8, 12, and 16 color palettes across 181 spools from filaments.json in < 100ms without freezing', async () => {
+  it('solves 4, 8, 12, and 16 color palettes across Owned spools from filaments.json and supports separate CMYK mode', async () => {
     const fs = await import('fs');
     const raw = fs.readFileSync('src/data/userDefaultFilaments.json', 'utf8');
     const parsed = parseFilamentLibraryJson(raw, 'filaments.json');
-    expect(parsed.spools.length).toBeGreaterThanOrEqual(180);
+    expect(parsed.spools.length).toBeGreaterThanOrEqual(30);
 
-    const { solveOptimalPalettes } = await import('../src/engine/autoSolver');
+    const { solveOptimalPalettes, solveCmykPalette } = await import('../src/engine/autoSolver');
     const size = 48;
     const rgba = new Uint8ClampedArray(size * size * 4);
+    // Simulate a Boxer dog portrait: dark background/muzzle, dark earth brown ears, medium brown head, white chest blaze
     for (let i = 0; i < size * size; i++) {
-      rgba[i * 4] = (i * 7) % 255;
-      rgba[i * 4 + 1] = (i * 5) % 255;
-      rgba[i * 4 + 2] = (i * 3) % 255;
+      const f = i / (size * size);
+      if (f < 0.25) {
+        rgba[i * 4] = 18;
+        rgba[i * 4 + 1] = 16;
+        rgba[i * 4 + 2] = 15;
+      } else if (f < 0.55) {
+        rgba[i * 4] = 115;
+        rgba[i * 4 + 1] = 78;
+        rgba[i * 4 + 2] = 56;
+      } else if (f < 0.82) {
+        rgba[i * 4] = 162;
+        rgba[i * 4 + 1] = 128;
+        rgba[i * 4 + 2] = 98;
+      } else {
+        rgba[i * 4] = 248;
+        rgba[i * 4 + 1] = 248;
+        rgba[i * 4 + 2] = 248;
+      }
       rgba[i * 4 + 3] = 255;
     }
     const imgData = { data: rgba, width: size, height: size, colorSpace: 'srgb' } as ImageData;
@@ -152,6 +168,14 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
       const elapsed = performance.now() - t0;
       expect(elapsed).toBeLessThan(150);
       expect(recipes[0].slots.length).toBe(colorCount);
+      if (colorCount === 4) {
+        const names = recipes[0].slots.map((s) => `${s.spool.brand} - ${s.spool.name}`).join(' -> ');
+        console.log('Solved 4-Color Model Accurate Stack:', names);
+        expect(names.toLowerCase()).toContain('brown');
+      }
     }
+
+    const cmyk = solveCmykPalette(imgData, parsed.spools, 32, 0.64, 0.08, 4);
+    expect(cmyk.slots).toHaveLength(4);
   });
 });

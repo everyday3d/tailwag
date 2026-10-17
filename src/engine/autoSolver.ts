@@ -40,13 +40,20 @@ export function extractImageHistogramSamples(imageData: ImageData): WeightedSamp
       const g = data[idx + 1] / 255;
       const b = data[idx + 2] / 255;
 
-      let lum = 0.38 * r + 0.48 * g + 0.14 * b;
+      // Perceptual luminance matching buildHeightmapGrid
+      let lum = 0.299 * r + 0.587 * g + 0.114 * b;
       const greenExcess = Math.max(0, g - Math.max(r, b * 1.1));
       if (greenExcess > 0.04) {
         lum = Math.max(0.08, lum - greenExcess * 0.55);
       }
-      const warmSignal = Math.max(0, r - b) * Math.max(0, r - g * 0.75);
-      lum = Math.min(1.0, lum + warmSignal * 0.28);
+
+      // Chroma-aware separation between Brown Coat midtones and True White highlights (matching buildHeightmapGrid)
+      const maxC = Math.max(r, g, b);
+      const minC = Math.min(r, g, b);
+      const chroma = maxC - minC;
+      if (r > g && g >= b * 0.85 && chroma > 0.15 && b < 0.62) {
+        lum = Math.min(0.72, Math.max(0.18, lum * 0.92 + 0.06));
+      }
 
       // Center subject Gaussian weight + foliage de-weighting
       const distCenter = Math.hypot(nx, ny);
@@ -54,8 +61,8 @@ export function extractImageHistogramSamples(imageData: ImageData): WeightedSamp
       if (greenExcess > 0.05) {
         weight *= 0.15; // Ignore background grass when choosing portrait filament colors
       }
-      if (r > g && g > b && r > 0.2) {
-        weight *= 2.0; // Prioritize warm brown/fawn/tan coat tones
+      if (r > g && g >= b * 0.85 && r > 0.18) {
+        weight *= 2.5; // Prioritize subject coat/skin tones
       }
 
       rawSamples.push({ r, g, b, rawLum: lum, weight });
@@ -83,9 +90,139 @@ function getSpoolLuminance(spool: FilamentSpool): number {
 }
 
 /**
+ * Hue- & Chroma-weighted perceptual color distance in CIE LAB space.
+ * Standard Euclidean ΔE weights lightness (L: 0..100) ~6x heavier than natural brown/tan chromaticity (a, b: 5..25),
+ * which previously allowed bright orange (#ff9016) or washed-out beige (#dbbba1) to beat true brown (#7c594a / #a6896c).
+ * Weighting chromaticity (da, db) and hue chord difference (dH) ensures browns match browns accurately.
+ */
+function perceptualPortraitError(target: LAB, simulated: LAB): number {
+  const dL = target.L - simulated.L;
+  const da = target.a - simulated.a;
+  const db = target.b - simulated.b;
+
+  const c1 = Math.hypot(target.a, target.b);
+  const c2 = Math.hypot(simulated.a, simulated.b);
+  const dC = c1 - c2;
+  const dH2 = Math.max(0, da * da + db * db - dC * dC);
+
+  return Math.sqrt(
+    (0.75 * dL) * (0.75 * dL) +
+      (1.95 * da) * (1.95 * da) +
+      (1.95 * db) * (1.95 * db) +
+      2.6 * dH2
+  );
+}
+
+/**
+ * Builds a dedicated CMYK palette stack (Black/Key + Cyan + Magenta + Yellow + White, or scaled to maxColors)
+ * as a completely separate option from the natural filament solver.
+ */
+export function solveCmykPalette(
+  imageData: ImageData,
+  candidateSpools: FilamentSpool[],
+  totalLayers: number,
+  baseLayerMm: number,
+  layerHeightMm: number,
+  maxColors: number = 4
+): SolverRecipe {
+  const sortedByLum = [...candidateSpools].sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
+
+  const findBestByTargetRgb = (target: { r: number; g: number; b: number }, used: Set<string>): FilamentSpool => {
+    const tLab = rgbToLab(target);
+    let best = sortedByLum[0];
+    let bestD = Infinity;
+    for (const s of candidateSpools) {
+      if (used.has(s.id)) continue;
+      const d = deltaE(tLab, rgbToLab(hexToRgb01(s.hex)));
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    used.add(best.id);
+    return best;
+  };
+
+  const usedIds = new Set<string>();
+  const keyBlack =
+    candidateSpools.find((s) => s.name.toLowerCase().includes('black')) ||
+    findBestByTargetRgb({ r: 0.05, g: 0.05, b: 0.05 }, usedIds);
+  usedIds.add(keyBlack.id);
+
+  const cyanSpool =
+    candidateSpools.find((s) => !usedIds.has(s.id) && s.name.toLowerCase().includes('cyan')) ||
+    findBestByTargetRgb({ r: 0.0, g: 0.55, b: 0.85 }, usedIds);
+  usedIds.add(cyanSpool.id);
+
+  const magentaSpool =
+    candidateSpools.find((s) => !usedIds.has(s.id) && s.name.toLowerCase().includes('magenta')) ||
+    findBestByTargetRgb({ r: 0.8, g: 0.05, b: 0.48 }, usedIds);
+  usedIds.add(magentaSpool.id);
+
+  const yellowSpool =
+    candidateSpools.find((s) => !usedIds.has(s.id) && s.name.toLowerCase().includes('yellow')) ||
+    findBestByTargetRgb({ r: 0.98, g: 0.88, b: 0.05 }, usedIds);
+  usedIds.add(yellowSpool.id);
+
+  const whiteSpool =
+    candidateSpools.find((s) => !usedIds.has(s.id) && s.name.toLowerCase().includes('jade white')) ||
+    candidateSpools.find((s) => !usedIds.has(s.id) && s.name.toLowerCase().includes('white')) ||
+    findBestByTargetRgb({ r: 0.98, g: 0.98, b: 0.98 }, usedIds);
+  usedIds.add(whiteSpool.id);
+
+  const targetCount = Math.max(2, Math.min(maxColors, totalLayers, candidateSpools.length));
+  let cmykSpools: FilamentSpool[];
+
+  if (targetCount <= 4) {
+    // Classic 4-color CMYW lithophane/color-mix stack (or KCMW ordered darkest to lightest)
+    cmykSpools = [cyanSpool, magentaSpool, yellowSpool, whiteSpool].sort(
+      (a, b) => getSpoolLuminance(a) - getSpoolLuminance(b)
+    );
+  } else {
+    const baseSet = [keyBlack, cyanSpool, magentaSpool, yellowSpool, whiteSpool];
+    for (const s of sortedByLum) {
+      if (baseSet.length >= targetCount) break;
+      if (!usedIds.has(s.id)) {
+        usedIds.add(s.id);
+        baseSet.push(s);
+      }
+    }
+    cmykSpools = baseSet.slice(0, targetCount).sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
+  }
+
+  const slots: LayerSwapSlot[] = cmykSpools.map((spool, idx) => {
+    const upToLayer =
+      idx === cmykSpools.length - 1
+        ? totalLayers
+        : Math.max(idx + 1, Math.round(((idx + 1) / cmykSpools.length) * totalLayers));
+    return { id: `slot-cmyk-${idx}`, spool, upToLayer };
+  });
+
+  // Compute ΔE against image for reference badge
+  const samples = extractImageHistogramSamples(imageData);
+  const lut = buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots);
+  let err = 0;
+  let wSum = 0;
+  for (const s of samples) {
+    const lIdx = Math.max(0, Math.min(totalLayers - 1, Math.round(s.luminance * (totalLayers - 1))));
+    err += deltaE(s.lab, rgbToLab(lut[lIdx].rgb)) * s.weight;
+    wSum += s.weight;
+  }
+
+  return {
+    id: 'recipe-cmyk',
+    name: `CMYK Color Stack (${slots.length} Colors)`,
+    badge: 'CMYK Process',
+    description: 'Dedicated Cyan / Magenta / Yellow / White subtractive optical blending stack.',
+    scoreDeltaE: wSum > 0 ? err / wSum : 15.0,
+    slots,
+  };
+}
+
+/**
  * AI Palette & Layer-Swap Auto-Solver
- * Evaluates combinations of candidate spools (ordered from dark base to light highlight)
- * and optimizes layer swap thresholds to minimize subject-weighted perceptual ΔE.
+ * Finds the best possible filaments and swap heights in the user's selected library
+ * for the chosen color limit (4, 8, 12, or 16 colors).
  */
 export function solveOptimalPalettes(
   imageData: ImageData,
@@ -98,14 +235,15 @@ export function solveOptimalPalettes(
   const samples = extractImageHistogramSamples(imageData);
   if (samples.length === 0 || candidateSpools.length < 2) return [];
 
-  // Pre-aggregate image samples into `totalLayers` weighted LAB buckets once upfront (100x faster evaluation)
+  // Filter out non-optical carrier spools (TD >= 50mm like pure "Transparent" TD 100mm) unless no other spools exist
+  const usablePool = candidateSpools.filter((s) => s.td < 40 && !s.name.toLowerCase().includes('transparent'));
+  const activePool = usablePool.length >= 4 ? usablePool : candidateSpools;
+
+  // Pre-aggregate image samples into `totalLayers` weighted LAB buckets
   const bucketL = new Float64Array(totalLayers);
   const bucketA = new Float64Array(totalLayers);
   const bucketB = new Float64Array(totalLayers);
   const bucketW = new Float64Array(totalLayers);
-
-  let lowMidL = 0, lowMidA = 0, lowMidB = 0, lowMidW = 0;
-  let highMidL = 0, highMidA = 0, highMidB = 0, highMidW = 0;
 
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
@@ -114,18 +252,6 @@ export function solveOptimalPalettes(
     bucketA[layerIdx] += s.lab.a * s.weight;
     bucketB[layerIdx] += s.lab.b * s.weight;
     bucketW[layerIdx] += s.weight;
-
-    if (s.luminance >= 0.18 && s.luminance < 0.50) {
-      lowMidL += s.lab.L * s.weight;
-      lowMidA += s.lab.a * s.weight;
-      lowMidB += s.lab.b * s.weight;
-      lowMidW += s.weight;
-    } else if (s.luminance >= 0.50 && s.luminance <= 0.82) {
-      highMidL += s.lab.L * s.weight;
-      highMidA += s.lab.a * s.weight;
-      highMidB += s.lab.b * s.weight;
-      highMidW += s.weight;
-    }
   }
 
   const layerBuckets: { lab: LAB; weight: number }[] = [];
@@ -143,54 +269,8 @@ export function solveOptimalPalettes(
     }
   }
 
-  const lowMidCentroid: LAB =
-    lowMidW > 0
-      ? { L: lowMidL / lowMidW, a: lowMidA / lowMidW, b: lowMidB / lowMidW }
-      : { L: 38, a: 8, b: 14 };
-  const highMidCentroid: LAB =
-    highMidW > 0
-      ? { L: highMidL / highMidW, a: highMidA / highMidW, b: highMidB / highMidW }
-      : { L: 66, a: 10, b: 20 };
-
-  // Sort candidate spools by luminance (darkest to lightest)
-  const sortedByLum = [...candidateSpools].sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
-
-  // Cap darkAnchors to at most 3 darkest spools
-  const darkAnchors = sortedByLum.slice(0, Math.min(3, Math.max(1, Math.ceil(sortedByLum.length * 0.15))));
-
-  const allLightAnchors = sortedByLum.filter((s) => {
-    const n = s.name.toLowerCase();
-    return n.includes('white') || n.includes('ivory') || getSpoolLuminance(s) > 0.82;
-  });
-  // Cap effectiveLights to at most 3 best light/white spools (preferring higher TD for smooth top highlights)
-  const effectiveLights = (allLightAnchors.length > 0 ? allLightAnchors : sortedByLum.slice(-2))
-    .slice()
-    .sort((a, b) => b.td - a.td)
-    .slice(0, 3);
-
-  // Filter midSpools and prune to top 14 candidates closest to the image's lower-mid and upper-mid LAB centroids
-  // so 180+ or 1000+ spool libraries never trigger an O(M^2) combinatorial freeze
-  const rawMidSpools = sortedByLum.filter((s) => {
-    const lum = getSpoolLuminance(s);
-    const n = s.name.toLowerCase();
-    if (n.includes('yellow')) return false;
-    return lum > 0.04 && lum < 0.86;
-  });
-
-  const midSpools =
-    rawMidSpools.length <= 14
-      ? rawMidSpools
-      : rawMidSpools
-          .map((s) => {
-            const lab = rgbToLab(hexToRgb01(s.hex));
-            const distLow = deltaE(lab, lowMidCentroid);
-            const distHigh = deltaE(lab, highMidCentroid);
-            return { spool: s, score: Math.min(distLow, distHigh) };
-          })
-          .sort((a, b) => a.score - b.score)
-          .slice(0, 14)
-          .map((x) => x.spool)
-          .sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
+  const sortedByLum = [...activePool].sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
+  const targetColorCount = Math.max(2, Math.min(maxColors, totalLayers, sortedByLum.length));
 
   const evaluateCombo = (spools: FilamentSpool[], quantiles: number[]): { avgDe: number; slots: LayerSwapSlot[] } => {
     const slots: LayerSwapSlot[] = spools.map((spool, idx) => {
@@ -198,11 +278,13 @@ export function solveOptimalPalettes(
         return { id: `slot-${idx}`, spool, upToLayer: totalLayers };
       }
       const q = quantiles[idx] ?? (idx + 1) / spools.length;
-      const targetLayer = Math.max(idx + 1, Math.min(totalLayers - (spools.length - 1 - idx), Math.round(q * totalLayers)));
+      const targetLayer = Math.max(
+        idx + 1,
+        Math.min(totalLayers - (spools.length - 1 - idx), Math.round(q * totalLayers))
+      );
       return { id: `slot-${idx}`, spool, upToLayer: targetLayer };
     });
 
-    // Enforce strictly increasing layers
     for (let i = 1; i < slots.length; i++) {
       if (slots[i].upToLayer <= slots[i - 1].upToLayer) {
         slots[i].upToLayer = Math.min(totalLayers, slots[i - 1].upToLayer + 1);
@@ -217,7 +299,7 @@ export function solveOptimalPalettes(
       const bucket = layerBuckets[l];
       if (bucket.weight <= 0) continue;
       const lutLab = rgbToLab(lut[l].rgb);
-      totalWeightedError += deltaE(bucket.lab, lutLab) * bucket.weight;
+      totalWeightedError += perceptualPortraitError(bucket.lab, lutLab) * bucket.weight;
     }
 
     return {
@@ -226,135 +308,255 @@ export function solveOptimalPalettes(
     };
   };
 
-  const targetColorCount = Math.max(2, Math.min(maxColors, totalLayers, sortedByLum.length));
+  /**
+   * Forward Layer-Band Optical TD Optimizer:
+   * Given a pool of spools and a quantile split profile, selects the optimal sequence of `targetColorCount` spools
+   * from bottom (darkest base) to top (highlight) by simulating the actual Beer-Lambert TD blend at each band
+   * and choosing the spool that minimizes `perceptualPortraitError` over that band's layers.
+   */
+  const optimizeBandStack = (
+    pool: FilamentSpool[],
+    quantiles: number[],
+    forcedDark?: FilamentSpool,
+    forcedLight?: FilamentSpool
+  ): { avgDe: number; slots: LayerSwapSlot[] } => {
+    const poolByLum = [...pool].sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
+    const darkSpool = forcedDark || poolByLum[0];
+    const lightCandidates = poolByLum.filter((s) => {
+      const n = s.name.toLowerCase();
+      return n.includes('white') || n.includes('ivory') || getSpoolLuminance(s) > 0.82;
+    });
+    const lightSpool =
+      forcedLight ||
+      (lightCandidates.length > 0
+        ? lightCandidates.sort((a, b) => b.td - a.td)[0]
+        : poolByLum[poolByLum.length - 1]);
+
+    // Convert quantiles to layer boundaries [end_0, end_1, ..., totalLayers]
+    const layerEnds: number[] = [];
+    for (let k = 0; k < targetColorCount; k++) {
+      if (k === targetColorCount - 1) {
+        layerEnds.push(totalLayers);
+      } else {
+        const q = quantiles[k] ?? (k + 1) / targetColorCount;
+        layerEnds.push(
+          Math.max(k + 1, Math.min(totalLayers - (targetColorCount - 1 - k), Math.round(q * totalLayers)))
+        );
+      }
+    }
+    for (let i = 1; i < layerEnds.length; i++) {
+      if (layerEnds[i] <= layerEnds[i - 1]) {
+        layerEnds[i] = Math.min(totalLayers, layerEnds[i - 1] + 1);
+      }
+    }
+    layerEnds[layerEnds.length - 1] = totalLayers;
+
+    const chosenSlots: LayerSwapSlot[] = [
+      { id: 'slot-0', spool: darkSpool, upToLayer: layerEnds[0] },
+    ];
+    const usedIds = new Set<string>([darkSpool.id, lightSpool.id]);
+
+    // Greedily & accurately solve each intermediate band k = 1 .. targetColorCount - 2 using actual optical TD simulation
+    for (let k = 1; k < targetColorCount - 1; k++) {
+      const bandStartLayer = layerEnds[k - 1] + 1;
+      const bandEndLayer = layerEnds[k];
+      const prevLum = getSpoolLuminance(chosenSlots[k - 1].spool);
+      const maxAllowedLum = Math.min(0.88, getSpoolLuminance(lightSpool) - 0.02);
+
+      let bestBandSpool: FilamentSpool | null = null;
+      let bestBandErr = Infinity;
+
+      for (const candidate of poolByLum) {
+        if (usedIds.has(candidate.id)) continue;
+        const candLum = getSpoolLuminance(candidate);
+        // Keep stack monotonically increasing in luminance so lighter layers blend over darker base layers
+        if (candLum < prevLum - 0.02 || candLum > maxAllowedLum) continue;
+
+        const trialSlots: LayerSwapSlot[] = [
+          ...chosenSlots,
+          { id: `slot-${k}`, spool: candidate, upToLayer: bandEndLayer },
+        ];
+        const lut = buildLayerColorLUT(bandEndLayer, baseLayerMm, layerHeightMm, trialSlots);
+
+        let bandErr = 0;
+        let bandW = 0;
+        for (let l = bandStartLayer - 1; l < bandEndLayer; l++) {
+          const b = layerBuckets[l];
+          if (b.weight <= 0) continue;
+          bandErr += perceptualPortraitError(b.lab, rgbToLab(lut[l].rgb)) * b.weight;
+          bandW += b.weight;
+        }
+        // Also penalize raw spool hue distance to the band's average target LAB so ultra-opaque (low-TD) or ultra-sheer (high-TD) spools stay true to hue
+        let avgL = 0, avgA = 0, avgB = 0, wTot = 0;
+        for (let l = bandStartLayer - 1; l < bandEndLayer; l++) {
+          const b = layerBuckets[l];
+          avgL += b.lab.L * b.weight;
+          avgA += b.lab.a * b.weight;
+          avgB += b.lab.b * b.weight;
+          wTot += b.weight;
+        }
+        const bandTargetLab: LAB =
+          wTot > 0
+            ? { L: avgL / wTot, a: avgA / wTot, b: avgB / wTot }
+            : { L: ((bandStartLayer + bandEndLayer) / (2 * totalLayers)) * 100, a: 8, b: 14 };
+        const directSpoolErr = perceptualPortraitError(bandTargetLab, rgbToLab(hexToRgb01(candidate.hex)));
+        const combinedScore = (bandW > 0 ? bandErr / bandW : directSpoolErr) * 0.55 + directSpoolErr * 0.45;
+
+        if (combinedScore < bestBandErr) {
+          bestBandErr = combinedScore;
+          bestBandSpool = candidate;
+        }
+      }
+
+      if (!bestBandSpool) {
+        bestBandSpool = poolByLum.find((s) => !usedIds.has(s.id) && getSpoolLuminance(s) >= prevLum) ||
+          poolByLum.find((s) => !usedIds.has(s.id)) ||
+          poolByLum[Math.min(poolByLum.length - 1, k)];
+      }
+
+      usedIds.add(bestBandSpool.id);
+      chosenSlots.push({ id: `slot-${k}`, spool: bestBandSpool, upToLayer: bandEndLayer });
+    }
+
+    chosenSlots.push({
+      id: `slot-${targetColorCount - 1}`,
+      spool: lightSpool,
+      upToLayer: totalLayers,
+    });
+
+    return evaluateCombo(
+      chosenSlots.map((s) => s.spool),
+      quantiles
+    );
+  };
+
   const evenQuantiles = Array.from(
     { length: targetColorCount - 1 },
     (_, i) => (i + 1) / targetColorCount
   );
 
-  // Recipe 1: BoxerDawg Warm Portrait & Coat Stack (supports 4, 8, 12, or 16 colors)
-  const blackSpool =
-    candidateSpools.find((s) => s.id === 'bambu-pla-black' || s.name.toLowerCase().includes('black')) || sortedByLum[0];
-  const whiteSpool =
-    candidateSpools.find((s) => s.id === 'bambu-pla-jade-white' || s.name.toLowerCase().includes('jade white')) ||
-    candidateSpools.find((s) => s.name.toLowerCase().includes('white')) ||
-    effectiveLights[0];
-  const brownSpool =
-    candidateSpools.find((s) => s.id === 'bambu-pla-brown' || s.name.toLowerCase().includes('basic brown')) ||
-    candidateSpools.find((s) => s.name.toLowerCase().includes('brown') || s.name.toLowerCase().includes('chocolate') || s.name.toLowerCase().includes('mahogany')) ||
-    sortedByLum[Math.floor(sortedByLum.length * 0.3)];
-  const warmMidSpool =
-    candidateSpools.find(
-      (s) =>
-        s.id === 'bambu-pla-orange' ||
-        s.id === 'bambu-pla-latte-brown' ||
-        s.id === 'bambu-pla-desert-tan' ||
-        s.name.toLowerCase().includes('caramel') ||
-        s.name.toLowerCase().includes('orange') ||
-        s.name.toLowerCase().includes('tan') ||
-        s.name.toLowerCase().includes('beige')
-    ) || sortedByLum[Math.floor(sortedByLum.length * 0.65)];
+  // Exclude pure CMYK process Cyan/Magenta/Yellow from hijacking natural portrait stacks unless in CMYK mode
+  const naturalPool = sortedByLum.filter((s) => {
+    const n = s.name.toLowerCase();
+    if (n === 'cyan' || n === 'magenta' || n === 'yellow') return false;
+    return true;
+  });
+  const effectiveNaturalPool = naturalPool.length >= targetColorCount ? naturalPool : sortedByLum;
 
-  let signatureCombo: FilamentSpool[] = [];
+  // Test multiple quantile profiles and dark/light anchors to find the globally best stack from the selected library
+  const quantileProfiles: number[][] =
+    targetColorCount === 4
+      ? [
+          [0.18, 0.46, 0.76],
+          [0.21, 0.50, 0.78],
+          [0.16, 0.42, 0.74],
+          [0.24, 0.52, 0.80],
+        ]
+      : [
+          evenQuantiles,
+          Array.from({ length: targetColorCount - 1 }, (_, i) =>
+            Math.min(0.92, 0.14 + (i / Math.max(1, targetColorCount - 2)) * 0.68)
+          ),
+        ];
+
+  const darkAnchors = effectiveNaturalPool.slice(0, Math.min(3, Math.max(1, Math.ceil(effectiveNaturalPool.length * 0.12))));
+  const allWhiteAnchors = effectiveNaturalPool.filter((s) => {
+    const n = s.name.toLowerCase();
+    return n.includes('white') || n.includes('ivory') || getSpoolLuminance(s) > 0.84;
+  });
+  const lightAnchors = (allWhiteAnchors.length > 0 ? allWhiteAnchors : effectiveNaturalPool.slice(-2))
+    .slice()
+    .sort((a, b) => b.td - a.td)
+    .slice(0, 3);
+
+  let bestLibraryMatch: { avgDe: number; slots: LayerSwapSlot[] } | null = null;
+
   if (targetColorCount <= 4) {
-    signatureCombo = [blackSpool, brownSpool, warmMidSpool, whiteSpool].filter(
-      (s, idx, arr) => s && arr.findIndex((x) => x.id === s.id) === idx
-    );
-  } else {
-    // Rank spools that have warm portrait/coat affinity (red >= green >= blue or neutral dark/light)
-    const warmPool = sortedByLum.filter((s) => {
-      const rgb = hexToRgb01(s.hex);
-      const isFoliage = rgb.g > rgb.r * 1.08 && rgb.g > rgb.b * 1.08;
-      return !isFoliage && !s.name.toLowerCase().includes('yellow');
-    });
-    const effectiveWarm = warmPool.length >= targetColorCount ? warmPool : sortedByLum;
-    const picked: FilamentSpool[] = [blackSpool];
-    const usedIds = new Set<string>([blackSpool.id, whiteSpool.id]);
-    const innerNeeded = targetColorCount - 2;
-    const innerPool = effectiveWarm.filter((s) => !usedIds.has(s.id));
-    for (let k = 0; k < innerNeeded && innerPool.length > 0; k++) {
-      const idx = Math.min(
-        innerPool.length - 1,
-        Math.floor(((k + 0.5) / innerNeeded) * innerPool.length)
-      );
-      let chosen = innerPool[idx];
-      if (usedIds.has(chosen.id)) {
-        chosen = innerPool.find((s) => !usedIds.has(s.id)) || chosen;
-      }
-      usedIds.add(chosen.id);
-      picked.push(chosen);
+    // For 4 colors, also do an exhaustive pair search over top 14 hue-matched midtone spools so we never miss the global optimum
+    let midTargetL = 0, midTargetA = 0, midTargetB = 0, midW = 0;
+    for (let l = Math.floor(totalLayers * 0.18); l < Math.floor(totalLayers * 0.76); l++) {
+      const b = layerBuckets[l];
+      midTargetL += b.lab.L * b.weight;
+      midTargetA += b.lab.a * b.weight;
+      midTargetB += b.lab.b * b.weight;
+      midW += b.weight;
     }
-    picked.push(whiteSpool);
-    signatureCombo = picked.sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
-  }
+    const midCentroid: LAB =
+      midW > 0 ? { L: midTargetL / midW, a: midTargetA / midW, b: midTargetB / midW } : { L: 48, a: 10, b: 18 };
 
-  const signatureQuantiles = targetColorCount <= 4 ? [0.21, 0.50, 0.79] : evenQuantiles;
-  const signatureEval = evaluateCombo(signatureCombo, signatureQuantiles);
+    const candidateMids = effectiveNaturalPool
+      .filter((s) => {
+        const lum = getSpoolLuminance(s);
+        return lum > 0.03 && lum < 0.84;
+      })
+      .map((s) => ({
+        spool: s,
+        err: perceptualPortraitError(midCentroid, rgbToLab(hexToRgb01(s.hex))),
+      }))
+      .sort((a, b) => a.err - b.err)
+      .slice(0, 14)
+      .map((x) => x.spool)
+      .sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
 
-  // Recipe 2: Subject-Weighted Perceptual ΔE Optimizer (supports 4, 8, 12, or 16 colors)
-  let bestColorMatch: { avgDe: number; slots: LayerSwapSlot[] } | null = null;
-
-  if (targetColorCount <= 4) {
-    const quantileProfiles4 = [
-      [0.21, 0.50, 0.79],
-      [0.17, 0.46, 0.75],
-      [0.25, 0.54, 0.83],
-    ];
     for (const dark of darkAnchors) {
-      for (const light of effectiveLights) {
+      for (const light of lightAnchors) {
         if (dark.id === light.id) continue;
-        for (let i = 0; i < midSpools.length; i++) {
-          for (let j = i + 1; j < midSpools.length; j++) {
-            const m1 = midSpools[i];
-            const m2 = midSpools[j];
+        for (let i = 0; i < candidateMids.length; i++) {
+          for (let j = i + 1; j < candidateMids.length; j++) {
+            const m1 = candidateMids[i];
+            const m2 = candidateMids[j];
             if (m1.id === dark.id || m1.id === light.id || m2.id === dark.id || m2.id === light.id) continue;
-            const combo = [dark, m1, m2, light].slice(0, targetColorCount);
-            for (const qProfile of quantileProfiles4) {
-              const res = evaluateCombo(combo, qProfile);
-              if (!bestColorMatch || res.avgDe < bestColorMatch.avgDe) {
-                bestColorMatch = res;
+            // Score both optical LUT blend AND direct spool-to-band hue fidelity
+            for (const qProf of quantileProfiles) {
+              const res = evaluateCombo([dark, m1, m2, light], qProf);
+              // Direct midtone hue fidelity bonus so true browns beat neon orange + pale beige tricks
+              const m1Lab = rgbToLab(hexToRgb01(m1.hex));
+              const m2Lab = rgbToLab(hexToRgb01(m2.hex));
+              const lowBandLab = layerBuckets[Math.floor(totalLayers * 0.32)]?.lab || midCentroid;
+              const highBandLab = layerBuckets[Math.floor(totalLayers * 0.60)]?.lab || midCentroid;
+              const directErr =
+                (perceptualPortraitError(lowBandLab, m1Lab) + perceptualPortraitError(highBandLab, m2Lab)) * 0.5;
+              const totalScore = res.avgDe * 0.55 + directErr * 0.45;
+              if (!bestLibraryMatch || totalScore < bestLibraryMatch.avgDe) {
+                bestLibraryMatch = { avgDe: totalScore, slots: res.slots };
               }
             }
           }
         }
       }
     }
-  } else {
-    // Multi-band (8 / 12 / 16 color) centroid-guided band matcher
-    const used = new Set<string>([blackSpool.id, whiteSpool.id]);
-    const bandSpools: FilamentSpool[] = [blackSpool];
-    const bandCount = targetColorCount - 2;
-    for (let b = 0; b < bandCount; b++) {
-      const lStart = Math.floor(((b + 0.5) / (bandCount + 1)) * totalLayers);
-      const targetLab = layerBuckets[Math.min(totalLayers - 1, lStart)].lab;
-      const lumMin = (b / (bandCount + 1)) * 0.85;
-      const lumMax = ((b + 2) / (bandCount + 1)) * 0.95;
-
-      let bestSpool: FilamentSpool | null = null;
-      let bestDist = Infinity;
-      for (const s of sortedByLum) {
-        if (used.has(s.id)) continue;
-        const lum = getSpoolLuminance(s);
-        if (lum < lumMin || lum > lumMax) continue;
-        const d = deltaE(rgbToLab(hexToRgb01(s.hex)), targetLab);
-        if (d < bestDist) {
-          bestDist = d;
-          bestSpool = s;
-        }
-      }
-      if (!bestSpool) {
-        bestSpool = sortedByLum.find((s) => !used.has(s.id)) || sortedByLum[0];
-      }
-      used.add(bestSpool.id);
-      bandSpools.push(bestSpool);
-    }
-    bandSpools.push(whiteSpool);
-    bandSpools.sort((a, b) => getSpoolLuminance(a) - getSpoolLuminance(b));
-    bestColorMatch = evaluateCombo(bandSpools, evenQuantiles);
   }
 
-  if (!bestColorMatch) {
-    bestColorMatch = signatureEval;
+  for (const dark of darkAnchors) {
+    for (const light of lightAnchors) {
+      for (const qProf of quantileProfiles) {
+        const res = optimizeBandStack(effectiveNaturalPool, qProf, dark, light);
+        if (!bestLibraryMatch || res.avgDe < bestLibraryMatch.avgDe) {
+          bestLibraryMatch = res;
+        }
+      }
+    }
+  }
+
+  // Recipe 2: Warm Portrait & Coat Stack (strictly warm brown/bronze/tan/ivory spools from the selected library)
+  const warmOnlyPool = effectiveNaturalPool.filter((s) => {
+    const rgb = hexToRgb01(s.hex);
+    const n = s.name.toLowerCase();
+    const isBlackOrWhite =
+      n.includes('black') || n.includes('white') || getSpoolLuminance(s) < 0.06 || getSpoolLuminance(s) > 0.85;
+    // Exclude neon oranges (where R > 0.90 and G > 0.30 and B < 0.15) when real browns exist
+    const isNeonOrange = rgb.r > 0.88 && rgb.g > 0.25 && rgb.b < 0.20 && n.includes('orange');
+    const isWarmBrownOrTan = rgb.r >= rgb.g && rgb.g >= rgb.b * 0.85 && !isNeonOrange;
+    return isBlackOrWhite || isWarmBrownOrTan;
+  });
+
+  const warmEval = optimizeBandStack(
+    warmOnlyPool.length >= targetColorCount ? warmOnlyPool : effectiveNaturalPool,
+    targetColorCount <= 4 ? [0.18, 0.46, 0.76] : quantileProfiles[1] || evenQuantiles
+  );
+
+  if (!bestLibraryMatch) {
+    bestLibraryMatch = warmEval;
   }
 
   // Recipe 3: Monochrome / High-Definition Archival Relief (supports 4, 8, 12, or 16 colors)
@@ -384,20 +586,20 @@ export function solveOptimalPalettes(
 
   return [
     {
-      id: 'recipe-boxerdawg',
-      name: `BoxerDawg Warm Portrait (${signatureEval.slots.length} Colors)`,
-      badge: 'Recommended • Pet & Fur',
-      description: 'Black shadow mask -> graduated warm brown/fawn coat tones -> crisp white highlights.',
-      scoreDeltaE: signatureEval.avgDe,
-      slots: signatureEval.slots,
+      id: 'recipe-accurate',
+      name: `Model Accurate (${bestLibraryMatch.slots.length} Colors)`,
+      badge: `Best Match • ΔE ${bestLibraryMatch.avgDe.toFixed(1)}`,
+      description: 'Optimal filaments & swap heights solved directly from your selected library.',
+      scoreDeltaE: bestLibraryMatch.avgDe,
+      slots: bestLibraryMatch.slots,
     },
     {
-      id: 'recipe-accurate',
-      name: `Subject True-Tone (${bestColorMatch.slots.length} Colors)`,
-      badge: `ΔE ${bestColorMatch.avgDe.toFixed(1)}`,
-      description: 'Center-subject weighted CIE LAB match ignoring background grass/foliage.',
-      scoreDeltaE: bestColorMatch.avgDe,
-      slots: bestColorMatch.slots,
+      id: 'recipe-boxerdawg',
+      name: `Warm Portrait & Fur (${warmEval.slots.length} Colors)`,
+      badge: 'Warm Brown & Coat',
+      description: 'Black shadow mask -> rich dark & medium brown coat tones -> crisp white highlights.',
+      scoreDeltaE: warmEval.avgDe,
+      slots: warmEval.slots,
     },
     {
       id: 'recipe-monochrome',
