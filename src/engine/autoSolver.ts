@@ -210,10 +210,36 @@ export function solveOptimalPalettes(
     }
   }
 
+  // Precompute 4-layer sliding elevation windows across the midtone relief [minBaseLayer .. 84% height]
+  // Because a 2.5D print can only extrude ONE filament color per layer Z-height, a chromatic filament
+  // is only valid if at least one elevation window in the heightmap genuinely leans toward its hue.
+  const winStartMin = Math.max(0, minBaseLayer - 1);
+  const winStartMax = Math.max(winStartMin, Math.min(totalLayers - 3, Math.floor(totalLayers * 0.82)));
+  const elevationWindows: { lab: LABColor; chroma: number; weight: number }[] = [];
+  for (let l0 = winStartMin; l0 <= winStartMax; l0++) {
+    let wL = 0, wA = 0, wB = 0, wSum = 0;
+    for (let l = l0; l < Math.min(totalLayers, l0 + 4); l++) {
+      const bk = layerBuckets[l];
+      wL += bk.lab.L * bk.weight;
+      wA += bk.lab.a * bk.weight;
+      wB += bk.lab.b * bk.weight;
+      wSum += bk.weight;
+    }
+    if (wSum > totalSampleWeight * 0.025) {
+      const lab = { L: wL / wSum, a: wA / wSum, b: wB / wSum };
+      elevationWindows.push({
+        lab,
+        chroma: Math.hypot(lab.a, lab.b),
+        weight: wSum,
+      });
+    }
+  }
+
   /**
-   * Universal Cluster-Driven Spool Compatibility Engine (memoized per spool ID):
+   * Universal Cluster & Elevation-Band Spool Compatibility Engine (memoized per spool ID):
    * Classifies each spool (Black base, White highlight, Neutral grey, or Chromatic color)
-   * and measures how closely it matches the image's K-Means++ color clusters via CIEDE2000 (ΔE00).
+   * and measures how closely it matches both the image's K-Means++ color clusters AND
+   * the actual 1D luminance-to-height elevation bands via CIEDE2000 (ΔE00).
    */
   const spoolScoreCache = new Map<
     string,
@@ -222,6 +248,7 @@ export function solveOptimalPalettes(
       isWhite: boolean;
       isBlack: boolean;
       minClusterDe00: number;
+      minBandDe00: number;
       hueSupportRatio: number;
     }
   >();
@@ -241,15 +268,22 @@ export function solveOptimalPalettes(
     const isNeutral = isBlack || isWhite || chroma <= 6.5;
 
     if (isNeutral) {
-      const res = { isNeutral: true, isWhite, isBlack, minClusterDe00: 0, hueSupportRatio: 1.0 };
+      const res = {
+        isNeutral: true,
+        isWhite,
+        isBlack,
+        minClusterDe00: 0,
+        minBandDe00: 0,
+        hueSupportRatio: 1.0,
+      };
       spoolScoreCache.set(spool.id, res);
       return res;
     }
 
-    // Find closest chromatic cluster in the image via CIEDE2000 + hue & chroma alignment
+    // 1. Find closest chromatic cluster in the image via CIEDE2000 + hue & chroma alignment
     let minClusterDe00 = Infinity;
     for (const c of clusters) {
-      if (c.chroma < 6.0 || c.weightRatio < 0.02) continue;
+      if (c.chroma < 6.0 || c.weightRatio < 0.025) continue;
       const cosSim = (c.lab.a * lab.a + c.lab.b * lab.b) / (c.chroma * chroma);
       // Require strong hue alignment (< ~28 deg) and compatible chroma/saturation
       // so high-chroma Red/Orange (chroma 50..85) cannot masquerade as muted Brown (chroma 15..28)
@@ -261,7 +295,23 @@ export function solveOptimalPalettes(
       }
     }
 
-    // Also measure direct pixel support in samples for fine details / smaller logo elements
+    // 2. Check 1D Elevation-Band Chromatic Coherence:
+    // Ensure there is at least one elevation window in the heightmap whose net color vector
+    // aligns with this chromatic filament (preventing background grass/clothing hues that share
+    // luminance with the main subject from painting the subject the wrong hue!)
+    let minBandDe00 = Infinity;
+    for (const win of elevationWindows) {
+      if (win.chroma < 5.2) continue;
+      const cosSim = (win.lab.a * lab.a + win.lab.b * lab.b) / (win.chroma * chroma);
+      if (cosSim < 0.84) continue;
+      if (chroma > win.chroma * 1.65 + 9 || win.chroma > chroma * 1.9 + 12) continue;
+      const d00 = ciede2000(win.lab, lab);
+      if (d00 < minBandDe00) {
+        minBandDe00 = d00;
+      }
+    }
+
+    // 3. Also measure direct pixel support in samples
     let matchingWeight = 0;
     for (let i = 0; i < samples.length; i++) {
       const s = samples[i];
@@ -284,22 +334,24 @@ export function solveOptimalPalettes(
       isWhite: false,
       isBlack: false,
       minClusterDe00,
+      minBandDe00,
       hueSupportRatio,
     };
     spoolScoreCache.set(spool.id, res);
     return res;
   };
 
-  // Filter candidate pool to spools supported by the image's actual K-Means++ color clusters
+  // Filter candidate pool to spools supported by BOTH the image's K-Means++ clusters
+  // AND at least one coherent 1D luminance-to-height elevation window
   const imageCompatiblePool = activePool.filter((s) => {
     const n = s.name.toLowerCase();
     if (n === 'cyan' || n === 'magenta' || n === 'yellow') return false;
     const info = classifyAndScoreSpool(s);
-    if (info.isBlack || info.isWhite) return true;
-    if (info.isNeutral) {
-      return isMonochromeOrGreySubject;
-    }
-    return info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.035;
+    if (info.isBlack || info.isWhite || info.isNeutral) return true;
+    return (
+      info.minBandDe00 <= 19.5 &&
+      (info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.04)
+    );
   });
 
   const effectivePool = imageCompatiblePool.length >= 4 ? imageCompatiblePool : activePool;
@@ -318,9 +370,6 @@ export function solveOptimalPalettes(
     if (info.isBlack) return lum * 0.05 + s.td * 0.005;
     if (info.isWhite) {
       return 0.90 + lum * 0.07 + (1 / Math.max(0.5, s.td)) * 0.02;
-    }
-    if (info.isNeutral) {
-      return 0.03 + lum * 0.15;
     }
     return 0.20 + lum * 0.65;
   };
@@ -349,7 +398,7 @@ export function solveOptimalPalettes(
     // Black starting base spans Layers 1..(minBaseLayer + 1) (e.g. L1..L6 = 0.56mm)
     // Remaining TD blending layers span from shadowMaxQ to totalLayers
     const quantiles: number[] = [];
-    const shadowMaxQ = chromatics.length > 0 ? Math.max(0.24, (minBaseLayer + 1) / totalLayers) : 0.45;
+    const shadowMaxQ = chromatics.length > 0 ? Math.max(0.24, (minBaseLayer + 1) / totalLayers) : 0.68;
     const chromaMaxQ = whites.length > 0 ? 0.75 : 0.96;
     const coreChromaMaxQ =
       paleChromatics.length > 0 && coreChromatics.length > 0
@@ -540,23 +589,31 @@ export function solveOptimalPalettes(
       }
     }
 
-    // 3. Add any remaining distinct-hex chromatic spools ranked by cluster proximity
+    // 3. Add any remaining distinct-hex chromatic spools that strongly match an elevation band
     const rankedRemainingChromatics = [...chromatics].sort(
-      (a, b) => classifyAndScoreSpool(a).minClusterDe00 - classifyAndScoreSpool(b).minClusterDe00
+      (a, b) => classifyAndScoreSpool(a).minBandDe00 - classifyAndScoreSpool(b).minBandDe00
     );
+    for (const c of rankedRemainingChromatics) {
+      if (picked.length >= countLimit) break;
+      if (classifyAndScoreSpool(c).minBandDe00 <= 15.5) {
+        addSpool(c, false);
+      }
+    }
+
+    // 4. First filler pass: graduated neutral Greys and secondary Whites for smooth tonal transitions
+    for (const f of [...shadowGreys, ...whites.slice(1)]) {
+      if (picked.length >= countLimit) break;
+      addSpool(f, false);
+    }
+
+    // 5. Remaining valid chromatics if still below countLimit
     for (const c of rankedRemainingChromatics) {
       if (picked.length >= countLimit) break;
       addSpool(c, false);
     }
 
-    // 4. First filler pass: distinct-hex Whites and shadow Greys (if grey subject)
-    for (const f of [...whites.slice(1), ...shadowGreys]) {
-      if (picked.length >= countLimit) break;
-      addSpool(f, false);
-    }
-
-    // 5. Second filler pass (if user requested more slots than distinct compatible hexes exist)
-    for (const f of [...blacks.slice(1), ...rankedRemainingChromatics, ...whites.slice(1), ...shadowGreys]) {
+    // 6. Second filler pass (if user requested more slots than distinct compatible hexes exist)
+    for (const f of [...blacks.slice(1), ...rankedRemainingChromatics, ...shadowGreys, ...whites.slice(1)]) {
       if (picked.length >= countLimit) break;
       addSpool(f, true);
     }
@@ -580,10 +637,15 @@ export function solveOptimalPalettes(
     const whites = effectivePool
       .filter((s) => classifyAndScoreSpool(s).isWhite)
       .sort((a, b) => Math.abs(a.td - 5.0) - Math.abs(b.td - 5.0));
+    const allowNeutralMidsIn4 =
+      isMonochromeOrGreySubject || best4ColorMatch.distinctChromaticsCount < 2;
     const validMids = effectivePool.filter((s) => {
       const info = classifyAndScoreSpool(s);
-      if (info.isNeutral) return false;
-      if (getSpoolLuminance(s) > 0.68 && best4ColorMatch.distinctChromaticsCount >= 2) return false;
+      if (info.isBlack || info.isWhite) return false;
+      if (info.isNeutral && !allowNeutralMidsIn4) return false;
+      if (!info.isNeutral && getSpoolLuminance(s) > 0.68 && best4ColorMatch.distinctChromaticsCount >= 2) {
+        return false;
+      }
       return true;
     });
 

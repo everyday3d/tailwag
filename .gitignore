@@ -12,3 +12,7 @@ CLAUDE.md
 *.log
 .DS_Store
 Thumbs.db
+tests/
+*.test.ts
+*.spec.ts
+

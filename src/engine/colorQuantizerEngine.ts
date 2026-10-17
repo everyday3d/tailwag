@@ -200,39 +200,115 @@ export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[
     }
   }
 
-  // Compute coarse LAB color distribution on the outer border vs. center subject
-  // so background colors that only appear on the outer frame are automatically de-weighted
-  const borderPixels = rawPixels.filter((p) => p.isBorder);
-  const centerPixels = rawPixels.filter((p) => Math.hypot(p.nx, p.ny) <= 0.65);
+  // Compute 12-bin (30 deg) chromatic hue distribution on the 4 outer frame edges vs. inner portrait region
+  // so surrounding outdoor backdrops (lawn grass, trees, sky that occupy >=24% of the rim across >=3 edges)
+  // are automatically suppressed while preserving faces, pets, and foreground objects (e.g. a tray of donuts).
+  const NUM_HUE_BINS = 12;
+  const borderHueBins = new Float64Array(NUM_HUE_BINS);
+  const coreHueBins = new Float64Array(NUM_HUE_BINS);
+  const edgeHuePresence = Array.from({ length: NUM_HUE_BINS }, () => [0, 0, 0, 0]); // [top, bottom, left, right]
+  let borderCount = 0;
+  let coreCount = 0;
+
+  const borderPixels: RawPixel[] = [];
+  const corePixels: RawPixel[] = [];
+
+  for (const p of rawPixels) {
+    const isTop = p.ny < -0.74;
+    const isBottom = p.ny > 0.74;
+    const isLeft = p.nx < -0.74;
+    const isRight = p.nx > 0.74;
+    const isOuterPerimeter = isTop || isBottom || isLeft || isRight;
+    const isInnerCore = (p.nx / 0.40) ** 2 + (p.ny / 0.62) ** 2 <= 1.0;
+    const labChroma = Math.hypot(p.lab.a, p.lab.b);
+
+    if (isOuterPerimeter) {
+      borderCount++;
+      borderPixels.push(p);
+      if (labChroma >= 8.5) {
+        let deg = (Math.atan2(p.lab.b, p.lab.a) * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+        const bin = Math.floor(deg / 30) % NUM_HUE_BINS;
+        const prevBin = (bin + NUM_HUE_BINS - 1) % NUM_HUE_BINS;
+        const nextBin = (bin + 1) % NUM_HUE_BINS;
+        borderHueBins[bin] += 1.0;
+        borderHueBins[nextBin] += 0.35;
+        borderHueBins[prevBin] += 0.35;
+        for (const bIdx of [bin, prevBin, nextBin]) {
+          if (isTop) edgeHuePresence[bIdx][0]++;
+          if (isBottom) edgeHuePresence[bIdx][1]++;
+          if (isLeft) edgeHuePresence[bIdx][2]++;
+          if (isRight) edgeHuePresence[bIdx][3]++;
+        }
+      }
+    }
+    if (isInnerCore) {
+      coreCount++;
+      corePixels.push(p);
+      if (labChroma >= 8.5) {
+        let deg = (Math.atan2(p.lab.b, p.lab.a) * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+        const bin = Math.floor(deg / 30) % NUM_HUE_BINS;
+        coreHueBins[bin] += 1.0;
+        coreHueBins[(bin + 1) % NUM_HUE_BINS] += 0.35;
+        coreHueBins[(bin + NUM_HUE_BINS - 1) % NUM_HUE_BINS] += 0.35;
+      }
+    }
+  }
 
   return rawPixels.map((p) => {
-    let normL = Math.max(0, Math.min(1, (p.rawLum - pLow) / dynRange));
-    if (hasWhiteHighlights && p.isChromatic && normL > 0.16) {
-      normL = Math.min(0.70, 0.16 + (normL - 0.16) * 0.68);
+    const normL = Math.max(0, Math.min(1, (p.rawLum - pLow) / dynRange));
+
+    const distCenter = Math.hypot(p.nx, p.ny * 0.82);
+    let weight = distCenter <= 0.68 ? 2.8 : 0.75;
+
+    const labChroma = Math.hypot(p.lab.a, p.lab.b);
+    let isSuppressedBackdrop = false;
+
+    if (borderCount >= 12 && coreCount >= 12) {
+      // 1. Multi-edge perimeter hue suppression for surrounding backdrops (lawn grass, foliage, sky)
+      // Never suppress warm skin/fur/subject tones (a* > 3.5 && b* > 3.5)
+      const isWarmSubjectTone = p.lab.a > 3.5 && p.lab.b > 3.5;
+      if (labChroma >= 8.5 && !isWarmSubjectTone) {
+        let deg = (Math.atan2(p.lab.b, p.lab.a) * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+        const bin = Math.floor(deg / 30) % NUM_HUE_BINS;
+        const bDensity = borderHueBins[bin] / borderCount;
+        const cDensity = coreHueBins[bin] / coreCount;
+        const activeEdges = edgeHuePresence[bin].filter((cnt) => cnt >= 3).length;
+
+        if (activeEdges >= 3 && bDensity >= 0.22 && bDensity > cDensity * 1.25) {
+          weight *= distCenter <= 0.38 ? 0.15 : 0.05;
+          isSuppressedBackdrop = true;
+        }
+      }
+
+      // 2. Direct LAB neighborhood check for outer-rim background clutter
+      if (!isSuppressedBackdrop && distCenter > 0.62) {
+        let borderSim = 0;
+        const bStep = Math.max(1, Math.floor(borderPixels.length / 20));
+        for (let i = 0; i < borderPixels.length; i += bStep) {
+          const bp = borderPixels[i].lab;
+          const d2 = (p.lab.L - bp.L) ** 2 + (p.lab.a - bp.a) ** 2 + (p.lab.b - bp.b) ** 2;
+          if (d2 < 144) borderSim++;
+        }
+        let coreSim = 0;
+        const cStep = Math.max(1, Math.floor(corePixels.length / 20));
+        for (let i = 0; i < corePixels.length; i += cStep) {
+          const cp = corePixels[i].lab;
+          const d2 = (p.lab.L - cp.L) ** 2 + (p.lab.a - cp.a) ** 2 + (p.lab.b - cp.b) ** 2;
+          if (d2 < 144) coreSim++;
+        }
+        if (borderSim > coreSim * 1.8) {
+          weight *= 0.22;
+          isSuppressedBackdrop = true;
+        }
+      }
     }
 
-    const distCenter = Math.hypot(p.nx, p.ny);
-    let weight = distCenter <= 0.68 ? 2.6 : 0.85;
-
-    // Check if this pixel's color is predominantly a border-background color using fast LAB distance
-    if (borderPixels.length >= 12 && centerPixels.length >= 12) {
-      let borderSim = 0;
-      const bStep = Math.max(1, Math.floor(borderPixels.length / 20));
-      for (let i = 0; i < borderPixels.length; i += bStep) {
-        const bp = borderPixels[i].lab;
-        const d2 = (p.lab.L - bp.L) ** 2 + (p.lab.a - bp.a) ** 2 + (p.lab.b - bp.b) ** 2;
-        if (d2 < 144) borderSim++;
-      }
-      let centerSim = 0;
-      const cStep = Math.max(1, Math.floor(centerPixels.length / 20));
-      for (let i = 0; i < centerPixels.length; i += cStep) {
-        const cp = centerPixels[i].lab;
-        const d2 = (p.lab.L - cp.L) ** 2 + (p.lab.a - cp.a) ** 2 + (p.lab.b - cp.b) ** 2;
-        if (d2 < 144) centerSim++;
-      }
-      if (borderSim > centerSim * 1.8 && distCenter > 0.55) {
-        weight *= 0.22; // Automatically suppress background border clutter
-      }
+    // Preserve chromatic subject features (skin tones, pet coats, food/foreground items) against grey clothing
+    if (!isSuppressedBackdrop && labChroma >= 18 && distCenter <= 0.78) {
+      weight *= 1.35;
     }
 
     return {
@@ -445,6 +521,6 @@ export function analyzeImageColorClusters(
     clusters,
     intrinsicColorCount: Math.max(2, intrinsicColorCount),
     distinctMatchedSpoolCount: Math.max(2, matchedHexSet.size),
-    isMonochromeOrGreySubject: midtoneGreyWeight / Math.max(1e-5, midtoneTotalWeight) >= 0.30,
+    isMonochromeOrGreySubject: midtoneGreyWeight / Math.max(1e-5, midtoneTotalWeight) >= 0.58,
   };
 }
