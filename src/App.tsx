@@ -135,12 +135,38 @@ export const App: React.FC = () => {
         canvas.height = h;
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0, w, h);
-        setSourceImageData(ctx.getImageData(0, 0, w, h));
+        const newImgData = ctx.getImageData(0, 0, w, h);
+        setSourceImageData(newImgData);
         setSourceDataUrl(dataUrl);
+
+        // Match physical print aspect ratio to uploaded photo (longest side = 180mm)
+        const aspect = img.width / Math.max(1, img.height);
+        if (aspect >= 1) {
+          setDimensions(180, Math.max(40, Math.round(180 / aspect)));
+        } else {
+          setDimensions(Math.max(40, Math.round(180 * aspect)), 180);
+        }
+
+        // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver for the new photo
+        setViewportMode('3d-mesh');
+        const pool = catalog.filter((c) => c.owned);
+        const recipes = solveOptimalPalettes(
+          newImgData,
+          pool.length >= 3 ? pool : catalog,
+          totalLayers,
+          baseLayerMm,
+          layerHeightMm,
+          4
+        );
+        setSolverRecipes(recipes);
+        if (recipes.length > 0) {
+          setSlots(recipes[0].slots);
+        }
       };
       img.src = dataUrl;
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleRunAiSolver = (ownedOnly: boolean) => {

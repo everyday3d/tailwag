@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Maximize2, Minimize2, Compass, Eye } from 'lucide-react';
 import { HeightmapGrid } from '../engine/cadMeshBuilder';
 import { buildLayerColorLUT } from '../engine/opticalTdEngine';
 import { useTailWagStore } from '../store/useTailWagStore';
@@ -15,12 +16,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const backLightRef = useRef<THREE.PointLight | null>(null);
 
+  const [pipExpanded, setPipExpanded] = useState(false);
+  const [pipHidden, setPipHidden] = useState(false);
+
   const {
     viewportMode,
+    setViewportMode,
     splitRatio,
     setSplitRatio,
     lightAzimuthDeg,
@@ -38,6 +44,20 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     [totalLayers, baseLayerMm, layerHeightMm, slots]
   );
 
+  const setCameraPreset = (preset: 'top-down' | 'angled-3d') => {
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    if (!cam || !ctrl) return;
+    if (preset === 'top-down') {
+      cam.position.set(0, -0.01, 275);
+      ctrl.target.set(0, 0, 1.0);
+    } else {
+      cam.position.set(0, -135, 225);
+      ctrl.target.set(0, 0, 1.2);
+    }
+    ctrl.update();
+  };
+
   // Initialize Three.js WebGL2 scene
   useEffect(() => {
     const container = containerRef.current;
@@ -47,13 +67,16 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     scene.background = new THREE.Color('#090d14');
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(38, container.clientWidth / Math.max(1, container.clientHeight), 1, 2500);
-    camera.position.set(0, -145, 235);
+    const w = Math.max(300, container.clientWidth);
+    const h = Math.max(300, container.clientHeight);
+    const camera = new THREE.PerspectiveCamera(38, w / h, 1, 2500);
+    // Start slightly angled so 3D filament layers & portrait painting are both immediately clear
+    camera.position.set(0, -95, 255);
     camera.up.set(0, 0, 1);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     container.innerHTML = '';
@@ -64,6 +87,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.target.set(0, 0, 1.2);
+    controlsRef.current = controls;
 
     // Subtle Bambu build plate reference grid (256x256mm)
     const bedGeo = new THREE.PlaneGeometry(256, 256);
@@ -83,10 +107,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     scene.add(gridHelper);
 
     // Studio Lighting Rig
-    const ambient = new THREE.AmbientLight('#ffffff', 0.62);
+    const ambient = new THREE.AmbientLight('#ffffff', 0.72);
     scene.add(ambient);
 
-    const dirLight = new THREE.DirectionalLight('#fff8ed', 1.45);
+    const dirLight = new THREE.DirectionalLight('#fff8ed', 1.38);
     dirLight.position.set(90, -80, 180);
     scene.add(dirLight);
     dirLightRef.current = dirLight;
@@ -106,20 +130,37 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
 
     const handleResize = () => {
       if (!container || !rendererRef.current || !cameraRef.current) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      cameraRef.current.aspect = w / Math.max(1, h);
+      const cw = Math.max(100, container.clientWidth);
+      const ch = Math.max(100, container.clientHeight);
+      cameraRef.current.aspect = cw / ch;
       cameraRef.current.updateProjectionMatrix();
-      rendererRef.current.setSize(w, h);
+      rendererRef.current.setSize(cw, ch);
     };
+
+    const resizeObserver = new ResizeObserver(() => handleResize());
+    resizeObserver.observe(container);
     window.addEventListener('resize', handleResize);
 
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animId);
       renderer.dispose();
     };
   }, []);
+
+  // Ensure renderer resizes when switching back from 'source' mode
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !rendererRef.current || !cameraRef.current) return;
+    if (viewportMode !== 'source') {
+      const cw = Math.max(100, container.clientWidth);
+      const ch = Math.max(100, container.clientHeight);
+      cameraRef.current.aspect = cw / ch;
+      cameraRef.current.updateProjectionMatrix();
+      rendererRef.current.setSize(cw, ch);
+    }
+  }, [viewportMode]);
 
   // Update lighting azimuth/elevation and backlit lithophane glow
   useEffect(() => {
@@ -132,7 +173,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       -dist * Math.cos(el) * Math.cos(az),
       dist * Math.sin(el)
     );
-    dirLightRef.current.intensity = backlitLithoMode ? 0.45 : 1.42;
+    dirLightRef.current.intensity = backlitLithoMode ? 0.45 : 1.38;
     backLightRef.current.intensity = backlitLithoMode ? 3.2 : 0;
   }, [lightAzimuthDeg, lightElevationDeg, backlitLithoMode]);
 
@@ -159,8 +200,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     const vMap = new Int32Array(cols * rows).fill(-1);
     let vCounter = 0;
 
-    // Exaggerate Z slightly in viewport (x2.2) so micro-layer steps (0.08mm) cast crisp studio relief shadows
-    const zVisualScale = 2.2;
+    // Exaggerate Z slightly in viewport (x2.5) so micro-layer steps (0.08mm) cast crisp studio relief shadows
+    const zVisualScale = 2.5;
 
     for (let r = 0; r < rows; r++) {
       const y = halfH - (r / Math.max(1, rows - 1)) * heightMm;
@@ -182,6 +223,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
         let rCol = lutEntry.rgb.r;
         let gCol = lutEntry.rgb.g;
         let bCol = lutEntry.rgb.b;
+
+        // Subtle filament step contour shading so individual printed layers look like real extruded plastic
+        const layerStepShade = cellLayer % 2 === 0 ? 1.0 : 0.965;
+        rCol *= layerStepShade;
+        gCol *= layerStepShade;
+        bCol *= layerStepShade;
 
         if (backlitLithoMode) {
           // Simulate warm LED backlight transmission through total thickness
@@ -219,8 +266,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
 
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: backlitLithoMode ? 0.35 : 0.58,
-      metalness: 0.06,
+      roughness: backlitLithoMode ? 0.35 : 0.52,
+      metalness: 0.08,
       side: THREE.DoubleSide,
     });
 
@@ -231,11 +278,89 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
 
   return (
     <div className="relative w-full h-full bg-[#090d14] overflow-hidden select-none">
-      {/* Three.js 3D Canvas */}
+      {/* Three.js 3D Filament Painted Canvas */}
       <div
         ref={containerRef}
-        className={`w-full h-full ${viewportMode === 'source' ? 'hidden' : 'block'}`}
+        className={`w-full h-full ${viewportMode === 'source' ? 'invisible' : 'visible'}`}
       />
+
+      {/* Top-Left Camera & View Quick Controls */}
+      {viewportMode === '3d-mesh' && (
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md border border-slate-800 p-1 rounded-lg z-10">
+          <button
+            onClick={() => setCameraPreset('top-down')}
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-800/80 hover:bg-orange-600 text-slate-200 hover:text-white transition"
+            title="View flat from directly above like a 2D canvas"
+          >
+            <Eye className="w-3.5 h-3.5 text-orange-400" />
+            Top-Down Paint View
+          </button>
+          <button
+            onClick={() => setCameraPreset('angled-3d')}
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-800/80 hover:bg-orange-600 text-slate-200 hover:text-white transition"
+            title="Tilt camera to inspect 3D printed filament layer depth"
+          >
+            <Compass className="w-3.5 h-3.5 text-sky-400" />
+            3D Relief Angle
+          </button>
+        </div>
+      )}
+
+      {/* Picture-in-Picture (PiP) Original Photo Comparison Inset in Bottom-Left Corner */}
+      {viewportMode === '3d-mesh' && !pipHidden && (
+        <div
+          className={`absolute bottom-3 left-3 z-20 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-xl shadow-2xl overflow-hidden transition-all duration-200 ${
+            pipExpanded ? 'w-72' : 'w-44'
+          }`}
+        >
+          <div className="px-2.5 py-1.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between text-[11px]">
+            <span className="font-bold text-orange-400 truncate">Original Photo</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setViewportMode('split')}
+                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
+                title="Switch to Split-Screen Wipe Comparison"
+              >
+                Split
+              </button>
+              <button
+                onClick={() => setPipExpanded(!pipExpanded)}
+                className="text-slate-400 hover:text-white p-0.5"
+                title={pipExpanded ? 'Shrink Preview' : 'Enlarge Preview'}
+              >
+                {pipExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => setPipHidden(true)}
+                className="text-slate-500 hover:text-slate-300 px-1 text-[10px]"
+                title="Minimize Reference Card"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="p-1.5 flex items-center justify-center bg-[#070a10]">
+            <img
+              src={sourceDataUrl}
+              alt="Original Upload Reference"
+              onClick={() => setPipExpanded(!pipExpanded)}
+              className={`w-full object-contain rounded cursor-pointer ${
+                pipExpanded ? 'max-h-64' : 'max-h-36'
+              }`}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Restore PiP Button when minimized */}
+      {viewportMode === '3d-mesh' && pipHidden && (
+        <button
+          onClick={() => setPipHidden(false)}
+          className="absolute bottom-3 left-3 z-20 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-orange-400 shadow-lg transition"
+        >
+          Show Original Photo Inset
+        </button>
+      )}
 
       {/* Source Photo Overlay (Full or Split Wipe) */}
       {(viewportMode === 'source' || viewportMode === 'split') && (
@@ -276,7 +401,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       <div className="absolute top-3 right-3 flex items-center gap-2 bg-slate-900/85 backdrop-blur-md border border-slate-800 px-3 py-1.5 rounded-lg text-xs text-slate-300 pointer-events-none">
         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
         <span>
-          {grid.widthMm}×{grid.heightMm}mm • {totalLayers} Layers ({(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm Max Z)
+          3D Filament Painted Preview • {grid.widthMm}×{grid.heightMm}mm • {totalLayers} Layers (
+          {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm Max Z)
         </span>
         <span className="text-slate-500">|</span>
         <span className="text-orange-400 font-semibold">{slots.length} Filaments</span>
