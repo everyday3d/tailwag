@@ -700,9 +700,9 @@ export const App: React.FC = () => {
         </main>
 
         {/* RIGHT SIDEBAR: AI Auto-Solver, Slicer Geometry & 2.5D Parametric CAD Cutouts */}
-        <aside className="w-84 bg-[#121722] border-l border-slate-800 flex flex-col min-h-0 overflow-y-auto p-3 gap-3.5 shrink-0">
+        <aside className="w-80 max-w-80 bg-[#121722] border-l border-slate-800 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 gap-3.5 shrink-0">
           {/* 1. AI Palette & Layer-Swap Auto-Solver */}
-          <section className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5">
+          <section className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5 min-w-0">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4" />
@@ -825,25 +825,25 @@ export const App: React.FC = () => {
             {/* Color Count Advisory when >4 colors are not needed */}
             {solverRecipes[0]?.colorCountAdvisory && (
               <div
-                className={`p-2 rounded-lg border text-[11px] flex flex-col gap-1.5 ${
+                className={`p-2 rounded-lg border text-[11px] flex flex-col gap-1.5 min-w-0 break-words ${
                   solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
                     ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
                     : 'bg-emerald-500/12 border-emerald-500/30 text-emerald-200'
                 }`}
               >
-                <div className="font-bold flex items-center justify-between gap-1">
-                  <span>
+                <div className="font-bold flex items-center justify-between gap-1 min-w-0">
+                  <span className="truncate">
                     {solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
                       ? `Advisory: ${solverRecipes[0].recommendedColors ?? 4} Colors Recommended`
                       : '✓ 4 Colors Optimal (Single AMS)'}
                   </span>
                   {solverRecipes[0].detectedClusterCount && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30 shrink-0">
                       {solverRecipes[0].detectedClusterCount} Clusters
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] leading-relaxed opacity-90">
+                <p className="text-[10px] leading-relaxed opacity-90 break-words">
                   {solverRecipes[0].colorCountAdvisory}
                 </p>
                 {solverColorCount > (solverRecipes[0].recommendedColors ?? 4) && (
