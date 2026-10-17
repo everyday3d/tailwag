@@ -1,13 +1,28 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+
+const logFile = path.join(os.tmpdir(), 'tailwag-startup.log');
+function logMsg(msg: string) {
+  try {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {}
+}
+
+process.on('uncaughtException', (err) => {
+  logMsg(`UNCAUGHT: ${err?.stack || err}`);
+});
+
+logMsg(`Starting TailWag main.ts. isPackaged=${app?.isPackaged} __dirname=${__dirname}`);
 
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
-  const iconPath = fs.existsSync(path.join(__dirname, '../dist/icon.ico'))
-    ? path.join(__dirname, '../dist/icon.ico')
-    : path.join(__dirname, '../public/icon.ico');
+  const iconPath = fs.existsSync(path.join(__dirname, '../dist/icon.png'))
+    ? path.join(__dirname, '../dist/icon.png')
+    : path.join(__dirname, '../public/icon.png');
+  logMsg(`createWindow() called. iconPath=${iconPath} exists=${fs.existsSync(iconPath)}`);
 
   mainWindow = new BrowserWindow({
     width: 1640,
@@ -24,17 +39,38 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  logMsg('BrowserWindow constructed.');
 
   const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5188';
+  const distIndex = path.join(__dirname, '../dist/index.html');
+  logMsg(`Checking distIndex=${distIndex} exists=${fs.existsSync(distIndex)}`);
   if (!app.isPackaged && process.argv.includes('--dev')) {
     mainWindow.loadURL(devUrl);
-  } else if (fs.existsSync(path.join(__dirname, '../dist/index.html'))) {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  } else if (fs.existsSync(distIndex)) {
+    mainWindow.loadFile(distIndex).then(() => logMsg('loadFile resolved')).catch((e) => logMsg(`loadFile error: ${e}`));
   } else {
     mainWindow.loadURL(devUrl);
   }
 
+  mainWindow.once('ready-to-show', () => {
+    logMsg('ready-to-show fired');
+    if (!mainWindow) return;
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.setAlwaysOnTop(true);
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setAlwaysOnTop(false);
+      }
+    }, 1200);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logMsg(`render-process-gone: ${JSON.stringify(details)}`);
+  });
+
   mainWindow.on('closed', () => {
+    logMsg('window closed');
     mainWindow = null;
   });
 }
