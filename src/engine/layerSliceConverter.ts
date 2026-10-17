@@ -1,8 +1,20 @@
 import { FilamentSpool } from '../data/filamentCatalog';
 import { LayerSwapSlot } from './opticalTdEngine';
-import { applyBilateralHeightmapFilter } from './cadMeshBuilder';
+import {
+  applyBilateralHeightmapFilter,
+  computeSobelEdgeMask,
+  applySpatialGradientSmoothing,
+  quantizeHeightmapMatrix,
+  applyMorphologicalRegionMerge,
+} from './cadMeshBuilder';
 
-export { applyBilateralHeightmapFilter };
+export {
+  applyBilateralHeightmapFilter,
+  computeSobelEdgeMask,
+  applySpatialGradientSmoothing,
+  quantizeHeightmapMatrix,
+  applyMorphologicalRegionMerge,
+};
 
 export interface LayerSliceConfig {
   /** Initial layer height printed directly on the build plate (e.g. 0.16mm or 0.20mm) */
@@ -15,6 +27,14 @@ export interface LayerSliceConfig {
   maxHeightMm?: number;
   /** Whether to apply edge-preserving spatial bilateral filtering to 2D height maps (default: false) */
   enableBilateralFilter?: boolean;
+  /** Whether to apply morphological region merging to eliminate isolated pixel speckles (default: true for grids >= 4x4) */
+  enableMorphologicalFilter?: boolean;
+  /** Minimum pixel area threshold for connected components (default: 4 adjacent pixels) */
+  minRegionPixels?: number;
+  /** Whether to apply structural gradient smoothing to eliminate sudden height discontinuities (default: false unless enabled) */
+  enableGradientSmoothing?: boolean;
+  /** Sobel edge threshold above which height jumps are preserved as major edges (default: 0.35) */
+  edgeThreshold?: number;
 }
 
 // ============================================================================
@@ -497,12 +517,42 @@ export function convertHeightmapToLayerSlices(
     }
   }
 
+  // 1. Spatial Gradient Smoothing (Constraint 3)
+  if (config.enableGradientSmoothing && width > 2 && height > 2) {
+    effectiveHeights = applySpatialGradientSmoothing(
+      effectiveHeights,
+      width,
+      height,
+      config.edgeThreshold ?? 0.35,
+      config.layerHeightMm * 1.5
+    );
+  }
+
+  // 2. Height-Map Quantization Banding (Constraint 2)
+  const rawLayerCounts = new Uint16Array(totalPixels);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
       const rawH = effectiveHeights[idx];
+      const { layerCount } = quantizeHeightToLayer(rawH, config);
+      rawLayerCounts[idx] = layerCount;
+    }
+  }
 
-      const { layerCount, quantizedHeightMm } = quantizeHeightToLayer(rawH, config);
+  // 3. Morphological Filtering & Region Merging (Constraint 1)
+  const shouldMorph = config.enableMorphologicalFilter ?? (width >= 4 && height >= 4);
+  const minPixels = config.minRegionPixels ?? 4;
+  const finalLayerCounts =
+    shouldMorph && width >= 4 && height >= 4
+      ? applyMorphologicalRegionMerge(rawLayerCounts, width, height, minPixels)
+      : rawLayerCounts;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const layerCount = finalLayerCounts[idx];
+      const quantizedHeightMm = layerIndexToZHeight(layerCount, config.baseLayerMm, config.layerHeightMm);
+
       layerCounts[idx] = layerCount;
       quantizedHeightsMm[idx] = quantizedHeightMm;
 

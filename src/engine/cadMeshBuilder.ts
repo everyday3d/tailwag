@@ -317,6 +317,270 @@ export function applyBilateralHeightmapFilter(
 }
 
 /**
+ * Computes a normalized 2D Sobel edge gradient magnitude mask [0..1].
+ * Used by spatial gradient smoothing to identify major edges (sharp lines, silhouette boundaries).
+ */
+export function computeSobelEdgeMask(
+  map: Float32Array,
+  cols: number,
+  rows: number
+): Float32Array {
+  const edgeMask = new Float32Array(cols * rows);
+  if (cols < 3 || rows < 3) return edgeMask;
+
+  let maxGrad = 0;
+  for (let y = 1; y < rows - 1; y++) {
+    const yPrev = (y - 1) * cols;
+    const yCurr = y * cols;
+    const yNext = (y + 1) * cols;
+
+    for (let x = 1; x < cols - 1; x++) {
+      const p00 = map[yPrev + (x - 1)];
+      const p01 = map[yPrev + x];
+      const p02 = map[yPrev + (x + 1)];
+      const p10 = map[yCurr + (x - 1)];
+      const p12 = map[yCurr + (x + 1)];
+      const p20 = map[yNext + (x - 1)];
+      const p21 = map[yNext + x];
+      const p22 = map[yNext + (x + 1)];
+
+      const gx = -p00 + p02 - 2 * p10 + 2 * p12 - p20 + p22;
+      const gy = -p00 - 2 * p01 - p02 + p20 + 2 * p21 + p22;
+      const grad = Math.hypot(gx, gy);
+      edgeMask[yCurr + x] = grad;
+      if (grad > maxGrad) maxGrad = grad;
+    }
+  }
+
+  if (maxGrad > 1e-5) {
+    const invMax = 1.0 / maxGrad;
+    for (let i = 0; i < edgeMask.length; i++) {
+      edgeMask[i] = Math.min(1.0, edgeMask[i] * invMax);
+    }
+  }
+
+  return edgeMask;
+}
+
+/**
+ * Spatial Gradient Smoothing (Constraint 3):
+ * Adds a structural gradient constraint that penalizes sudden height discontinuities between
+ * immediate neighbor pixels unless they coincide with a major edge mask (sharp line or silhouette boundary).
+ */
+export function applySpatialGradientSmoothing(
+  heightmap: Float32Array,
+  cols: number,
+  rows: number,
+  edgeThreshold: number = 0.35,
+  maxDiscontinuity: number = 0.08
+): Float32Array {
+  if (cols < 3 || rows < 3) return new Float32Array(heightmap);
+  const edgeMask = computeSobelEdgeMask(heightmap, cols, rows);
+  const result = new Float32Array(cols * rows);
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const idx = y * cols + x;
+      const center = heightmap[idx];
+
+      // Major edge mask: preserve crisp silhouette boundaries without smoothing
+      if (edgeMask[idx] >= edgeThreshold) {
+        result[idx] = center;
+        continue;
+      }
+
+      // Inside smooth region: inspect 4 immediate orthogonal neighbors
+      let adjSum = 0;
+      let adjCount = 0;
+      let hasExcessDiscontinuity = false;
+
+      const neighbors: number[] = [];
+      if (x > 0) neighbors.push(heightmap[idx - 1]);
+      if (x < cols - 1) neighbors.push(heightmap[idx + 1]);
+      if (y > 0) neighbors.push(heightmap[idx - cols]);
+      if (y < rows - 1) neighbors.push(heightmap[idx + cols]);
+
+      for (let k = 0; k < neighbors.length; k++) {
+        const nVal = neighbors[k];
+        const diff = Math.abs(nVal - center);
+        if (diff > maxDiscontinuity) {
+          hasExcessDiscontinuity = true;
+        }
+        adjSum += nVal;
+        adjCount++;
+      }
+
+      if (hasExcessDiscontinuity && adjCount > 0) {
+        // Penalize discontinuity: pull center towards smooth neighbor mean
+        const avgNeighbor = adjSum / adjCount;
+        result[idx] = center * 0.35 + avgNeighbor * 0.65;
+      } else {
+        result[idx] = center;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Height-Map Quantization Banding (Constraint 2):
+ * Forces continuous float height values to snap cleanly to discrete layer-height intervals
+ * (e.g. 0.08mm steps) using a rounded quantization matrix before computing multi-layer splits.
+ * Prevents micro-fluctuations from creating random single-pixel peaks.
+ */
+export function quantizeHeightmapMatrix(
+  heightmap: Float32Array,
+  cols: number,
+  rows: number,
+  baseLayerMm: number,
+  layerHeightMm: number,
+  minBaseLayers: number = 1,
+  maxLayers?: number
+): { quantizedMm: Float32Array; discreteLayers: Uint16Array } {
+  const total = cols * rows;
+  const quantizedMm = new Float32Array(total);
+  const discreteLayers = new Uint16Array(total);
+
+  for (let i = 0; i < total; i++) {
+    const rawH = heightmap[i];
+    if (rawH <= 0 || rawH < baseLayerMm * 0.5) {
+      quantizedMm[i] = 0;
+      discreteLayers[i] = 0;
+      continue;
+    }
+
+    const extra = Math.max(0, rawH - baseLayerMm);
+    let layer = 1 + Math.round(extra / layerHeightMm);
+    if (minBaseLayers > 0) {
+      layer = Math.max(minBaseLayers, layer);
+    }
+    if (maxLayers !== undefined && maxLayers > 0) {
+      layer = Math.min(maxLayers, layer);
+    }
+
+    discreteLayers[i] = layer;
+    quantizedMm[i] = Number((baseLayerMm + (layer - 1) * layerHeightMm).toFixed(4));
+  }
+
+  return { quantizedMm, discreteLayers };
+}
+
+/**
+ * Morphological Filtering & Region Merging (Constraint 1):
+ * Applies connected-component blob analysis to 2D discrete layer maps.
+ * Any isolated pixel regions smaller than `minRegionPixels` (default: 4 adjacent pixels)
+ * are merged into their surrounding dominant region to eliminate stray speckling and digital static dots.
+ */
+export function applyMorphologicalRegionMerge(
+  layerGrid: Uint16Array | Int32Array | Uint8Array,
+  cols: number,
+  rows: number,
+  minRegionPixels: number = 4
+): Uint16Array {
+  const total = cols * rows;
+  if (cols <= 1 || rows <= 1 || minRegionPixels <= 1) {
+    return new Uint16Array(layerGrid);
+  }
+
+  const result = new Uint16Array(layerGrid);
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  const component = new Int32Array(total);
+  const neighborFreq = new Map<number, number>();
+
+  for (let startY = 0; startY < rows; startY++) {
+    for (let startX = 0; startX < cols; startX++) {
+      const startIdx = startY * cols + startX;
+      if (visited[startIdx] === 1) continue;
+
+      const targetVal = result[startIdx];
+      let compCount = 0;
+      let qHead = 0;
+      let qTail = 0;
+
+      visited[startIdx] = 1;
+      queue[qTail++] = startIdx;
+      neighborFreq.clear();
+
+      while (qHead < qTail) {
+        const curr = queue[qHead++];
+        component[compCount++] = curr;
+        const cx = curr % cols;
+        const cy = Math.floor(curr / cols);
+
+        // 4-connected neighbors
+        if (cx > 0) {
+          const nIdx = curr - 1;
+          const nVal = result[nIdx];
+          if (nVal === targetVal) {
+            if (visited[nIdx] === 0) {
+              visited[nIdx] = 1;
+              queue[qTail++] = nIdx;
+            }
+          } else {
+            neighborFreq.set(nVal, (neighborFreq.get(nVal) ?? 0) + 1);
+          }
+        }
+        if (cx < cols - 1) {
+          const nIdx = curr + 1;
+          const nVal = result[nIdx];
+          if (nVal === targetVal) {
+            if (visited[nIdx] === 0) {
+              visited[nIdx] = 1;
+              queue[qTail++] = nIdx;
+            }
+          } else {
+            neighborFreq.set(nVal, (neighborFreq.get(nVal) ?? 0) + 1);
+          }
+        }
+        if (cy > 0) {
+          const nIdx = curr - cols;
+          const nVal = result[nIdx];
+          if (nVal === targetVal) {
+            if (visited[nIdx] === 0) {
+              visited[nIdx] = 1;
+              queue[qTail++] = nIdx;
+            }
+          } else {
+            neighborFreq.set(nVal, (neighborFreq.get(nVal) ?? 0) + 1);
+          }
+        }
+        if (cy < rows - 1) {
+          const nIdx = curr + cols;
+          const nVal = result[nIdx];
+          if (nVal === targetVal) {
+            if (visited[nIdx] === 0) {
+              visited[nIdx] = 1;
+              queue[qTail++] = nIdx;
+            }
+          } else {
+            neighborFreq.set(nVal, (neighborFreq.get(nVal) ?? 0) + 1);
+          }
+        }
+      }
+
+      // If component size is below threshold, merge into surrounding dominant neighbor
+      if (compCount < minRegionPixels && neighborFreq.size > 0) {
+        let maxFreq = 0;
+        let dominantVal = targetVal;
+        for (const [val, freq] of neighborFreq.entries()) {
+          if (freq > maxFreq) {
+            maxFreq = freq;
+            dominantVal = val;
+          }
+        }
+        for (let k = 0; k < compCount; k++) {
+          result[component[k]] = dominantVal;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Builds the 2.5D heightmap grid combining image luminance, pre-press contrast/detail curves,
  * parametric shape silhouette, border frame, clock shaft bore, stencil numerals, and rear cavities.
  */
@@ -458,15 +722,37 @@ export function buildHeightmapGrid(params: {
     }
   }
 
-  // Apply edge-preserving spatial coherence bilateral filter to height map before layer-swap assignment.
+  // 1. Apply edge-preserving spatial coherence bilateral filter to height map before layer-swap assignment.
   // Suppresses random background micro-spikes (leaves, rough pavement/ground gravel) while preserving true silhouette boundaries
   const coherentLum = applyBilateralHeightmapFilter(enhancedLum, cols, rows, 1.8, 0.08);
+
+  // 2. Spatial Gradient Smoothing with Major Edge Masking (Constraint 3):
+  // Penalizes sudden height discontinuities between neighbor pixels unless coinciding with major edges
+  const smoothedLum = applySpatialGradientSmoothing(coherentLum, cols, rows, 0.35, 0.08);
 
   const clockStencilMask = cad.clockMode ? renderClockStencilMask(cols, rows, cad.clockStencil) : new Uint8Array(cols * rows);
   const maxReliefZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
   const halfW = widthMm / 2;
   const halfH = heightMm / 2;
   const frameNormThreshold = (cad.frameWidthMm / Math.max(widthMm, heightMm)) * 2.0;
+
+  const targetBaseLayers =
+    baseSolidThicknessMm !== undefined
+      ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
+      : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+  const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
+
+  // 3. Height-Map Quantization Banding (Constraint 2):
+  // Force continuous float height map to snap cleanly to discrete layer-height intervals (0.08mm steps)
+  // using a rounded quantization matrix before computing the multi-layer split
+  const rawDiscreteLayers = new Uint16Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) {
+    rawDiscreteLayers[i] = minBaseLayer + Math.round(smoothedLum[i] * (totalLayers - minBaseLayer));
+  }
+
+  // 4. Morphological Filtering & Region Merging (Constraint 1):
+  // Merges isolated pixel regions smaller than 4 adjacent pixels into surrounding dominant region
+  const cleanedLayers = applyMorphologicalRegionMerge(rawDiscreteLayers, cols, rows, 4);
 
   for (let r = 0; r < rows; r++) {
     const ny = (r / Math.max(1, rows - 1)) * 2.0 - 1.0; // -1 (top) to +1 (bottom)
@@ -507,13 +793,8 @@ export function buildHeightmapGrid(params: {
         }
       }
 
-      const targetBaseLayers =
-        baseSolidThicknessMm !== undefined
-          ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
-          : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
-      const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
-      let cellLum = coherentLum[idx];
-      let discreteLayer = minBaseLayer + Math.round(cellLum * (totalLayers - minBaseLayer));
+      let discreteLayer = cleanedLayers[idx];
+      let cellLum = (discreteLayer - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
       let zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
 
       // Clock stencil numerals raised to top layer

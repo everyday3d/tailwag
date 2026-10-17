@@ -12,7 +12,14 @@ import {
   LayerSwapSlot,
 } from './opticalTdEngine';
 import { ciede2000, LABColor } from './colorQuantizerEngine';
-import { applyCLAHE, applyBilateralHeightmapFilter } from './cadMeshBuilder';
+import {
+  applyCLAHE,
+  applyBilateralHeightmapFilter,
+  computeSobelEdgeMask,
+  applySpatialGradientSmoothing,
+  quantizeHeightmapMatrix,
+  applyMorphologicalRegionMerge,
+} from './cadMeshBuilder';
 import { computeSwapEconomyPenalty, computeHighFrequencyEdgeMap } from './autoSolver';
 import {
   STANDARD_BUILD_PLATE_MAX_BBOX_MM,
@@ -38,6 +45,10 @@ export {
   applySubsurfaceLightDiffusion2D,
   applyCLAHE,
   applyBilateralHeightmapFilter,
+  computeSobelEdgeMask,
+  applySpatialGradientSmoothing,
+  quantizeHeightmapMatrix,
+  applyMorphologicalRegionMerge,
   computeSwapEconomyPenalty,
   computeHighFrequencyEdgeMap,
   STANDARD_BUILD_PLATE_MAX_BBOX_MM,
@@ -1262,11 +1273,20 @@ export function runHueForgeAutoEngine(
   );
   // Spatial coherence bilateral filtering on heightmap luminance before layer assignment:
   // Suppresses random background micro-spikes (leaves, rough ground texture) from creating erratic digital static
-  const adjustedLuminance = applyBilateralHeightmapFilter(
+  const coherentLum = applyBilateralHeightmapFilter(
     rawAdjustedLum,
     imageData.width,
     imageData.height,
     1.8,
+    0.08
+  );
+  // Spatial gradient smoothing with major edge masking:
+  // Penalizes sudden height discontinuities unless coinciding with major edges
+  const adjustedLuminance = applySpatialGradientSmoothing(
+    coherentLum,
+    imageData.width,
+    imageData.height,
+    0.35,
     0.08
   );
 
