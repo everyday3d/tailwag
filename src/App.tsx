@@ -76,6 +76,7 @@ export const App: React.FC = () => {
     layerHeightMm,
     totalLayers,
     setLayerParams,
+    setSlicePreviewMaxLayer,
     meshResolution,
     setMeshResolution,
     gamma,
@@ -209,18 +210,20 @@ export const App: React.FC = () => {
           );
           return;
         }
-        const effectiveLayers = Math.max(totalLayers, solverColorCount * 2);
-        if (effectiveLayers !== totalLayers) {
-          setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
+        const targetLayers = Math.max(24, solverColorCount * 2);
+        if (targetLayers !== totalLayers) {
+          setLayerParams(baseLayerMm, layerHeightMm, targetLayers);
+        } else {
+          setSlicePreviewMaxLayer(targetLayers);
         }
         const pool = getCandidatePoolForMode(effectiveSolverPoolMode);
         const recipes =
           solverColorMode === 'cmyk'
-            ? [solveCmykPalette(newImgData, pool, effectiveLayers, baseLayerMm, layerHeightMm, solverColorCount)]
+            ? [solveCmykPalette(newImgData, pool, targetLayers, baseLayerMm, layerHeightMm, solverColorCount)]
             : solveOptimalPalettes(
                 newImgData,
                 pool,
-                effectiveLayers,
+                targetLayers,
                 baseLayerMm,
                 layerHeightMm,
                 solverColorCount,
@@ -244,12 +247,18 @@ export const App: React.FC = () => {
   ) => {
     const activeMode = modeOverride ?? effectiveSolverPoolMode;
     const activeColors = colorCountOverride ?? solverColorCount;
-    const activeColorMode = colorModeOverride ?? solverColorMode;
+    let activeColorMode = colorModeOverride ?? solverColorMode;
+
     if (modeOverride) {
       setSolverPoolMode(modeOverride);
     }
     if (colorCountOverride) {
       setSolverColorCount(colorCountOverride);
+      // Auto-switch to natural AI solver mode if in manual mode so selecting 4/8/12/16 colors always re-solves and re-renders!
+      if (activeColorMode === 'manual') {
+        activeColorMode = 'natural';
+        setSolverColorMode('natural');
+      }
     }
     if (colorModeOverride) {
       setSolverColorMode(colorModeOverride);
@@ -257,18 +266,23 @@ export const App: React.FC = () => {
     if (activeColorMode === 'manual') {
       return;
     }
-    const effectiveLayers = Math.max(totalLayers, activeColors * 2);
-    if (effectiveLayers !== totalLayers) {
-      setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
+
+    // Adapt totalLayers: keep 24 standard unless 16 colors requires 32 layers
+    const targetLayers = Math.max(24, activeColors * 2);
+    if (targetLayers !== totalLayers) {
+      setLayerParams(baseLayerMm, layerHeightMm, targetLayers);
+    } else {
+      setSlicePreviewMaxLayer(targetLayers);
     }
+
     const pool = getCandidatePoolForMode(activeMode);
     const recipes =
       activeColorMode === 'cmyk'
-        ? [solveCmykPalette(sourceImageData, pool, effectiveLayers, baseLayerMm, layerHeightMm, activeColors)]
+        ? [solveCmykPalette(sourceImageData, pool, targetLayers, baseLayerMm, layerHeightMm, activeColors)]
         : solveOptimalPalettes(
             sourceImageData,
             pool,
-            effectiveLayers,
+            targetLayers,
             baseLayerMm,
             layerHeightMm,
             activeColors,
@@ -277,6 +291,10 @@ export const App: React.FC = () => {
     setSolverRecipes(recipes);
     if (recipes.length > 0) {
       setSlots(recipes[0].slots);
+    }
+    // Ensure 3D painted relief view is active and visible
+    if (viewportMode === 'source') {
+      setViewportMode('3d-mesh');
     }
   };
 

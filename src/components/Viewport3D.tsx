@@ -34,6 +34,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     backlitLithoMode,
     slicePreviewMaxLayer,
     baseLayerMm,
+    baseSolidThicknessMm,
     layerHeightMm,
     totalLayers,
     slots,
@@ -276,7 +277,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       const clampedZ = Math.min(rawZ, maxSliceZ);
       posArr[v * 3 + 2] = clampedZ * zVisualScale;
 
-      const minBaseLayer = Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+      const targetBaseLayers =
+        baseSolidThicknessMm !== undefined
+          ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
+          : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
+      const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
       const cellLayer = Math.max(
         1,
         Math.min(maxAllowedLayer, minBaseLayer + Math.round(normLum[idx] * (totalLayers - minBaseLayer)))
@@ -307,7 +312,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
-  }, [grid, layerLUT, slicePreviewMaxLayer, backlitLithoMode, baseLayerMm, layerHeightMm, totalLayers]);
+  }, [grid, layerLUT, slicePreviewMaxLayer, backlitLithoMode, baseLayerMm, baseSolidThicknessMm, layerHeightMm, totalLayers]);
 
   return (
     <div className="relative w-full h-full bg-[#090d14] overflow-hidden select-none">
