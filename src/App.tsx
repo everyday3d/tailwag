@@ -1120,13 +1120,30 @@ export const App: React.FC = () => {
                       <button
                         key={cnt}
                         onClick={() => handleRunAiSolver(undefined, cnt)}
-                        className={`py-1 px-1.5 rounded-md text-[11px] font-bold transition ${
+                        className={`relative py-1.5 px-1 rounded-md text-[11px] font-bold transition flex flex-col items-center justify-center ${
                           solverColorCount === cnt
                             ? 'bg-orange-600 text-white shadow'
                             : 'text-slate-400 hover:text-slate-200'
                         }`}
+                        title={
+                          cnt === 4
+                            ? 'Standard 4-color single-AMS print'
+                            : cnt === 8
+                              ? 'Recommended for best photographic quality and smooth Beer-Lambert layer blending'
+                              : `${cnt}-color multi-AMS ultra-high definition stack`
+                        }
                       >
-                        {cnt} Colors
+                        <span className="leading-tight">{cnt} Colors</span>
+                        {cnt === 8 && (
+                          <span className="text-[8px] font-extrabold text-amber-300 uppercase tracking-tighter mt-0.5">
+                            ★ Best
+                          </span>
+                        )}
+                        {cnt === 4 && (
+                          <span className="text-[8px] font-medium opacity-60 uppercase tracking-tighter mt-0.5">
+                            1 AMS
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1144,20 +1161,20 @@ export const App: React.FC = () => {
                       : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
                 </button>
 
-                {/* Color Count Advisory when >4 colors are not needed */}
+                {/* Color Count Advisory & Best-Quality Recommendation */}
                 {solverRecipes[0]?.colorCountAdvisory && (
                   <div
-                    className={`p-2 rounded-lg border text-[11px] flex flex-col gap-1.5 min-w-0 break-words ${
-                      solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
-                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                    className={`p-2.5 rounded-lg border text-[11px] flex flex-col gap-1.5 min-w-0 break-words ${
+                      solverColorCount < (solverRecipes[0].recommendedColors ?? 8)
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-200 shadow-sm'
                         : 'bg-emerald-500/12 border-emerald-500/30 text-emerald-200'
                     }`}
                   >
                     <div className="font-bold flex items-center justify-between gap-1 min-w-0">
                       <span className="truncate">
-                        {solverColorCount > (solverRecipes[0].recommendedColors ?? 4)
-                          ? `Advisory: ${solverRecipes[0].recommendedColors ?? 4} Colors Recommended`
-                          : '✓ 4 Colors Optimal (Single AMS)'}
+                        {solverColorCount < (solverRecipes[0].recommendedColors ?? 8)
+                          ? `💡 Best Quality Tip: ${solverRecipes[0].recommendedColors ?? 8} Colors Recommended`
+                          : `🌟 Master Quality Active (${solverColorCount} Colors)`}
                       </span>
                       {solverRecipes[0].detectedClusterCount && (
                         <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/30 shrink-0">
@@ -1168,14 +1185,16 @@ export const App: React.FC = () => {
                     <p className="text-[10px] leading-relaxed opacity-90 break-words">
                       {solverRecipes[0].colorCountAdvisory}
                     </p>
-                    {solverColorCount > (solverRecipes[0].recommendedColors ?? 4) && (
+                    {solverColorCount < (solverRecipes[0].recommendedColors ?? 8) && (
                       <button
                         onClick={() =>
-                          handleRunAiSolver(undefined, solverRecipes[0].recommendedColors ?? 4)
+                          handleRunAiSolver(undefined, solverRecipes[0].recommendedColors ?? 8)
                         }
-                        className="mt-0.5 py-1 px-2 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] transition self-start shadow"
+                        className="mt-1 py-1.5 px-3 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold text-[10px] transition shadow flex items-center gap-1.5 self-start cursor-pointer"
+                        title={`Upgrade to ${solverRecipes[0].recommendedColors ?? 8} colors for smoother photographic transitions and richer shadow depth`}
                       >
-                        Switch to {solverRecipes[0].recommendedColors ?? 4} Colors (Recommended)
+                        <Sparkles className="w-3 h-3 text-slate-950 shrink-0" />
+                        Upgrade to {solverRecipes[0].recommendedColors ?? 8} Colors (Best Quality)
                       </button>
                     )}
                   </div>

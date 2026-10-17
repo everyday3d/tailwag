@@ -670,23 +670,25 @@ export function solveOptimalPalettes(
       ? best4ColorMatch
       : buildBestStackFromPool(effectivePool, 1.0, targetColorCount);
 
-  // Determine whether more than 4 colors are needed based on K-Means++ cluster count & ΔE00 gain
-  const deImprovementOver4 = best4ColorMatch.avgDe - bestLibraryMatch.avgDe;
-  const fourColorsSufficient =
-    intrinsicColorCount <= 4 ||
-    best4ColorMatch.distinctChromaticsCount <= 4 ||
-    deImprovementOver4 < 2.0;
+  // For the best possible photographic print results, proactively recommend >4 colors (8 or 12) whenever the image
+  // has multiple color clusters, unlocking finer Beer-Lambert tonal transitions and eliminating banding.
+  const highFidelityRecommended: 4 | 8 | 12 | 16 =
+    effectivePool.length >= 12 && intrinsicColorCount >= 8
+      ? 12
+      : effectivePool.length >= 6 && (intrinsicColorCount >= 4 || best4ColorMatch.distinctChromaticsCount >= 2)
+        ? 8
+        : 4;
 
-  const recommendedColors: 4 | 8 | 12 | 16 = fourColorsSufficient ? 4 : 8;
-  const fourColorNames = best4ColorMatch.slots.map((s) => s.spool.name).join(' → ');
+  const recommendedColors: 4 | 8 | 12 | 16 = highFidelityRecommended;
 
-  const colorCountAdvisory = fourColorsSufficient
-    ? maxColors > 4
-      ? `More than 4 colors are not needed for this image. K-Means++ analysis detected ${intrinsicColorCount} dominant color clusters, and 4 filaments (${fourColorNames}) already capture the full tonal & color range (ΔE ${best4ColorMatch.avgDe.toFixed(1)}) on a single 4-slot AMS.`
-      : `4 colors is optimal for this image — more than 4 colors are not needed (${intrinsicColorCount} dominant color clusters captured by ${fourColorNames} on a single AMS).`
-    : maxColors > 8
-      ? `More than 8 colors are not needed for this image (${intrinsicColorCount} dominant color clusters detected).`
-      : undefined;
+  const colorCountAdvisory =
+    maxColors <= 4
+      ? highFidelityRecommended > 4
+        ? `✨ For the best possible print quality, ${highFidelityRecommended} Colors is recommended for this image. K-Means++ detected ${intrinsicColorCount} tonal clusters—upgrading to ${highFidelityRecommended} colors provides richer shadow gradation, smoother skin-tone blends, and superior photographic realism.`
+        : `✓ 4-Color Single AMS stack. You can also switch to 8 colors for smoother Beer-Lambert gradient transitions.`
+      : maxColors === 8
+        ? `🌟 Master Photographic Quality (8 Colors Active): Smooth Beer-Lambert layer blending across all ${intrinsicColorCount} detected color clusters for optimal print fidelity.`
+        : `💎 Ultra-HD Multi-AMS Quality (${maxColors} Colors Active): Maximum tonal gradation across all ${intrinsicColorCount} detected color clusters.`;
 
   // Recipe 2: Vibrant Chroma & Detail Stack (emphasizes chromatic saturation across all hues)
   const vibrantEval = buildBestStackFromPool(effectivePool, 1.28, targetColorCount);
