@@ -37,20 +37,3 @@ Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/s
 | `tailwag_export_3mf_project` | Headlessly builds a watertight 2.5D mesh with CAD cutouts and writes `.3mf` + `_Swap_Playbook.txt`. |
 | `tailwag_calibrate_td` | Computes filament $TD$ from step-wedge opacity readings and exports the calibration wedge `.stl`. |
 
----
-
-## 🛠️ Build & Development Commands
-
-```powershell
-# Install dependencies
-npm install
-
-# Run automated unit tests (Vitest)
-npm test
-
-# Build Renderer + Electron Main/Preload + MCP Server
-npm run build
-
-# Launch Desktop Studio in development mode
-npm run electron:dev
-```
