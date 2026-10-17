@@ -17,7 +17,7 @@ $shortcut = $wsh.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $targetExe
 $shortcut.WorkingDirectory = Split-Path -Parent $targetExe
 $shortcut.IconLocation = "$iconIco,0"
-$shortcut.Description = "TailWag Studio — 3D Filament Painting & TD Lithophane Engine"
+$shortcut.Description = "TailWag Studio - 3D Filament Painting and TD Lithophane Engine"
 $shortcut.Save()
 
 Write-Host "Updated Desktop shortcut: $shortcutPath -> $targetExe"
