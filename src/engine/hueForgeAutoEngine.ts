@@ -11,7 +11,7 @@ import {
   buildLayerColorLUT,
   LayerSwapSlot,
 } from './opticalTdEngine';
-import { ciede2000, LABColor } from './colorQuantizerEngine';
+import { ciede2000, LABColor, boostChromaInLab, scaleLabChroma, computeDynamicChromaBoost, getHueSector } from './colorQuantizerEngine';
 import {
   applyCLAHE,
   applyBilateralHeightmapFilter,
@@ -261,7 +261,10 @@ export function extractPerceptualColorZones(
       rawLuminance[pIdx] = lum;
 
       if (x % step === 0 && y % step === 0) {
-        const lab = rgbToLab({ r, g, b });
+        const rawLab = rgbToLab({ r, g, b });
+        // CIELAB Chroma Scaling: Apply scalar multiplier (1.25x to 1.40x) to a* and b* channels
+        // immediately after color space conversion, prior to passing arrays into CIEDE2000 Delta E
+        const lab = scaleLabChroma(rawLab, 1.30);
         const chroma = Math.hypot(lab.a, lab.b);
         // Boost weight of chromatic accents so subtle reds/purples/greens are not erased
         const weight = chroma >= 12.0 ? 1.6 : 1.0;
@@ -462,23 +465,27 @@ export function matchFilamentRolls(
     const zone = zones[i];
     let bestSpool: FilamentSpool | null = null;
     let bestScore = Infinity;
+    // Perceptual Saturation Boost in CIELAB (Requirement 1):
+    // Stretches a* and b* chromaticity channels to preserve vibrant warm oranges, reds, and golds
+    const boostedZoneLab = boostChromaInLab(zone.lab, 1.30);
+    const boostedChroma = Math.hypot(boostedZoneLab.a, boostedZoneLab.b);
 
     for (const spool of filamentLibrary) {
       if (usedSpoolIds.has(spool.id)) continue;
 
       const spoolLab = rgbToLab(hexToRgb01(spool.hex));
       const spoolChroma = Math.hypot(spoolLab.a, spoolLab.b);
-      const rawD = ciede2000(zone.lab, spoolLab);
+      const rawD = ciede2000(boostedZoneLab, spoolLab);
       let adjustedD = rawD;
 
       // Anti-mud & anti-hallucination penalties:
-      if (zone.chroma >= 8.0) {
+      if (boostedChroma >= 8.0) {
         if (spoolChroma < 6.0) {
           // Neutral spool stealing chromatic cluster -> penalty!
           adjustedD += 18.0;
         } else {
           // Check hue family cosine similarity:
-          const cosSim = (zone.lab.a * spoolLab.a + zone.lab.b * spoolLab.b) / (zone.chroma * spoolChroma);
+          const cosSim = (boostedZoneLab.a * spoolLab.a + boostedZoneLab.b * spoolLab.b) / (boostedChroma * spoolChroma);
           if (cosSim < 0.20) {
             adjustedD += 25.0; // Alien hue family penalty
           } else if (cosSim >= 0.70) {
@@ -611,8 +618,26 @@ export function orderFilamentStack(assignments: MatchedFilamentAssignment[]): Ma
       return 0.90 + lab.L * 0.001 + Math.min(0.05, spool.td * 0.005);
     }
 
+    const hue = getHueSector(lab);
+
+    // Requirement 3: Luminance-Dependent Hue Correction:
+    // Bright highlights (sunlit canopy tops, golden hour highlights) map strictly to high-TD warm spools
+    // (yellows, warm golds, ivory) directly beneath the white top cap (rank 0.80..0.88), above oranges/reds/greens
+    if ((hue.sector === 'yellow' || (lab.b > 25 && lab.a >= -6 && lab.a <= 15)) && spool.td >= 1.8) {
+      return 0.80 + lum * 0.05 + Math.min(0.04, spool.td * 0.005);
+    }
+
+    // Highlight Clamp Logic (Requirement 3):
+    // Block any low-TD green (< 4.0mm) or dark pigment from occupying upper highlight layers
+    const isGreen = hue.sector === 'green' || hue.sector === 'cyan' || lab.a < -2.5;
+    const isLowTdGreen = isGreen && spool.td < 4.0;
+    const isDarkPigment = lab.L < 42.0 || lum < 0.38 || (spool.td < 2.0 && lab.L < 52.0);
+    if (isLowTdGreen || isDarkPigment) {
+      return Math.min(0.38, 0.18 + lum * 0.20 + Math.min(0.04, spool.td * 0.01));
+    }
+
     // Chromatics & midtone greys ordered by luminance and TD so dark shades blend into light
-    return 0.15 + lum * 0.70 + Math.min(0.08, spool.td * 0.01);
+    return 0.35 + lum * 0.40 + Math.min(0.06, spool.td * 0.01);
   };
 
   const sorted = [...assignments].sort((a, b) => getOpticalRank(a.spool) - getOpticalRank(b.spool));
@@ -686,6 +711,20 @@ export function generateLayerSchedule(
     } else {
       const frac = i / (count - 1);
       endLayer = Math.min(totalLayers - (count - 1 - i), minBaseLayer + Math.round(frac * remainingLayers));
+
+      // Highlight Clamp Logic (Requirement 3):
+      // Conditional rule in upper-layer assignment evaluating layer index vs. Transmittance Distance (TD),
+      // blocking any low-TD green or dark pigment from occupying the final top 4 micro-layers
+      const sLab = rgbToLab(hexToRgb01(item.spool.hex));
+      const sHue = getHueSector(sLab);
+      const lum = 0.2126 * hexToRgb01(item.spool.hex).r + 0.7152 * hexToRgb01(item.spool.hex).g + 0.0722 * hexToRgb01(item.spool.hex).b;
+      const isGreen = sHue.sector === 'green' || sHue.sector === 'cyan' || sLab.a < -2.5;
+      const isLowTdGreen = isGreen && item.spool.td < 4.0;
+      const isDarkPigment = sLab.L < 42.0 || lum < 0.38 || (item.spool.td < 2.0 && sLab.L < 52.0);
+      if (isLowTdGreen || isDarkPigment) {
+        endLayer = Math.min(endLayer, Math.max(currentStartLayer, totalLayers - 4));
+      }
+
       if (endLayer <= currentStartLayer) {
         endLayer = currentStartLayer + 1;
       }

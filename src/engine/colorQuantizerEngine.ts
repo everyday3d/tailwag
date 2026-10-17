@@ -60,10 +60,114 @@ export function getHueSector(lab: LABColor): { sector: HueSectorName; chroma: nu
 export function isSkinToneLab(lab: LABColor): boolean {
   if (lab.L < 30 || lab.L > 84) return false;
   const chroma = Math.hypot(lab.a, lab.b);
-  if (chroma < 7.0 || chroma > 42.0) return false;
+  if (chroma < 7.0 || chroma > 58.0) return false;
   let deg = (Math.atan2(lab.b, lab.a) * 180) / Math.PI;
   if (deg < 0) deg += 360;
   return deg >= 20 && deg <= 78 && lab.a >= 3.0 && lab.b >= 7.0;
+}
+
+/**
+ * CIELAB Chroma Scaling:
+ * Applies a scalar multiplier (e.g., 1.25x to 1.40x) to the a* and b* channels of the image matrix
+ * immediately after color space conversion, prior to passing arrays into the CIEDE2000 Delta E matching function.
+ */
+export function scaleLabChroma(
+  lab: LABColor,
+  factor: number = 1.30,
+  minChromaThreshold: number = 6.0
+): LABColor {
+  const chroma = Math.hypot(lab.a, lab.b);
+  if (chroma < minChromaThreshold || lab.L < 22 || factor <= 1.0) return { ...lab };
+  // Protect human skin tones and natural fawn fur from over-saturation into neon pumpkin orange
+  const effectiveFactor = isSkinToneLab(lab) ? Math.min(1.08, factor) : factor;
+  return {
+    L: lab.L,
+    a: lab.a * effectiveFactor,
+    b: lab.b * effectiveFactor,
+  };
+}
+
+/**
+ * Computes the minimum angular distance in degrees [0..180] in hue space between two CIELAB colors.
+ * Enforces the Histogram Spacing Constraint across K-Means cluster selection.
+ */
+export function getHueAngularDistanceDeg(lab1: LABColor, lab2: LABColor): number {
+  const c1 = Math.hypot(lab1.a, lab1.b);
+  const c2 = Math.hypot(lab2.a, lab2.b);
+  if (c1 < 3.5 || c2 < 3.5) return 0;
+  let h1 = (Math.atan2(lab1.b, lab1.a) * 180) / Math.PI;
+  if (h1 < 0) h1 += 360;
+  let h2 = (Math.atan2(lab2.b, lab2.a) * 180) / Math.PI;
+  if (h2 < 0) h2 += 360;
+  let diff = Math.abs(h1 - h2);
+  if (diff > 180) diff = 360 - diff;
+  return diff;
+}
+
+/**
+ * Perceptual Saturation Boost in CIELAB:
+ * Stretches a* and b* chromaticity channels to preserve vibrant warm oranges, reds,
+ * yellows, and golds before Delta E matching, preventing them from collapsing into muddy grays/browns.
+ */
+export function boostChromaInLab(
+  lab: LABColor,
+  factor: number = 1.30,
+  warmBias: boolean = true
+): LABColor {
+  const chroma = Math.hypot(lab.a, lab.b);
+  if (chroma < 4.0 || factor <= 1.0) return { ...lab };
+
+  // Warm colors (reds, oranges, yellows, golds) with a > 0 and b > 2 benefit from an additional 10% stretch
+  // to preserve their intense glow under translucent subtractive plastic stacking
+  const isWarm = lab.a > 0 && lab.b > 2;
+  const effectiveFactor = warmBias && isWarm ? factor * 1.10 : factor;
+
+  return {
+    L: lab.L,
+    a: lab.a * effectiveFactor,
+    b: lab.b * effectiveFactor,
+  };
+}
+
+/**
+ * Computes an adaptive dynamic chroma boost factor based on the chromaticity distribution of the image.
+ * Returns a factor in [1.15 .. 1.45] for vibrant images (sunsets, autumn leaves, colorful flowers),
+ * or 1.0 for neutral/monochrome subjects.
+ */
+export function computeDynamicChromaBoost(
+  samples: { lab: LABColor; weight?: number }[]
+): number {
+  if (samples.length === 0) return 1.0;
+
+  let totalWeight = 0;
+  let chromaticWeight = 0;
+  let maxChroma = 0;
+  let warmChromaticWeight = 0;
+
+  for (const s of samples) {
+    const w = s.weight ?? 1.0;
+    totalWeight += w;
+    const c = Math.hypot(s.lab.a, s.lab.b);
+    if (c > maxChroma) maxChroma = c;
+    if (c >= 12.0) {
+      chromaticWeight += w;
+      if (s.lab.a > 0 && s.lab.b > 2) {
+        warmChromaticWeight += w;
+      }
+    }
+  }
+
+  const chromaticRatio = chromaticWeight / Math.max(1e-5, totalWeight);
+  const warmRatio = warmChromaticWeight / Math.max(1e-5, totalWeight);
+
+  // If monochrome or very low chroma overall, don't distort neutrals
+  if (chromaticRatio < 0.05 && maxChroma < 18.0) {
+    return 1.0;
+  }
+
+  // Dynamic scaling: scales from 1.15 up to 1.45 based on max chroma and chromatic/warm prevalence
+  const vibrancyScore = (maxChroma / 65.0) * 0.5 + chromaticRatio * 0.3 + warmRatio * 0.2;
+  return Math.min(1.45, Math.max(1.15, 1.0 + vibrancyScore * 0.40));
 }
 
 export interface ImageColorAnalysis {
@@ -190,7 +294,10 @@ export interface QuantizedSample {
  * Uses automatic border-ring vs. center-region contrast so background corners (grass, sky, walls)
  * are automatically down-weighted relative to the foreground subject without any hardcoded color rules.
  */
-export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[] {
+export function extractPerceptualSamples(
+  imageData: ImageData,
+  chromaScalar: number = 1.30
+): QuantizedSample[] {
   const { data, width, height } = imageData;
   const stepX = Math.max(1, Math.floor(width / 56));
   const stepY = Math.max(1, Math.floor(height / 56));
@@ -221,7 +328,10 @@ export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[
       const g = data[idx + 1] / 255;
       const b = data[idx + 2] / 255;
       const rawLum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      const lab = rgbToLab({ r, g, b });
+      const rawLab = rgbToLab({ r, g, b });
+      // CIELAB Chroma Scaling: Apply scalar multiplier (1.25x to 1.40x) to a* and b* channels
+      // immediately after color space conversion, prior to passing arrays into CIEDE2000 Delta E
+      const lab = scaleLabChroma(rawLab, chromaScalar);
 
       const maxC = Math.max(r, g, b);
       const minC = Math.min(r, g, b);
@@ -279,6 +389,11 @@ export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[
   });
 }
 
+export interface ClusterAnalysisOptions {
+  manualNeutralOverride?: boolean;
+  minAngularDistanceDeg?: number;
+}
+
 /**
  * Deterministic Weighted K-Means++ Color Quantization Engine in CIE LAB space.
  * Discovers the true dominant colors of any uploaded photograph or logo and matches them
@@ -287,7 +402,8 @@ export function extractPerceptualSamples(imageData: ImageData): QuantizedSample[
 export function analyzeImageColorClusters(
   samples: QuantizedSample[],
   candidateSpools: FilamentSpool[],
-  maxClusters: number = 8
+  maxClusters: number = 8,
+  options?: ClusterAnalysisOptions
 ): ImageColorAnalysis {
   if (samples.length === 0) {
     return {
@@ -445,9 +561,34 @@ export function analyzeImageColorClusters(
     }))
     .sort((a, b) => b.weight - a.weight);
 
+  const minAngularDist = options?.minAngularDistanceDeg ?? 25.0;
   const merged: typeof validRaw = [];
   for (const rc of validRaw) {
-    const existing = merged.find((m) => ciede2000(m.lab, rc.lab) < 7.0);
+    const rcChroma = Math.hypot(rc.lab.a, rc.lab.b);
+    const isRcNeutral = rcChroma < 7.5;
+
+    const existing = merged.find((m) => {
+      const mChroma = Math.hypot(m.lab.a, m.lab.b);
+      const isMNeutral = mChroma < 7.5;
+
+      // Histogram Spacing Constraint A:
+      // Merge multiple neutral/gray clusters together so at most ONE neutral cluster exists unless manual override
+      if (isRcNeutral && isMNeutral && !options?.manualNeutralOverride) {
+        return true;
+      }
+
+      // Histogram Spacing Constraint B:
+      // Enforce minimum angular distance in hue space for chromatic clusters with similar luminance
+      if (!isRcNeutral && !isMNeutral) {
+        const dL = Math.abs(m.lab.L - rc.lab.L);
+        const angDist = getHueAngularDistanceDeg(m.lab, rc.lab);
+        if (dL < 18.0 && angDist < minAngularDist) {
+          return true; // Spatially merge clusters within narrow hue slice
+        }
+      }
+
+      return ciede2000(m.lab, rc.lab) < 7.0;
+    });
     if (existing) {
       const wTotal = existing.weight + rc.weight;
       existing.lab = {
@@ -568,6 +709,11 @@ export function analyzeImageColorClusters(
   let midtoneGreyWeight = 0;
   let midtoneTotalWeight = 0;
 
+  // Compute adaptive perceptual chroma boost across image samples (Requirement 1)
+  const dynamicChromaBoost = computeDynamicChromaBoost(samples);
+
+  let assignedNeutralSpoolsCount = 0;
+
   const clusters: ImageColorCluster[] = finalClusters.map((m, idx) => {
     const chroma = Math.hypot(m.lab.a, m.lab.b);
     const { sector } = getHueSector(m.lab);
@@ -577,23 +723,52 @@ export function analyzeImageColorClusters(
       if (chroma < 7.5) midtoneGreyWeight += m.weight;
     }
 
+    // Apply CIELAB perceptual saturation stretch to prevent vibrant clusters from collapsing into mud/grays
+    const boostedLab = boostChromaInLab(m.lab, dynamicChromaBoost);
+    const boostedChroma = Math.hypot(boostedLab.a, boostedLab.b);
+
     let bestSpool: FilamentSpool | undefined;
     let bestD = Infinity;
 
     for (const s of candidateSpools) {
       const sLab = rgbToLab(hexToRgb01(s.hex));
       const sChroma = Math.hypot(sLab.a, sLab.b);
-      const rawD = ciede2000(m.lab, sLab);
+      const rawD = ciede2000(boostedLab, sLab);
       let adjustedD = rawD;
 
-      if (chroma >= 11.0) {
-        // Cluster is genuinely chromatic (green grass, blue sky, red suit, warm skin)
+      // Histogram Spacing Constraint:
+      // Enforce the constraint that the solver cannot select more than one neutral/gray spool
+      // unless explicitly forced by manual override
+      const sName = s.name.toLowerCase();
+      const isSpoolGrayOrNeutral =
+        sChroma < 6.5 ||
+        sName.includes('gray') ||
+        sName.includes('grey') ||
+        sName.includes('ash') ||
+        sName.includes('silver');
+      const isBlackOrWhite = sLab.L < 22 || sLab.L > 88;
+      const isNeutralMidtoneSpool = isSpoolGrayOrNeutral && !isBlackOrWhite;
+
+      if (
+        isNeutralMidtoneSpool &&
+        assignedNeutralSpoolsCount >= 1 &&
+        !options?.manualNeutralOverride &&
+        boostedChroma >= 8.0
+      ) {
+        adjustedD += 50.0;
+      }
+
+      const isChromaticCluster =
+        m.lab.L < 22 ? boostedChroma >= 18.0 : boostedChroma >= 10.0;
+
+      if (isChromaticCluster) {
+        // Cluster is genuinely chromatic (green grass, blue sky, red suit, warm skin, autumn foliage, purple blouse)
         if (sChroma < 6.0) {
           // Candidate spool is neutral (gray/black/white) -> penalty scales smoothly with cluster chroma
-          adjustedD += Math.min(20.0, (chroma - 8.0) * 2.5);
+          adjustedD += Math.min(20.0, (boostedChroma - 8.0) * 2.5);
         } else {
           // Both are chromatic: check angular hue alignment
-          const cosSim = (m.lab.a * sLab.a + m.lab.b * sLab.b) / (chroma * sChroma);
+          const cosSim = (boostedLab.a * sLab.a + boostedLab.b * sLab.b) / (boostedChroma * sChroma);
           if (cosSim < 0.25) {
             // Alien hue family (e.g. green vs purple, blue vs red, green vs skin) -> HEAVY PENALTY!
             adjustedD += 30.0;
@@ -605,10 +780,10 @@ export function analyzeImageColorClusters(
           }
         }
       } else {
-        // Cluster is neutral/achromatic (B&W fur, grey rock, white shirt)
+        // Cluster is neutral/achromatic (B&W fur, grey rock, white shirt, deep shadows)
         if (sChroma >= 12.0) {
-          // Candidate spool is saturated -> penalize to avoid contaminating neutral regions
-          adjustedD += 15.0;
+          // Candidate spool is saturated -> heavily penalize to prevent contaminating neutral regions
+          adjustedD += 45.0;
         }
       }
 
@@ -618,8 +793,22 @@ export function analyzeImageColorClusters(
       }
     }
 
-    if (bestSpool && bestD < 24) {
-      matchedHexSet.add(bestSpool.hex.toLowerCase());
+    if (bestSpool) {
+      const bLab = rgbToLab(hexToRgb01(bestSpool.hex));
+      const bChroma = Math.hypot(bLab.a, bLab.b);
+      const bName = bestSpool.name.toLowerCase();
+      const isBGrayOrNeutral =
+        bChroma < 6.5 ||
+        bName.includes('gray') ||
+        bName.includes('grey') ||
+        bName.includes('ash') ||
+        bName.includes('silver');
+      if (isBGrayOrNeutral && bLab.L >= 22 && bLab.L <= 88) {
+        assignedNeutralSpoolsCount++;
+      }
+      if (bestD < 24) {
+        matchedHexSet.add(bestSpool.hex.toLowerCase());
+      }
     }
 
     return {

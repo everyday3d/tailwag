@@ -9,6 +9,9 @@ import {
   getHueSector,
   HueSectorName,
   isSkinToneLab,
+  boostChromaInLab,
+  scaleLabChroma,
+  computeDynamicChromaBoost,
 } from './colorQuantizerEngine';
 
 export interface SolverRecipe {
@@ -36,6 +39,34 @@ export function extractImageHistogramSamples(imageData: ImageData): WeightedSamp
 function getSpoolLuminance(spool: FilamentSpool): number {
   const rgb = hexToRgb01(spool.hex);
   return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+}
+
+/**
+ * Highlight Clamp Logic (Requirement 3):
+ * Evaluates filament optical properties to identify low-TD greens or dark pigments
+ * that are strictly blocked from occupying the final top 4 micro-layers.
+ */
+export function isLowTdGreenOrDarkPigment(spool: FilamentSpool): {
+  isLowTdGreen: boolean;
+  isDarkPigment: boolean;
+  blockedFromTop: boolean;
+} {
+  const sLab = rgbToLab(hexToRgb01(spool.hex));
+  const sHue = getHueSector(sLab);
+  const lum = getSpoolLuminance(spool);
+
+  // Low-TD Green: Green/cyan hue with low transmittance distance (TD < 4.0mm)
+  const isGreen = sHue.sector === 'green' || sHue.sector === 'cyan' || sLab.a < -2.5;
+  const isLowTdGreen = isGreen && spool.td < 4.0;
+
+  // Dark Pigment: Dark luminance (L < 42 or lum < 0.38) or low TD opaque dark shade (TD < 2.0 && L < 52)
+  const isDarkPigment = sLab.L < 42.0 || lum < 0.38 || (spool.td < 2.0 && sLab.L < 52.0);
+
+  return {
+    isLowTdGreen,
+    isDarkPigment,
+    blockedFromTop: isLowTdGreen || isDarkPigment,
+  };
 }
 
 /**
@@ -419,7 +450,8 @@ export function solveOptimalPalettes(
   layerHeightMm: number,
   maxColors: number = 4,
   baseSolidThicknessMm?: number,
-  totalDepthMm?: number
+  totalDepthMm?: number,
+  manualNeutralOverride: boolean = false
 ): SolverRecipe[] {
   const totalLayers =
     totalDepthMm !== undefined
@@ -442,7 +474,7 @@ export function solveOptimalPalettes(
   const activePool = usablePool.length >= 4 ? usablePool : candidateSpools;
 
   // 1. Run CIE LAB K-Means++ Color Quantization Engine on the image
-  const clusterAnalysis = analyzeImageColorClusters(samples, activePool, 8);
+  const clusterAnalysis = analyzeImageColorClusters(samples, activePool, 8, { manualNeutralOverride });
   const {
     clusters,
     intrinsicColorCount,
@@ -452,6 +484,10 @@ export function solveOptimalPalettes(
     hasSkinToneSubject,
     skinToneLuminanceRange,
   } = clusterAnalysis;
+
+  // Perceptual Saturation Boost in CIELAB (Requirement 1):
+  // Compute adaptive chroma boost factor across image samples
+  const dynamicChromaBoost = computeDynamicChromaBoost(samples);
 
   // Pre-aggregate image samples into `totalLayers` weighted LAB buckets
   // matching the user-configured solid starting base thickness
@@ -487,6 +523,16 @@ export function solveOptimalPalettes(
     bucketW[layerIdx] += s.weight;
     totalSampleWeight += s.weight;
   }
+
+  // Palette Diversity & Warm Vibrancy Anchor (Requirement 2):
+  // Detect whether image features autumn foliage, sunset, gold, or vibrant warm hues (excluding skin tone portraits)
+  const totalWeight = Math.max(1e-5, totalSampleWeight);
+  const hasWarmAutumnOrScenicFoliage =
+    !hasSkinToneSubject &&
+    (essentialHues.includes('yellow') ||
+      (essentialHues.includes('orange') &&
+        ((hueSectorWeights['yellow'] ?? 0) / totalWeight >= 0.015 || dynamicChromaBoost >= 1.25)) ||
+      ((hueSectorWeights['yellow'] ?? 0) + (hueSectorWeights['orange'] ?? 0)) / totalWeight >= 0.04);
 
   const layerBuckets: { lab: LABColor; weight: number }[] = [];
   for (let l = 0; l < totalLayers; l++) {
@@ -580,11 +626,15 @@ export function solveOptimalPalettes(
     let minClusterDe00 = Infinity;
     for (const c of clusters) {
       if (c.chroma < 5.5 || c.weightRatio < 0.02) continue;
+      // Perceptual Saturation Boost in CIELAB (Requirement 1):
+      const boostedCLab = boostChromaInLab(c.lab, dynamicChromaBoost);
+      const boostedCChroma = Math.hypot(boostedCLab.a, boostedCLab.b);
+
       // If this spool was directly chosen as the optimal library match for cluster `c`, record it immediately
       if (c.bestSpool?.id === spool.id && (c.bestSpoolDeltaE00 ?? 99) <= 24) {
-        minClusterDe00 = Math.min(minClusterDe00, c.bestSpoolDeltaE00 ?? ciede2000(c.lab, lab));
+        minClusterDe00 = Math.min(minClusterDe00, c.bestSpoolDeltaE00 ?? ciede2000(boostedCLab, lab));
       }
-      const cosSim = (c.lab.a * lab.a + c.lab.b * lab.b) / (c.chroma * chroma);
+      const cosSim = (boostedCLab.a * lab.a + boostedCLab.b * lab.b) / (boostedCChroma * chroma);
       // Require strong hue alignment (< ~28 deg)
       if (cosSim < 0.88) continue;
       // Guard against high-chroma warm spools (Orange/Red) masquerading as muted brown (since orange & brown share hue angle)
@@ -593,7 +643,7 @@ export function solveOptimalPalettes(
       if (isWarmSpool && isWarmCluster) {
         if (chroma > c.chroma * 1.55 + 8 || c.chroma > chroma * 1.85 + 10) continue;
       }
-      const d00 = ciede2000(c.lab, lab);
+      const d00 = ciede2000(boostedCLab, lab);
       if (d00 < minClusterDe00) {
         minClusterDe00 = d00;
       }
@@ -605,14 +655,16 @@ export function solveOptimalPalettes(
     let minBandDe00 = Infinity;
     for (const win of elevationWindows) {
       if (win.chroma < 4.5) continue;
-      const cosSim = (win.lab.a * lab.a + win.lab.b * lab.b) / (win.chroma * chroma);
+      const boostedWinLab = boostChromaInLab(win.lab, dynamicChromaBoost);
+      const boostedWinChroma = Math.hypot(boostedWinLab.a, boostedWinLab.b);
+      const cosSim = (boostedWinLab.a * lab.a + boostedWinLab.b * lab.b) / (boostedWinChroma * chroma);
       if (cosSim < 0.84) continue;
       const isWarmSpool = lab.a > 1.5 && lab.b > 6.0;
       const isWarmWin = win.lab.a > 1.5 && win.lab.b > 6.0;
       if (isWarmSpool && isWarmWin) {
         if (chroma > win.chroma * 1.65 + 9 || win.chroma > chroma * 1.9 + 12) continue;
       }
-      const d00 = ciede2000(win.lab, lab);
+      const d00 = ciede2000(boostedWinLab, lab);
       if (d00 < minBandDe00) {
         minBandDe00 = d00;
       }
@@ -649,6 +701,27 @@ export function solveOptimalPalettes(
     return res;
   };
 
+  /**
+   * Identifies whether a spool is an achromatic neutral or low-chroma muddy earth tone.
+   */
+  const isMuddyOrNeutral = (s: FilamentSpool): boolean => {
+    const info = classifyAndScoreSpool(s);
+    if (info.isNeutral) return true;
+    const sLab = rgbToLab(hexToRgb01(s.hex));
+    const sChroma = Math.hypot(sLab.a, sLab.b);
+    const n = s.name.toLowerCase();
+    return (
+      sChroma < 12.0 ||
+      (sChroma < 18.0 &&
+        (n.includes('brown') ||
+          n.includes('tan') ||
+          n.includes('khaki') ||
+          n.includes('slate') ||
+          n.includes('gray') ||
+          n.includes('earth')))
+    );
+  };
+
   // Filter candidate pool to spools supported by the image's K-Means++ clusters,
   // essential image hues, or direct pixel support
   const imageCompatiblePool = activePool.filter((s) => {
@@ -673,7 +746,14 @@ export function solveOptimalPalettes(
       }
     }
 
-    // 3. Or it has solid hue support ratio (>= 3.5%) in the image
+    // 3. Or it matches vibrant warm foliage/sunset colors when warm chromatic histogram is active (Requirement 2)
+    if (hasWarmAutumnOrScenicFoliage && (sHue.sector === 'yellow' || sHue.sector === 'orange')) {
+      if (Math.hypot(sLab.a, sLab.b) >= 20.0 && s.td >= 1.5) {
+        return true;
+      }
+    }
+
+    // 4. Or it has solid hue support ratio (>= 3.5%) in the image
     return info.minClusterDe00 <= 18.0 || info.hueSupportRatio >= 0.035;
   });
 
@@ -697,42 +777,49 @@ export function solveOptimalPalettes(
     const sLab = rgbToLab(hexToRgb01(s.hex));
     const sHue = getHueSector(sLab);
 
+    // Requirement 3: Luminance-Dependent Hue Correction:
+    // Bright highlights (sunlit canopy tops, golden hour highlights) map strictly to high-TD warm spools
+    // (yellows, warm golds, ivory) directly beneath the white top cap (rank 0.80..0.88), above oranges/reds/greens
+    if ((sHue.sector === 'yellow' || (sLab.b > 25 && sLab.a >= -6 && sLab.a <= 15)) && s.td >= 1.8) {
+      return 0.80 + lum * 0.05 + Math.min(0.04, s.td * 0.005);
+    }
+
     // Contiguous Hue Family Optical Progression:
     // Groups same-hue spools together so they print as cohesive contiguous relief layers,
     // avoiding erratic cross-color jumping (e.g. Green -> Blue -> Green)
     let familyBase = 0.35;
     if (info.isNeutral) {
-      familyBase = 0.52; // Neutral greys/silvers act as transition buffers
+      familyBase = 0.48; // Neutral greys/silvers act as transition buffers
     } else {
       switch (sHue.sector) {
         case 'green':
-          familyBase = 0.20;
-          break;
-        case 'yellow':
-          familyBase = 0.32;
-          break;
-        case 'orange':
-          familyBase = 0.38;
+        case 'cyan':
+          familyBase = 0.22; // Greens & cyans are lower midtones, strictly beneath warm canopy highlights
           break;
         case 'red':
-          familyBase = 0.44;
+          familyBase = 0.42;
+          break;
+        case 'orange':
+          familyBase = 0.55;
           break;
         case 'magenta':
-          familyBase = 0.60;
-          break;
-        case 'indigo':
           familyBase = 0.65;
           break;
-        case 'blue':
-          familyBase = 0.70;
+        case 'indigo':
+          familyBase = 0.68;
           break;
-        case 'cyan':
-          familyBase = 0.76;
+        case 'blue':
+          familyBase = 0.72;
           break;
         default:
           familyBase = 0.50;
           break;
       }
+    }
+
+    // For greens/cyans, cap optical rank at <= 0.38 so they can NEVER rank above warm midtones or highlights
+    if (sHue.sector === 'green' || sHue.sector === 'cyan' || sLab.a < -4.0) {
+      return 0.22 + Math.min(0.12, lum * 0.15) + Math.min(0.03, s.td * 0.01);
     }
 
     // Within each hue family, sort ascending by luminance and transmittance distance (TD)
@@ -792,6 +879,30 @@ export function solveOptimalPalettes(
         ? totalLayers
         : Math.max(idx + 1, Math.min(totalLayers - (count - 1 - idx), Math.round(q * totalLayers)))
     );
+
+    // Requirement 3: Clamp green spools from invading upper highlight layers
+    const hasWarmHighlightsOrYellow =
+      ordered.some((s) => {
+        const h = getHueSector(rgbToLab(hexToRgb01(s.hex)));
+        return h.sector === 'yellow' || (h.sector === 'orange' && s.td >= 2.0);
+      }) ||
+      layerBuckets.slice(Math.round(totalLayers * 0.65)).some((b) => b.weight > 0 && b.lab.L >= 55 && b.lab.b >= 4.0);
+
+    // Requirement 3: Highlight Clamp Logic:
+    // Block any low-TD green (< 4.0mm) or dark pigment from occupying the final top 4 micro-layers
+    const finalTop4Floor = Math.max(minBaseLayer + 1, totalLayers - 4);
+    for (let i = 0; i < count - 1; i++) {
+      const sLab = rgbToLab(hexToRgb01(ordered[i].hex));
+      const sHue = getHueSector(sLab);
+      if (hasWarmHighlightsOrYellow && (sHue.sector === 'green' || sHue.sector === 'cyan' || sLab.a < -3.0)) {
+        const maxGreenEnd = Math.max(minBaseLayer + 1, Math.min(layerEnds[i], Math.round(totalLayers * 0.68)));
+        layerEnds[i] = Math.min(layerEnds[i], maxGreenEnd);
+      }
+      const { blockedFromTop } = isLowTdGreenOrDarkPigment(ordered[i]);
+      if (blockedFromTop) {
+        layerEnds[i] = Math.min(layerEnds[i], finalTop4Floor);
+      }
+    }
 
     for (let i = 1; i < layerEnds.length; i++) {
       if (layerEnds[i] <= layerEnds[i - 1]) {
@@ -939,11 +1050,46 @@ export function solveOptimalPalettes(
         }
       }
 
+      // Requirement 3: Luminance-Dependent Highlight Hue Correction:
+      // Dark or muted green spools must NEVER bleed into bright highlight / sunlit canopy layers.
+      let highlightBleedPenalty = 0;
+      const highlightStartLayer = Math.round(totalLayers * 0.68);
+      for (let l = highlightStartLayer; l < totalLayers; l++) {
+        const bucket = layerBuckets[l];
+        const activeSlot = slots.find((s) => l + 1 <= s.upToLayer) || slots[slots.length - 1];
+        const activeSpool = activeSlot.spool;
+        const sLab = rgbToLab(hexToRgb01(activeSpool.hex));
+        const sHue = getHueSector(sLab);
+
+        const isGreenOrCool = sHue.sector === 'green' || sHue.sector === 'cyan' || sLab.a < -3.0;
+        const targetIsBrightWarm = bucket.lab.L >= 55 && (bucket.lab.b >= 4.0 || bucket.weight <= 0);
+
+        if (isGreenOrCool && targetIsBrightWarm) {
+          highlightBleedPenalty += 55.0 * (bucket.weight || 1.0) * totalSampleWeight;
+        }
+      }
+
+      // Requirement 3: Highlight Clamp Logic:
+      // Conditional rule in the upper-layer assignment matrix evaluating layer index vs. Transmittance Distance (TD),
+      // blocking any low-TD green or dark pigment from occupying the final top 4 micro-layers.
+      let highlightClampPenalty = 0;
+      const finalTop4Start = Math.max(0, totalLayers - 4);
+      for (let l = finalTop4Start; l < totalLayers; l++) {
+        const bucket = layerBuckets[l];
+        const activeSlot = slots.find((s) => l + 1 <= s.upToLayer) || slots[slots.length - 1];
+        const activeSpool = activeSlot.spool;
+        const { isLowTdGreen, isDarkPigment } = isLowTdGreenOrDarkPigment(activeSpool);
+
+        if (isLowTdGreen || isDarkPigment) {
+          highlightClampPenalty += 5000.0 * (bucket.weight || 1.0) * totalSampleWeight;
+        }
+      }
+
       const visualDe =
         (totalWeightedError * 0.60 + clusterCoverageError * 0.40) / Math.max(1e-5, totalSampleWeight);
       const compositeCost =
         visualDe +
-        (mudPenalty + tdSpacingPenalty + skinProtectionPenalty + gradientBandingPenalty) /
+        (mudPenalty + tdSpacingPenalty + skinProtectionPenalty + gradientBandingPenalty + highlightBleedPenalty + highlightClampPenalty) /
           Math.max(1e-5, totalSampleWeight);
       return {
         avgDe: compositeCost,
@@ -962,12 +1108,26 @@ export function solveOptimalPalettes(
       for (let pass = 0; pass < 2; pass++) {
         for (let i = 0; i < count - 1; i++) {
           const minL = i === 0 ? Math.max(2, minBaseLayer) : currentEnds[i - 1] + 1;
-          const maxL = Math.min(
+          let maxL = Math.min(
             currentEnds[i + 1] - 1,
             i === count - 1 - whites.length && whites.length > 0
               ? Math.max(minL, Math.round(totalLayers * 0.78))
               : currentEnds[i + 1] - 1
           );
+
+          // Clamping: If this spool is green/cyan and warm highlights exist, clamp max layer to <= 68% total layers
+          const spoolLab = rgbToLab(hexToRgb01(ordered[i].hex));
+          const spoolHue = getHueSector(spoolLab);
+          if (hasWarmHighlightsOrYellow && (spoolHue.sector === 'green' || spoolHue.sector === 'cyan' || spoolLab.a < -3.0)) {
+            maxL = Math.min(maxL, Math.max(minL, Math.round(totalLayers * 0.68)));
+          }
+
+          // Highlight Clamp Logic: If spool is low-TD green or dark pigment, clamp max layer to <= totalLayers - 4
+          const { blockedFromTop } = isLowTdGreenOrDarkPigment(ordered[i]);
+          if (blockedFromTop) {
+            maxL = Math.min(maxL, Math.max(minL, totalLayers - 4));
+          }
+
           const origL = currentEnds[i];
           let bestL = origL;
           for (let candL = Math.max(minL, origL - 2); candL <= Math.min(maxL, origL + 2); candL++) {
@@ -1033,6 +1193,34 @@ export function solveOptimalPalettes(
       if (!allowDuplicateHex && usedHexes.has(h)) return;
 
       const hue = getSpoolHue(s);
+      // Palette Diversity Enforcement (Requirement 2):
+      // Prevent the solver from clustering multiple similar neutral or muddy midtones
+      const isNeutralMid = isMuddyOrNeutral(s) && !classifyAndScoreSpool(s).isBlack && !classifyAndScoreSpool(s).isWhite;
+      if (isNeutralMid) {
+        const hasChromaticContent = essentialHues.length > 0 || dynamicChromaBoost > 1.05;
+        if (hasChromaticContent) {
+          const currentMuddyCount = picked.filter(
+            (p) => isMuddyOrNeutral(p) && !classifyAndScoreSpool(p).isBlack && !classifyAndScoreSpool(p).isWhite
+          ).length;
+          // Histogram Spacing Constraint:
+          // Ensure the solver cannot select more than one neutral/gray spool unless explicitly forced by manual override
+          const maxAllowedMuddy = manualNeutralOverride ? (countLimit <= 4 ? 2 : 3) : 1;
+          if (currentMuddyCount >= maxAllowedMuddy) {
+            // If unpicked image-compatible chromatic spools exist in candidate pool, skip adding redundant muddy neutrals
+            const hasUnpickedChromatic = pool.some(
+              (ps) =>
+                !usedIds.has(ps.id) &&
+                !usedHexes.has(ps.hex.toLowerCase()) &&
+                !isMuddyOrNeutral(ps) &&
+                (essentialHues.includes(getSpoolHue(ps).sector) ||
+                  classifyAndScoreSpool(ps).minClusterDe00 <= 20.0 ||
+                  classifyAndScoreSpool(ps).hueSupportRatio >= 0.02)
+            );
+            if (hasUnpickedChromatic) return;
+          }
+        }
+      }
+
       if (enforceHueDiversity && hue.sector !== 'neutral') {
         // Hue Family Diversity Rule:
         // Do not add a 2nd or 3rd spool in an already-used hue family
@@ -1063,6 +1251,35 @@ export function solveOptimalPalettes(
     // 1. Primary Black Shadow Base + Primary Crisp White Highlight (Locked per Fallback Safety Rule)
     addSpool(blacks[0] || pool[0], false, false);
     addSpool(whites[0] || pool[pool.length - 1], false, false);
+
+    // 1b. Warm Vibrant Midtone Anchor (Requirement 2):
+    // If the source photo contains warm autumn foliage, sunset, gold, or vibrant orange/yellow hues,
+    // force at least one vibrant yellow or orange spool into the mid-layer candidate stack instead of defaulting to dull earth tones.
+    if (hasWarmAutumnOrScenicFoliage) {
+      const hasWarmVibrantPicked = picked.some((p) => {
+        const h = getSpoolHue(p);
+        const pLab = rgbToLab(hexToRgb01(p.hex));
+        return (h.sector === 'yellow' || h.sector === 'orange') && Math.hypot(pLab.a, pLab.b) >= 20.0;
+      });
+
+      if (!hasWarmVibrantPicked && picked.length < countLimit) {
+        const vibrantWarmCandidates = chromatics.filter((c) => {
+          if (usedIds.has(c.id) || usedHexes.has(c.hex.toLowerCase())) return false;
+          const h = getSpoolHue(c);
+          const cLab = rgbToLab(hexToRgb01(c.hex));
+          return (h.sector === 'yellow' || h.sector === 'orange') && Math.hypot(cLab.a, cLab.b) >= 20.0 && c.td >= 1.5;
+        });
+
+        if (vibrantWarmCandidates.length > 0) {
+          vibrantWarmCandidates.sort((a, b) => {
+            const infoA = classifyAndScoreSpool(a);
+            const infoB = classifyAndScoreSpool(b);
+            return Math.min(infoA.minClusterDe00, infoA.minBandDe00) - Math.min(infoB.minClusterDe00, infoB.minBandDe00);
+          });
+          addSpool(vibrantWarmCandidates[0], false, false);
+        }
+      }
+    }
 
     // 2. High-Priority Cluster Spools:
     // Add distinct chromatic spools directly matched to image K-Means++ clusters (>=1.5% area or high-chroma accent >=0.5%)
@@ -1133,13 +1350,17 @@ export function solveOptimalPalettes(
         bW += bk.weight;
       }
 
+      const effectiveChromaBoost = chromaBoost * dynamicChromaBoost;
       const targetBandLab: LABColor =
         bW > 0
-          ? {
-              L: bL / bW,
-              a: (bA / bW) * chromaBoost,
-              b: (bB / bW) * chromaBoost,
-            }
+          ? boostChromaInLab(
+              {
+                L: bL / bW,
+                a: (bA / bW) * chromaBoost,
+                b: (bB / bW) * chromaBoost,
+              },
+              dynamicChromaBoost
+            )
           : { L: 48, a: 0, b: 0 };
 
       let bestCand: FilamentSpool | undefined;
@@ -1303,6 +1524,27 @@ export function solveOptimalPalettes(
         // When the photo has essential chromatic hues:
         const hueI = getHueSector(rgbToLab(hexToRgb01(validMids[i].hex))).sector;
         const hueJ = getHueSector(rgbToLab(hexToRgb01(validMids[j].hex))).sector;
+
+        // Requirement 2: Palette Diversity Enforcement & Histogram Spacing Constraint:
+        // Prevent clustering multiple similar neutral or muddy midtones (e.g. Earth Brown + Gray)
+        // unless explicitly forced by manual override
+        const isMuddyI = isMuddyOrNeutral(validMids[i]);
+        const isMuddyJ = isMuddyOrNeutral(validMids[j]);
+        if (isMuddyI && isMuddyJ && !manualNeutralOverride && (essentialHues.length > 0 || dynamicChromaBoost > 1.05)) {
+          continue; // DISALLOWED! Prevents dual muddy midtones unless manual override
+        }
+
+        // When photo has warm autumn foliage/sunset/gold content:
+        // Force at least one vibrant yellow or orange spool
+        if (hasWarmAutumnOrScenicFoliage) {
+          const labI = rgbToLab(hexToRgb01(validMids[i].hex));
+          const labJ = rgbToLab(hexToRgb01(validMids[j].hex));
+          const isVibrantWarmI = (hueI === 'yellow' || hueI === 'orange') && Math.hypot(labI.a, labI.b) >= 20.0;
+          const isVibrantWarmJ = (hueJ === 'yellow' || hueJ === 'orange') && Math.hypot(labJ.a, labJ.b) >= 20.0;
+          if (!isVibrantWarmI && !isVibrantWarmJ) {
+            continue;
+          }
+        }
 
         // In 4-color mode, with only 2 midtone slots:
         // 1. Never allow two chromatic spools in the SAME hue family if another essential hue exists!
