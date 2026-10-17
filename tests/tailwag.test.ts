@@ -3,6 +3,7 @@ import { VERIFIED_FILAMENT_CATALOG } from '../src/data/filamentCatalog';
 import { computeLayerOpacity, buildLayerColorLUT, hexToRgb01, rgbToLab, deltaE } from '../src/engine/opticalTdEngine';
 import { buildHeightmapGrid, generateBinaryStlFromGrid, generateTdCalibrationWedgeStl } from '../src/engine/cadMeshBuilder';
 import { buildSwapPlaybook, generateNative3mfPackage } from '../src/engine/exporter3mf';
+import { parseFilamentLibraryJson, serializeFilamentLibraryJson } from '../src/utils/filamentJsonIO';
 
 describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
   it('computes monotonic Beer-Lambert layer opacity as thickness increases or TD decreases', () => {
@@ -94,5 +95,37 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
   it('generates TD calibration step-wedge binary STL', () => {
     const wedge = generateTdCalibrationWedgeStl(12, 0.16);
     expect(wedge.byteLength).toBeGreaterThan(1000);
+  });
+
+  it('parses HueForge and TailWag .json filament libraries and marks imported spools as Owned', () => {
+    const hueforgeSample = JSON.stringify({
+      Filaments: [
+        {
+          Brand: 'Bambu Lab',
+          Name: 'PLA Matte Dark Brown',
+          Type: 'PLA Matte',
+          Color: '#4D3324',
+          Transmissivity: 2.0,
+        },
+        {
+          Brand: 'Polymaker',
+          Name: 'PolyTerra Charcoal Black',
+          Type: 'PLA',
+          Color: '1A1A1A',
+          Transmissivity: 0.6,
+        },
+      ],
+    });
+    const res = parseFilamentLibraryJson(hueforgeSample);
+    expect(res.sourceFormat).toBe('hueforge');
+    expect(res.spools).toHaveLength(2);
+    expect(res.spools[0].owned).toBe(true);
+    expect(res.spools[0].td).toBe(2.0);
+    expect(res.spools[1].hex).toBe('#1A1A1A');
+
+    const exported = serializeFilamentLibraryJson(res.spools);
+    const roundTrip = parseFilamentLibraryJson(exported);
+    expect(roundTrip.spools).toHaveLength(2);
+    expect(roundTrip.spools[0].name).toBe('PLA Matte Dark Brown');
   });
 });

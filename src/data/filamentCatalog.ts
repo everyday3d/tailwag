@@ -2,7 +2,7 @@ export interface FilamentSpool {
   id: string;
   brand: string;
   name: string;
-  material: 'PLA' | 'PLA Matte' | 'PLA+' | 'PETG' | 'PLA Silk' | 'CMYK Litho';
+  material: 'PLA' | 'PLA Matte' | 'PLA+' | 'PETG' | 'PLA Silk' | 'CMYK Litho' | 'ABS' | 'ASA' | 'TPU';
   hex: string;
   /** Transmission Distance in millimeters (100% opacity threshold on black backing) */
   td: number;

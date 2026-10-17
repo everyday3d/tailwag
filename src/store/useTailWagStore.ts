@@ -56,6 +56,36 @@ export interface TailWagState {
   addCustomSpoolToCatalog: (spool: FilamentSpool) => void;
   toggleSpoolOwned: (spoolId: string) => void;
   syncAmsSpools: (amsSpools: FilamentSpool[]) => void;
+  importOwnedLibraryJson: (importedSpools: FilamentSpool[], mode?: 'replace' | 'merge') => void;
+}
+
+const STORAGE_KEY = 'tailwag_catalog_v1';
+
+function loadInitialCatalog(): FilamentSpool[] {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return VERIFIED_FILAMENT_CATALOG;
+}
+
+function saveCatalogToStorage(catalog: FilamentSpool[]): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(catalog));
+    }
+  } catch {
+    // ignore storage errors
+  }
 }
 
 const defaultSpools = [
@@ -102,7 +132,7 @@ export const useTailWagStore = create<TailWagState>((set) => ({
     magnetDiameterMm: 8.2,
   },
 
-  catalog: VERIFIED_FILAMENT_CATALOG,
+  catalog: loadInitialCatalog(),
   slots: [
     { id: 'slot-1', spool: defaultSpools[0], upToLayer: 5 },
     { id: 'slot-2', spool: defaultSpools[1], upToLayer: 11 },
@@ -177,13 +207,17 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       return { slots: filtered };
     }),
   addCustomSpoolToCatalog: (spool) =>
-    set((state) => ({
-      catalog: [spool, ...state.catalog],
-    })),
+    set((state) => {
+      const next = [spool, ...state.catalog];
+      saveCatalogToStorage(next);
+      return { catalog: next };
+    }),
   toggleSpoolOwned: (spoolId) =>
-    set((state) => ({
-      catalog: state.catalog.map((s) => (s.id === spoolId ? { ...s, owned: !s.owned } : s)),
-    })),
+    set((state) => {
+      const next = state.catalog.map((s) => (s.id === spoolId ? { ...s, owned: !s.owned } : s));
+      saveCatalogToStorage(next);
+      return { catalog: next };
+    }),
   syncAmsSpools: (amsSpools) =>
     set((state) => {
       const merged = [...amsSpools];
@@ -192,6 +226,30 @@ export const useTailWagStore = create<TailWagState>((set) => ({
           merged.push(existing);
         }
       }
+      saveCatalogToStorage(merged);
+      return { catalog: merged };
+    }),
+  importOwnedLibraryJson: (importedSpools, mode = 'replace') =>
+    set((state) => {
+      const normalizedImported = importedSpools.map((s) => ({ ...s, owned: true }));
+      const baseCatalog = state.catalog.map((s) =>
+        mode === 'replace' ? { ...s, owned: false } : s
+      );
+
+      const merged: FilamentSpool[] = [...normalizedImported];
+      for (const existing of baseCatalog) {
+        const isDuplicate = merged.some(
+          (m) =>
+            m.id === existing.id ||
+            (m.brand.toLowerCase() === existing.brand.toLowerCase() &&
+              m.name.toLowerCase() === existing.name.toLowerCase() &&
+              m.hex.toLowerCase() === existing.hex.toLowerCase())
+        );
+        if (!isDuplicate) {
+          merged.push(existing);
+        }
+      }
+      saveCatalogToStorage(merged);
       return { catalog: merged };
     }),
 }));
