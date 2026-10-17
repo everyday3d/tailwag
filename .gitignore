@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.codegraph/
+graphify-out/
+AGENTS.md
+AGENT.md
+GEMINI.md
+CLAUDE.md
+.agents/
+*.log
+.DS_Store
+Thumbs.db
