@@ -2,12 +2,14 @@ export interface FilamentSpool {
   id: string;
   brand: string;
   name: string;
-  material: 'PLA' | 'PLA Matte' | 'PLA+' | 'PETG' | 'PLA Silk' | 'CMYK Litho' | 'ABS' | 'ASA' | 'TPU';
+  material: 'PLA' | 'PLA Matte' | 'PLA+' | 'PETG' | 'PLA Silk' | 'CMYK Litho' | 'ABS' | 'ASA' | 'TPU' | 'COPE';
   hex: string;
   /** Transmission Distance in millimeters (100% opacity threshold on black backing) */
   td: number;
   owned?: boolean;
   amsSlot?: string; // e.g. "AMS 1 - A1"
+  libraryId?: string;
+  libraryName?: string;
 }
 
 export const VERIFIED_FILAMENT_CATALOG: FilamentSpool[] = [

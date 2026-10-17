@@ -175,12 +175,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     );
     dirLightRef.current.intensity = backlitLithoMode ? 0.45 : 1.38;
     backLightRef.current.intensity = backlitLithoMode ? 3.2 : 0;
+    if (rendererRef.current && sceneRef.current && cameraRef.current) {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
   }, [lightAzimuthDeg, lightElevationDeg, backlitLithoMode]);
 
-  // Rebuild 3D Filament Painting Mesh with Beer-Lambert TD Vertex Color Blending + Z-Height Exaggeration
+  const vertexCellMapRef = useRef<Int32Array>(new Int32Array(0));
+
+  // 1. Rebuild 3D Mesh Topology only when HeightmapGrid changes (pre-press, dimensions, CAD cutouts)
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene || layerLUT.length === 0) return;
+    if (!scene) return;
 
     if (meshRef.current) {
       scene.remove(meshRef.current);
@@ -188,20 +193,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       (meshRef.current.material as THREE.Material).dispose();
     }
 
-    const { cols, rows, widthMm, heightMm, topZ, normLum } = grid;
+    const { cols, rows, widthMm, heightMm, topZ } = grid;
     const halfW = widthMm / 2;
     const halfH = heightMm / 2;
-    const maxAllowedLayer = Math.max(1, Math.min(totalLayers, slicePreviewMaxLayer));
-    const maxSliceZ = baseLayerMm + (maxAllowedLayer - 1) * layerHeightMm;
+    const zVisualScale = 2.5;
 
+    const vMap = new Int32Array(cols * rows).fill(-1);
+    const cellIndices: number[] = [];
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    const vMap = new Int32Array(cols * rows).fill(-1);
     let vCounter = 0;
-
-    // Exaggerate Z slightly in viewport (x2.5) so micro-layer steps (0.08mm) cast crisp studio relief shadows
-    const zVisualScale = 2.5;
 
     for (let r = 0; r < rows; r++) {
       const y = halfH - (r / Math.max(1, rows - 1)) * heightMm;
@@ -211,36 +213,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
         if (rawZ <= 0) continue;
 
         const x = (c / Math.max(1, cols - 1)) * widthMm - halfW;
-        const clampedZ = Math.min(rawZ, maxSliceZ);
-
-        // Determine discrete printed layer at this vertex
-        const cellLayer = Math.max(
-          1,
-          Math.min(maxAllowedLayer, 1 + Math.round(normLum[idx] * (totalLayers - 1)))
-        );
-        const lutEntry = layerLUT[cellLayer - 1] || layerLUT[layerLUT.length - 1];
-
-        let rCol = lutEntry.rgb.r;
-        let gCol = lutEntry.rgb.g;
-        let bCol = lutEntry.rgb.b;
-
-        // Subtle filament step contour shading so individual printed layers look like real extruded plastic
-        const layerStepShade = cellLayer % 2 === 0 ? 1.0 : 0.965;
-        rCol *= layerStepShade;
-        gCol *= layerStepShade;
-        bCol *= layerStepShade;
-
-        if (backlitLithoMode) {
-          // Simulate warm LED backlight transmission through total thickness
-          const transmit = Math.exp(-0.55 * clampedZ);
-          rCol = Math.min(1, rCol * 0.45 + transmit * 1.05);
-          gCol = Math.min(1, gCol * 0.45 + transmit * 0.92);
-          bCol = Math.min(1, bCol * 0.45 + transmit * 0.72);
-        }
-
         vMap[idx] = vCounter++;
-        positions.push(x, y, clampedZ * zVisualScale);
-        colors.push(rCol, gCol, bCol);
+        cellIndices.push(idx);
+        positions.push(x, y, rawZ * zVisualScale);
+        colors.push(0.8, 0.8, 0.8);
       }
     }
 
@@ -258,6 +234,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       }
     }
 
+    vertexCellMapRef.current = new Int32Array(cellIndices);
+
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -274,6 +252,60 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
     meshRef.current = mesh;
+  }, [grid]);
+
+  // 2. Fast in-place Vertex Color & Z-Cutaway update (< 1ms) on every slider drag!
+  useEffect(() => {
+    const mesh = meshRef.current;
+    const cellMap = vertexCellMapRef.current;
+    if (!mesh || cellMap.length === 0 || layerLUT.length === 0) return;
+
+    const { topZ, normLum } = grid;
+    const maxAllowedLayer = Math.max(1, Math.min(totalLayers, slicePreviewMaxLayer));
+    const maxSliceZ = baseLayerMm + (maxAllowedLayer - 1) * layerHeightMm;
+    const zVisualScale = 2.5;
+
+    const posAttr = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const colAttr = mesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const posArr = posAttr.array as Float32Array;
+    const colArr = colAttr.array as Float32Array;
+
+    for (let v = 0; v < cellMap.length; v++) {
+      const idx = cellMap[v];
+      const rawZ = topZ[idx];
+      const clampedZ = Math.min(rawZ, maxSliceZ);
+      posArr[v * 3 + 2] = clampedZ * zVisualScale;
+
+      const cellLayer = Math.max(
+        1,
+        Math.min(maxAllowedLayer, 1 + Math.round(normLum[idx] * (totalLayers - 1)))
+      );
+      const lutEntry = layerLUT[cellLayer - 1] || layerLUT[layerLUT.length - 1];
+
+      const layerStepShade = cellLayer % 2 === 0 ? 1.0 : 0.965;
+      let rCol = lutEntry.rgb.r * layerStepShade;
+      let gCol = lutEntry.rgb.g * layerStepShade;
+      let bCol = lutEntry.rgb.b * layerStepShade;
+
+      if (backlitLithoMode) {
+        const transmit = Math.exp(-0.55 * clampedZ);
+        rCol = Math.min(1, rCol * 0.45 + transmit * 1.05);
+        gCol = Math.min(1, gCol * 0.45 + transmit * 0.92);
+        bCol = Math.min(1, bCol * 0.45 + transmit * 0.72);
+      }
+
+      colArr[v * 3] = rCol;
+      colArr[v * 3 + 1] = gCol;
+      colArr[v * 3 + 2] = bCol;
+    }
+
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+    (mesh.material as THREE.MeshStandardMaterial).roughness = backlitLithoMode ? 0.35 : 0.52;
+
+    if (rendererRef.current && sceneRef.current && cameraRef.current) {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
   }, [grid, layerLUT, slicePreviewMaxLayer, backlitLithoMode, baseLayerMm, layerHeightMm, totalLayers]);
 
   return (

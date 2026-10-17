@@ -17,6 +17,7 @@ import {
   Cpu,
   FileJson,
   Download,
+  Trash2,
 } from 'lucide-react';
 import { useTailWagStore } from './store/useTailWagStore';
 import { createDefaultPortraitImageData } from './utils/defaultPortrait';
@@ -35,6 +36,7 @@ export const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
+  const [solverColorCount, setSolverColorCount] = useState<4 | 8 | 12 | 16>(4);
   const [jsonImportBanner, setJsonImportBanner] = useState<string | null>(null);
   const [solverRecipes, setSolverRecipes] = useState<SolverRecipe[]>([]);
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
@@ -69,11 +71,13 @@ export const App: React.FC = () => {
     cad,
     setCadConfig,
     catalog,
+    importedLibraries,
     slots,
     setSlots,
     addSlot,
     toggleSpoolOwned,
     importOwnedLibraryJson,
+    removeImportedLibrary,
   } = useTailWagStore();
 
   // Compute 2.5D Heightmap Grid reactively
@@ -164,16 +168,20 @@ export const App: React.FC = () => {
           setDimensions(Math.max(40, Math.round(180 * aspect)), 180);
         }
 
-        // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode
+        // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode & color count
         setViewportMode('3d-mesh');
+        const effectiveLayers = Math.max(totalLayers, solverColorCount * 2);
+        if (effectiveLayers !== totalLayers) {
+          setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
+        }
         const pool = getCandidatePoolForMode(solverPoolMode);
         const recipes = solveOptimalPalettes(
           newImgData,
           pool,
-          totalLayers,
+          effectiveLayers,
           baseLayerMm,
           layerHeightMm,
-          4
+          solverColorCount
         );
         setSolverRecipes(recipes);
         if (recipes.length > 0) {
@@ -186,19 +194,30 @@ export const App: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleRunAiSolver = (modeOverride?: 'owned' | 'shown') => {
+  const handleRunAiSolver = (
+    modeOverride?: 'owned' | 'shown',
+    colorCountOverride?: 4 | 8 | 12 | 16
+  ) => {
     const activeMode = modeOverride ?? solverPoolMode;
+    const activeColors = colorCountOverride ?? solverColorCount;
     if (modeOverride) {
       setSolverPoolMode(modeOverride);
+    }
+    if (colorCountOverride) {
+      setSolverColorCount(colorCountOverride);
+    }
+    const effectiveLayers = Math.max(totalLayers, activeColors * 2);
+    if (effectiveLayers !== totalLayers) {
+      setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
     }
     const pool = getCandidatePoolForMode(activeMode);
     const recipes = solveOptimalPalettes(
       sourceImageData,
       pool,
-      totalLayers,
+      effectiveLayers,
       baseLayerMm,
       layerHeightMm,
-      4
+      activeColors
     );
     setSolverRecipes(recipes);
     if (recipes.length > 0) {
@@ -213,12 +232,16 @@ export const App: React.FC = () => {
     reader.onload = (ev) => {
       try {
         const text = String(ev.target?.result || '');
-        const result = parseFilamentLibraryJson(text);
+        const result = parseFilamentLibraryJson(text, file.name);
         if (result.spools.length === 0) {
           setJsonImportBanner('No valid filament entries found in JSON file.');
           return;
         }
-        importOwnedLibraryJson(result.spools, 'replace');
+        importOwnedLibraryJson(result.spools, 'replace', {
+          id: result.libraryId,
+          name: result.libraryName,
+          count: result.spools.length,
+        });
         setLibraryTab('owned');
         setSolverPoolMode('owned');
         setJsonImportBanner(
@@ -227,13 +250,14 @@ export const App: React.FC = () => {
 
         // Immediately re-solve active image against the newly imported Owned library
         if (result.spools.length >= 2) {
+          const effectiveLayers = Math.max(totalLayers, solverColorCount * 2);
           const recipes = solveOptimalPalettes(
             sourceImageData,
             result.spools,
-            totalLayers,
+            effectiveLayers,
             baseLayerMm,
             layerHeightMm,
-            4
+            solverColorCount
           );
           setSolverRecipes(recipes);
           if (recipes.length > 0) {
@@ -420,6 +444,37 @@ export const App: React.FC = () => {
               </button>
             </div>
 
+            {/* Loaded .JSON Libraries with Remove option */}
+            {importedLibraries.length > 0 && (
+              <div className="flex flex-col gap-1">
+                {importedLibraries.map((lib) => (
+                  <div
+                    key={lib.id}
+                    className="text-[11px] px-2 py-1 rounded-md bg-slate-900/90 border border-slate-700/80 text-slate-200 flex items-center justify-between gap-1.5"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <FileJson className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate font-medium">{lib.name}</span>
+                      <span className="text-[10px] text-emerald-400 font-mono shrink-0">
+                        ({lib.count})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        removeImportedLibrary(lib.id);
+                        setJsonImportBanner(`Removed library "${lib.name}"`);
+                      }}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-[10px] font-semibold transition shrink-0"
+                      title={`Remove ${lib.name} from Filament Library`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {jsonImportBanner && (
               <div className="text-[10px] px-2 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center justify-between gap-1">
                 <span className="truncate">{jsonImportBanner}</span>
@@ -499,8 +554,8 @@ export const App: React.FC = () => {
                     </div>
                     <button
                       onClick={() => addSlot(spool)}
-                      disabled={slots.length >= 8}
-                      className="px-2 py-1 rounded bg-slate-900 hover:bg-orange-600 text-[11px] font-semibold text-slate-300 hover:text-white border border-slate-700 transition shrink-0"
+                      disabled={slots.length >= 16}
+                      className="px-2 py-1 rounded bg-slate-900 hover:bg-orange-600 text-[11px] font-semibold text-slate-300 hover:text-white border border-slate-700 transition shrink-0 disabled:opacity-40"
                     >
                       + Stack
                     </button>
@@ -538,8 +593,9 @@ export const App: React.FC = () => {
                 max={1}
                 step={0.05}
                 value={detailEnhance}
+                onInput={(e) => setPrePress({ detailEnhance: parseFloat((e.target as HTMLInputElement).value) })}
                 onChange={(e) => setPrePress({ detailEnhance: parseFloat(e.target.value) })}
-                className="w-full accent-orange-500 h-1.5"
+                className="w-full accent-orange-500 h-1.5 cursor-pointer"
               />
 
               <div className="flex justify-between text-[11px]">
@@ -552,8 +608,9 @@ export const App: React.FC = () => {
                 max={2.2}
                 step={0.04}
                 value={gamma}
+                onInput={(e) => setPrePress({ gamma: parseFloat((e.target as HTMLInputElement).value) })}
                 onChange={(e) => setPrePress({ gamma: parseFloat(e.target.value) })}
-                className="w-full accent-orange-500 h-1.5"
+                className="w-full accent-orange-500 h-1.5 cursor-pointer"
               />
 
               <div className="flex justify-between text-[11px]">
@@ -566,8 +623,9 @@ export const App: React.FC = () => {
                 max={1.8}
                 step={0.04}
                 value={contrast}
+                onInput={(e) => setPrePress({ contrast: parseFloat((e.target as HTMLInputElement).value) })}
                 onChange={(e) => setPrePress({ contrast: parseFloat(e.target.value) })}
-                className="w-full accent-orange-500 h-1.5"
+                className="w-full accent-orange-500 h-1.5 cursor-pointer"
               />
 
               <div className="flex items-center justify-between pt-1">
@@ -587,8 +645,9 @@ export const App: React.FC = () => {
                     min={-80}
                     max={80}
                     value={lightAzimuthDeg}
+                    onInput={(e) => setLighting(parseInt((e.target as HTMLInputElement).value, 10), lightElevationDeg)}
                     onChange={(e) => setLighting(parseInt(e.target.value, 10), lightElevationDeg)}
-                    className="w-16 accent-orange-500 h-1"
+                    className="w-16 accent-orange-500 h-1 cursor-pointer"
                     title="Rotate Studio Key Light Azimuth"
                   />
                 </div>
@@ -652,14 +711,36 @@ export const App: React.FC = () => {
               </div>
             </div>
 
+            {/* Palette Color Count Selector: 4 / 8 / 12 / 16 Colors */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Palette Color Count (AMS Stack)
+              </span>
+              <div className="grid grid-cols-4 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                {([4, 8, 12, 16] as const).map((cnt) => (
+                  <button
+                    key={cnt}
+                    onClick={() => handleRunAiSolver(undefined, cnt)}
+                    className={`py-1 px-1.5 rounded-md text-[11px] font-bold transition ${
+                      solverColorCount === cnt
+                        ? 'bg-orange-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {cnt} Colors
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={() => handleRunAiSolver()}
               className="w-full py-1.5 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5" />
               {solverPoolMode === 'owned'
-                ? `Auto-Solve from Owned Library (${ownedSpools.length})`
-                : `Auto-Solve from Shown List (${filteredCatalog.length})`}
+                ? `Auto-Solve (${solverColorCount} Colors • Owned ${ownedSpools.length})`
+                : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
             </button>
 
             {solverRecipes.length > 0 && (

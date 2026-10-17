@@ -29,7 +29,9 @@ export const LayerTimeline: React.FC = () => {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
           <Layers className="w-4 h-4 text-orange-400" />
-          <span>BEER-LAMBERT TD LAYER BLEND TIMELINE ({totalLayers} LAYERS)</span>
+          <span>
+            BEER-LAMBERT TD LAYER BLEND TIMELINE ({slots.length} COLORS • {totalLayers} LAYERS)
+          </span>
         </div>
 
         {/* Layer Slice Scrubber */}
@@ -40,8 +42,9 @@ export const LayerTimeline: React.FC = () => {
             min={1}
             max={totalLayers}
             value={slicePreviewMaxLayer}
+            onInput={(e) => setSlicePreviewMaxLayer(parseInt((e.target as HTMLInputElement).value, 10))}
             onChange={(e) => setSlicePreviewMaxLayer(parseInt(e.target.value, 10))}
-            className="w-28 accent-orange-500"
+            className="w-28 accent-orange-500 cursor-pointer"
           />
           <span className="font-mono text-orange-400 w-16 text-right">
             L{slicePreviewMaxLayer}/{totalLayers}
@@ -53,11 +56,11 @@ export const LayerTimeline: React.FC = () => {
             const candidate = catalog.find((c) => !slots.some((s) => s.spool.id === c.id)) || catalog[0];
             addSlot(candidate);
           }}
-          disabled={slots.length >= 8}
+          disabled={slots.length >= 16}
           className="flex items-center gap-1 px-2.5 py-1 rounded bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/40 text-orange-300 text-xs font-medium disabled:opacity-40 transition"
         >
           <Plus className="w-3.5 h-3.5" />
-          Add Color Layer ({slots.length}/8)
+          Add Color Layer ({slots.length}/16)
         </button>
       </div>
 
@@ -77,13 +80,14 @@ export const LayerTimeline: React.FC = () => {
       </div>
 
       {/* Individual Filament Slot Sliders */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 max-h-36 overflow-y-auto pr-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
         {slots.map((slot, idx) => {
           const startLayer = idx === 0 ? 1 : slots[idx - 1].upToLayer + 1;
           const endLayer = idx === slots.length - 1 ? totalLayers : slot.upToLayer;
           const startZ = (baseLayerMm + (startLayer - 1) * layerHeightMm).toFixed(2);
           const endZ = (baseLayerMm + (endLayer - 1) * layerHeightMm).toFixed(2);
           const isTopSlot = idx === slots.length - 1;
+          const sliderValue = isTopSlot ? Math.max(1, startLayer - 1) : endLayer;
 
           return (
             <div
@@ -106,7 +110,7 @@ export const LayerTimeline: React.FC = () => {
                   >
                     {catalog.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.brand} {c.name} (TD {c.td}mm)
+                        {c.brand} — {c.name} (TD {c.td}mm)
                       </option>
                     ))}
                   </select>
@@ -133,11 +137,16 @@ export const LayerTimeline: React.FC = () => {
               <input
                 type="range"
                 min={1}
-                max={totalLayers}
-                disabled={isTopSlot}
-                value={endLayer}
+                max={totalLayers - 1}
+                value={sliderValue}
+                onInput={(e) => updateSlotLayer(slot.id, parseInt((e.target as HTMLInputElement).value, 10))}
                 onChange={(e) => updateSlotLayer(slot.id, parseInt(e.target.value, 10))}
-                className="w-full accent-orange-500 h-1.5 cursor-pointer disabled:opacity-40"
+                title={
+                  isTopSlot
+                    ? `Adjust highlight start layer (L${startLayer})`
+                    : `Adjust swap layer up to L${endLayer}`
+                }
+                className="w-full accent-orange-500 h-1.5 cursor-pointer"
               />
             </div>
           );

@@ -2,8 +2,16 @@ import { create } from 'zustand';
 import { FilamentSpool, VERIFIED_FILAMENT_CATALOG } from '../data/filamentCatalog';
 import { LayerSwapSlot } from '../engine/opticalTdEngine';
 import { CadCutoutConfig } from '../engine/cadMeshBuilder';
+import { parseFilamentLibraryJson } from '../utils/filamentJsonIO';
+import userDefaultFilamentsRaw from '../data/userDefaultFilaments.json';
 
 export type ViewportMode = '3d-mesh' | 'split' | 'source' | 'heightmap';
+
+export interface ImportedLibraryMeta {
+  id: string;
+  name: string;
+  count: number;
+}
 
 export interface TailWagState {
   projectName: string;
@@ -12,7 +20,7 @@ export interface TailWagState {
   lightAzimuthDeg: number;
   lightElevationDeg: number;
   backlitLithoMode: boolean;
-  slicePreviewMaxLayer: number; // allows scrubbing down through individual printed layers
+  slicePreviewMaxLayer: number;
 
   // Physical & Slicer Layer Parameters
   widthMm: number;
@@ -21,7 +29,7 @@ export interface TailWagState {
   baseLayerMm: number;
   layerHeightMm: number;
   totalLayers: number;
-  meshResolution: number; // 180 (fast) | 280 (high) | 400 (ultra)
+  meshResolution: number;
 
   // Pre-Press Image Enhancement Parameters
   gamma: number;
@@ -32,8 +40,9 @@ export interface TailWagState {
   // 2.5D Parametric CAD & Cutouts
   cad: CadCutoutConfig;
 
-  // Filament Catalog & Active Layer Swap Stack
+  // Filament Catalog, Imported Libraries & Active Layer Swap Stack
   catalog: FilamentSpool[];
+  importedLibraries: ImportedLibraryMeta[];
   slots: LayerSwapSlot[];
 
   // Actions
@@ -56,37 +65,89 @@ export interface TailWagState {
   addCustomSpoolToCatalog: (spool: FilamentSpool) => void;
   toggleSpoolOwned: (spoolId: string) => void;
   syncAmsSpools: (amsSpools: FilamentSpool[]) => void;
-  importOwnedLibraryJson: (importedSpools: FilamentSpool[], mode?: 'replace' | 'merge') => void;
+  importOwnedLibraryJson: (
+    importedSpools: FilamentSpool[],
+    mode?: 'replace' | 'merge',
+    libraryMeta?: ImportedLibraryMeta
+  ) => void;
+  removeImportedLibrary: (libraryId: string) => void;
+  clearAllImportedLibraries: () => void;
 }
 
-const STORAGE_KEY = 'tailwag_catalog_v1';
+const CATALOG_STORAGE_KEY = 'tailwag_catalog_v2';
+const LIBS_STORAGE_KEY = 'tailwag_imported_libs_v2';
 
-function loadInitialCatalog(): FilamentSpool[] {
+function buildSeededDefaultState(): { catalog: FilamentSpool[]; importedLibraries: ImportedLibraryMeta[] } {
+  try {
+    const parsedSeed = parseFilamentLibraryJson(
+      JSON.stringify(userDefaultFilamentsRaw),
+      'filaments.json',
+      'lib-user-filaments-json'
+    );
+    if (parsedSeed.spools.length > 0) {
+      const baseCatalog = VERIFIED_FILAMENT_CATALOG.map((s) => ({ ...s, owned: false }));
+      const merged: FilamentSpool[] = [...parsedSeed.spools];
+      for (const existing of baseCatalog) {
+        const isDup = merged.some(
+          (m) =>
+            m.id === existing.id ||
+            (m.brand.toLowerCase() === existing.brand.toLowerCase() &&
+              m.name.toLowerCase() === existing.name.toLowerCase() &&
+              m.hex.toLowerCase() === existing.hex.toLowerCase())
+        );
+        if (!isDup) merged.push(existing);
+      }
+      return {
+        catalog: merged,
+        importedLibraries: [
+          {
+            id: parsedSeed.libraryId,
+            name: parsedSeed.libraryName,
+            count: parsedSeed.spools.length,
+          },
+        ],
+      };
+    }
+  } catch {
+    // fallback to built-in catalog
+  }
+  return { catalog: VERIFIED_FILAMENT_CATALOG, importedLibraries: [] };
+}
+
+function loadInitialStoreData(): { catalog: FilamentSpool[]; importedLibraries: ImportedLibraryMeta[] } {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+      const savedCat = window.localStorage.getItem(CATALOG_STORAGE_KEY);
+      const savedLibs = window.localStorage.getItem(LIBS_STORAGE_KEY);
+      if (savedCat) {
+        const parsedCat = JSON.parse(savedCat);
+        const parsedLibs = savedLibs ? JSON.parse(savedLibs) : [];
+        if (Array.isArray(parsedCat) && parsedCat.length > 0) {
+          return {
+            catalog: parsedCat,
+            importedLibraries: Array.isArray(parsedLibs) ? parsedLibs : [],
+          };
         }
       }
     }
   } catch {
     // ignore storage errors
   }
-  return VERIFIED_FILAMENT_CATALOG;
+  return buildSeededDefaultState();
 }
 
-function saveCatalogToStorage(catalog: FilamentSpool[]): void {
+function saveStoreDataToStorage(catalog: FilamentSpool[], importedLibraries: ImportedLibraryMeta[]): void {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(catalog));
+      window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(catalog));
+      window.localStorage.setItem(LIBS_STORAGE_KEY, JSON.stringify(importedLibraries));
     }
   } catch {
     // ignore storage errors
   }
 }
+
+const initialStoreData = loadInitialStoreData();
 
 const defaultSpools = [
   VERIFIED_FILAMENT_CATALOG.find((s) => s.id === 'bambu-pla-black')!,
@@ -132,7 +193,8 @@ export const useTailWagStore = create<TailWagState>((set) => ({
     magnetDiameterMm: 8.2,
   },
 
-  catalog: loadInitialCatalog(),
+  catalog: initialStoreData.catalog,
+  importedLibraries: initialStoreData.importedLibraries,
   slots: [
     { id: 'slot-1', spool: defaultSpools[0], upToLayer: 5 },
     { id: 'slot-2', spool: defaultSpools[1], upToLayer: 11 },
@@ -169,12 +231,30 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   updateSlotLayer: (slotId, upToLayer) =>
     set((state) => {
       const idx = state.slots.findIndex((s) => s.id === slotId);
-      if (idx === -1 || idx === state.slots.length - 1) return state;
-      const minLayer = idx === 0 ? 1 : state.slots[idx - 1].upToLayer + 1;
-      const maxLayer = state.slots[idx + 1].upToLayer - 1;
-      const clamped = Math.max(minLayer, Math.min(maxLayer, upToLayer));
-      const next = [...state.slots];
-      next[idx] = { ...next[idx], upToLayer: clamped };
+      if (idx === -1) return state;
+      const next = state.slots.map((s) => ({ ...s }));
+      const N = next.length;
+
+      // If dragging the top/last slot's slider, adjust the boundary of the slot right below it (its start layer - 1)
+      const targetIdx = idx === N - 1 ? Math.max(0, N - 2) : idx;
+      const minAllowed = targetIdx + 1;
+      const maxAllowed = state.totalLayers - (N - 1 - targetIdx);
+      const clamped = Math.max(minAllowed, Math.min(maxAllowed, upToLayer));
+      next[targetIdx].upToLayer = clamped;
+
+      // Cascade downward if earlier slots overlap
+      for (let i = targetIdx - 1; i >= 0; i--) {
+        if (next[i].upToLayer >= next[i + 1].upToLayer) {
+          next[i].upToLayer = Math.max(i + 1, next[i + 1].upToLayer - 1);
+        }
+      }
+      // Cascade upward if later slots overlap
+      for (let i = targetIdx + 1; i < N - 1; i++) {
+        if (next[i].upToLayer <= next[i - 1].upToLayer) {
+          next[i].upToLayer = Math.min(state.totalLayers - (N - 1 - i), next[i - 1].upToLayer + 1);
+        }
+      }
+      next[N - 1].upToLayer = state.totalLayers;
       return { slots: next };
     }),
   updateSlotSpool: (slotId, spool) =>
@@ -183,7 +263,7 @@ export const useTailWagStore = create<TailWagState>((set) => ({
     })),
   addSlot: (spool) =>
     set((state) => {
-      if (state.slots.length >= 8) return state;
+      if (state.slots.length >= 16) return state;
       const prevSlots = [...state.slots];
       const lastIdx = prevSlots.length - 1;
       const prevEnd = lastIdx > 0 ? prevSlots[lastIdx - 1].upToLayer : 2;
@@ -209,13 +289,13 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   addCustomSpoolToCatalog: (spool) =>
     set((state) => {
       const next = [spool, ...state.catalog];
-      saveCatalogToStorage(next);
+      saveStoreDataToStorage(next, state.importedLibraries);
       return { catalog: next };
     }),
   toggleSpoolOwned: (spoolId) =>
     set((state) => {
       const next = state.catalog.map((s) => (s.id === spoolId ? { ...s, owned: !s.owned } : s));
-      saveCatalogToStorage(next);
+      saveStoreDataToStorage(next, state.importedLibraries);
       return { catalog: next };
     }),
   syncAmsSpools: (amsSpools) =>
@@ -226,15 +306,18 @@ export const useTailWagStore = create<TailWagState>((set) => ({
           merged.push(existing);
         }
       }
-      saveCatalogToStorage(merged);
+      saveStoreDataToStorage(merged, state.importedLibraries);
       return { catalog: merged };
     }),
-  importOwnedLibraryJson: (importedSpools, mode = 'replace') =>
+  importOwnedLibraryJson: (importedSpools, mode = 'replace', libraryMeta) =>
     set((state) => {
       const normalizedImported = importedSpools.map((s) => ({ ...s, owned: true }));
-      const baseCatalog = state.catalog.map((s) =>
-        mode === 'replace' ? { ...s, owned: false } : s
-      );
+      const baseCatalog =
+        mode === 'replace'
+          ? state.catalog
+              .filter((s) => !s.libraryId)
+              .map((s) => ({ ...s, owned: false }))
+          : state.catalog;
 
       const merged: FilamentSpool[] = [...normalizedImported];
       for (const existing of baseCatalog) {
@@ -249,7 +332,32 @@ export const useTailWagStore = create<TailWagState>((set) => ({
           merged.push(existing);
         }
       }
-      saveCatalogToStorage(merged);
-      return { catalog: merged };
+
+      const nextLibs: ImportedLibraryMeta[] = libraryMeta
+        ? mode === 'replace'
+          ? [libraryMeta]
+          : [...state.importedLibraries.filter((l) => l.id !== libraryMeta.id), libraryMeta]
+        : state.importedLibraries;
+
+      saveStoreDataToStorage(merged, nextLibs);
+      return { catalog: merged, importedLibraries: nextLibs };
+    }),
+  removeImportedLibrary: (libraryId) =>
+    set((state) => {
+      const nextLibs = state.importedLibraries.filter((l) => l.id !== libraryId);
+      const remainingCatalog = state.catalog.filter((s) => s.libraryId !== libraryId);
+
+      // If all imported libraries were removed, restore built-in catalog defaults so Owned isn't completely empty unless toggled
+      const finalCatalog =
+        nextLibs.length === 0 ? VERIFIED_FILAMENT_CATALOG : remainingCatalog;
+
+      saveStoreDataToStorage(finalCatalog, nextLibs);
+      return { catalog: finalCatalog, importedLibraries: nextLibs };
+    }),
+  clearAllImportedLibraries: () =>
+    set(() => {
+      const finalCatalog = VERIFIED_FILAMENT_CATALOG.map((s) => ({ ...s, owned: false }));
+      saveStoreDataToStorage(finalCatalog, []);
+      return { catalog: finalCatalog, importedLibraries: [] };
     }),
 }));

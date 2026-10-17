@@ -4,12 +4,16 @@ export interface FilamentImportResult {
   spools: FilamentSpool[];
   sourceFormat: 'hueforge' | 'tailwag' | 'generic';
   skippedCount: number;
+  libraryId: string;
+  libraryName: string;
 }
 
 function normalizeMaterial(raw: unknown): FilamentSpool['material'] {
   const s = String(raw || 'PLA').toUpperCase();
   if (s.includes('MATTE')) return 'PLA Matte';
   if (s.includes('SILK')) return 'PLA Silk';
+  if (s.includes('PLA+')) return 'PLA+';
+  if (s.includes('COPE')) return 'COPE';
   if (s.includes('PETG')) return 'PETG';
   if (s.includes('ABS')) return 'ABS';
   if (s.includes('ASA')) return 'ASA';
@@ -26,7 +30,6 @@ function normalizeHexColor(raw: unknown): string | null {
     } else if (!clean.startsWith('#') && /^[0-9a-fA-F]{6,8}$/.test(clean)) {
       clean = '#' + clean;
     }
-    // Strip alpha channel if 8-digit hex (#RRGGBBAA -> #RRGGBB)
     if (/^#[0-9a-fA-F]{8}$/.test(clean)) {
       clean = clean.slice(0, 7);
     }
@@ -42,7 +45,6 @@ function normalizeHexColor(raw: unknown): string | null {
   } else if (Array.isArray(raw) && raw.length >= 3) {
     const [r, g, b] = raw.map((v) => {
       const num = Number(v);
-      // Handle 0..1 float RGB arrays as well as 0..255 int arrays
       const scaled = num <= 1 && raw.every((x) => Number(x) <= 1) ? Math.round(num * 255) : Math.round(num);
       return Math.max(0, Math.min(255, scaled));
     });
@@ -62,10 +64,16 @@ function normalizeHexColor(raw: unknown): string | null {
  * Supports:
  * - HueForge JSON format: `{ "Filaments": [{ "Brand", "Name", "Type", "Color", "Transmissivity", ... }] }`
  * - TailWag Studio JSON format: `[{ "id", "brand", "name", "material", "hex", "td", "owned" }]` or `{ "filaments": [...] }`
- * - Generic key-value or array filament JSON dumps
  */
-export function parseFilamentLibraryJson(jsonText: string): FilamentImportResult {
+export function parseFilamentLibraryJson(
+  jsonText: string,
+  libraryName: string = 'filaments.json',
+  customLibraryId?: string
+): FilamentImportResult {
   const parsed = JSON.parse(jsonText);
+  const libraryId =
+    customLibraryId ||
+    `lib-${libraryName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`;
 
   let rawList: Record<string, unknown>[] = [];
   let sourceFormat: FilamentImportResult['sourceFormat'] = 'generic';
@@ -74,7 +82,7 @@ export function parseFilamentLibraryJson(jsonText: string): FilamentImportResult
     rawList = parsed;
     if (rawList.length > 0 && ('Transmissivity' in rawList[0] || 'Brand' in rawList[0])) {
       sourceFormat = 'hueforge';
-    } else if (rawList.length > 0 && ('td' in rawList[0] && 'hex' in rawList[0])) {
+    } else if (rawList.length > 0 && 'td' in rawList[0] && 'hex' in rawList[0]) {
       sourceFormat = 'tailwag';
     }
   } else if (parsed && typeof parsed === 'object') {
@@ -91,7 +99,6 @@ export function parseFilamentLibraryJson(jsonText: string): FilamentImportResult
     } else if (Array.isArray(obj.data)) {
       rawList = obj.data as Record<string, unknown>[];
     } else {
-      // Check if it's a dictionary of filament objects keyed by ID/name
       const values = Object.values(obj).filter((v) => v && typeof v === 'object' && !Array.isArray(v));
       if (values.length > 0) {
         rawList = values as Record<string, unknown>[];
@@ -141,8 +148,6 @@ export function parseFilamentLibraryJson(jsonText: string): FilamentImportResult
 
     const finalHex = hex || '#CCCCCC';
     const material = normalizeMaterial(item.material ?? item.Type ?? item.type ?? item.Material ?? rawName);
-
-    // Build a clean display name that includes brand/material context if not already present
     const displayName = rawName || `${brand} ${material} ${finalHex}`;
 
     const baseSlug = `${brand}-${displayName}-${finalHex}`
@@ -163,8 +168,10 @@ export function parseFilamentLibraryJson(jsonText: string): FilamentImportResult
       material,
       hex: finalHex,
       td: Math.round(td * 10) / 10,
-      owned: true, // All filaments from the user's imported .json library are placed in Owned
+      owned: true,
       amsSlot: typeof item.amsSlot === 'string' ? item.amsSlot : undefined,
+      libraryId,
+      libraryName,
     });
   }
 
@@ -172,6 +179,8 @@ export function parseFilamentLibraryJson(jsonText: string): FilamentImportResult
     spools,
     sourceFormat,
     skippedCount,
+    libraryId,
+    libraryName,
   };
 }
 
@@ -193,7 +202,6 @@ export function serializeFilamentLibraryJson(spools: FilamentSpool[]): string {
       td: s.td,
       owned: s.owned,
       amsSlot: s.amsSlot,
-      // HueForge compatibility keys
       Brand: s.brand,
       Name: s.name,
       Type: s.material,
@@ -208,12 +216,7 @@ export function serializeFilamentLibraryJson(spools: FilamentSpool[]): string {
       Color: s.hex,
       Transmissivity: s.td,
       Owned: s.owned,
-      id: s.id,
-      brand: s.brand,
-      name: s.name,
-      material: s.material,
-      hex: s.hex,
-      td: s.td,
+      uuid: s.id,
     })),
   };
   return JSON.stringify(payload, null, 2);

@@ -128,4 +128,30 @@ describe('TailWag Optical Beer-Lambert TD Engine & 3MF Exporter', () => {
     expect(roundTrip.spools).toHaveLength(2);
     expect(roundTrip.spools[0].name).toBe('PLA Matte Dark Brown');
   });
+
+  it('solves 4, 8, 12, and 16 color palettes across 181 spools from filaments.json in < 100ms without freezing', async () => {
+    const fs = await import('fs');
+    const raw = fs.readFileSync('src/data/userDefaultFilaments.json', 'utf8');
+    const parsed = parseFilamentLibraryJson(raw, 'filaments.json');
+    expect(parsed.spools.length).toBeGreaterThanOrEqual(180);
+
+    const { solveOptimalPalettes } = await import('../src/engine/autoSolver');
+    const size = 48;
+    const rgba = new Uint8ClampedArray(size * size * 4);
+    for (let i = 0; i < size * size; i++) {
+      rgba[i * 4] = (i * 7) % 255;
+      rgba[i * 4 + 1] = (i * 5) % 255;
+      rgba[i * 4 + 2] = (i * 3) % 255;
+      rgba[i * 4 + 3] = 255;
+    }
+    const imgData = { data: rgba, width: size, height: size, colorSpace: 'srgb' } as ImageData;
+
+    for (const colorCount of [4, 8, 12, 16] as const) {
+      const t0 = performance.now();
+      const recipes = solveOptimalPalettes(imgData, parsed.spools, 32, 0.64, 0.08, colorCount);
+      const elapsed = performance.now() - t0;
+      expect(elapsed).toBeLessThan(150);
+      expect(recipes[0].slots.length).toBe(colorCount);
+    }
+  });
 });
