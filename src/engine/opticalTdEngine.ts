@@ -30,6 +30,33 @@ export function rgb01ToHex(rgb: RGB): string {
 }
 
 /**
+ * Computes the Beer-Lambert linear absorption coefficient α (in mm^-1).
+ * α = ln(10) / TD ≈ 2.302585 / TD
+ */
+export function computeAbsorptionCoefficient(tdMm: number): number {
+  const safeTd = Math.max(0.01, tdMm);
+  return Math.log(10) / safeTd;
+}
+
+/**
+ * Computes single-pass linear light transmittance T ∈ [0, 1] through plastic thickness t.
+ * Beer-Lambert Law: T(t) = 10^(-t / TD) = exp(-α * t)
+ */
+export function computeTransmittance(thicknessMm: number, tdMm: number): number {
+  if (thicknessMm <= 0) return 1.0;
+  const safeTd = Math.max(0.01, tdMm);
+  return Math.pow(10, -thicknessMm / safeTd);
+}
+
+/**
+ * Computes single-pass light absorption opacity O ∈ [0, 1] through plastic thickness t.
+ * O(t) = 1 - T(t) = 1 - 10^(-t / TD)
+ */
+export function computeSinglePassOpacity(thicknessMm: number, tdMm: number): number {
+  return 1.0 - computeTransmittance(thicknessMm, tdMm);
+}
+
+/**
  * Beer-Lambert + Kubelka-Munk Subsurface Scattering optical transmission curve.
  * In HueForge / 2.5D filament painting (0.16mm initial layer + 0.08mm layer height at 100% infill),
  * incident light passes through each 0.08mm layer, reflects off the underlying pigment, and passes
@@ -44,6 +71,31 @@ export function computeLayerOpacity(thicknessMm: number, tdMm: number): number {
   const ratio = thicknessMm / effectiveTd;
   const raw = 1 - Math.exp(-2.2 * Math.pow(ratio, 0.85));
   return Math.max(0, Math.min(1, raw));
+}
+
+/**
+ * Blends an underlying plastic color with an overlay plastic layer of thickness t.
+ * Uses gamma-corrected optical mixing with thickness-dependent opacity.
+ */
+export function blendColorsThroughThickness(
+  baseRgb01: RGB,
+  topColor01: RGB,
+  topTdMm: number,
+  thicknessMm: number,
+  gamma: number = 1.35
+): RGB {
+  const alpha = computeLayerOpacity(thicknessMm, topTdMm);
+  const blendChannel = (base: number, top: number) => {
+    const baseLin = Math.pow(Math.max(0, base), gamma);
+    const topLin = Math.pow(Math.max(0, top), gamma);
+    const mixed = baseLin * (1 - alpha) + topLin * alpha;
+    return Math.pow(Math.max(0, mixed), 1 / gamma);
+  };
+  return {
+    r: blendChannel(baseRgb01.r, topColor01.r),
+    g: blendChannel(baseRgb01.g, topColor01.g),
+    b: blendChannel(baseRgb01.b, topColor01.b),
+  };
 }
 
 /**

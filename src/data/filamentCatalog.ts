@@ -12,6 +12,17 @@ export interface FilamentSpool {
   libraryName?: string;
 }
 
+export type {
+  FilamentProfile,
+  FilamentColorValue,
+  FilamentOpticalProperties,
+} from '../engine/filamentProfile';
+export {
+  createFilamentProfile,
+  spoolToProfile,
+  profileToSpool,
+} from '../engine/filamentProfile';
+
 export const VERIFIED_FILAMENT_CATALOG: FilamentSpool[] = [
   // Bambu Lab PLA Basic & Matte & CMYK
   { id: 'bambu-pla-black', brand: 'Bambu Lab', name: 'PLA Basic Black (10101)', material: 'PLA', hex: '#141414', td: 0.6, owned: true, amsSlot: 'AMS 1 - A1' },
