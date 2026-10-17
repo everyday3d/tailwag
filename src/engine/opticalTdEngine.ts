@@ -8,6 +8,15 @@ export interface LayerSwapSlot {
   locked?: boolean;
 }
 
+export { blendFilamentStack } from './opticalBlendEngine';
+export type {
+  StackLayerInput,
+  CumulativeLayerStep,
+  OpticalBlendResult,
+  OpticalBlendMode,
+  OpticalBlendOptions,
+} from './opticalBlendEngine';
+
 export interface RGB {
   r: number; // 0..1
   g: number; // 0..1
