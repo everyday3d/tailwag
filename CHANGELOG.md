@@ -15,3 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Native Bambu Studio / OrcaSlicer `.3MF` Exporter & Single-AMS Swap Playbook** (`src/engine/exporter3mf.ts`) packaging watertight meshes, filament hex palettes, 100% rectilinear infill settings, height-range modifiers, and `>4 Color Single-AMS Chaining` instructions (Fixes #1).
 - **Built-in TD Calibrator & Live Bambu Fleet Studio AMS Sync** (`src/components/TdCalibratorModal.tsx`) with 16-step calibration wedge `.STL` export and Home Assistant `bambu_fleet_studio` AMS tray synchronization (Fixes #1).
 - **TailWag Model Context Protocol (MCP) Server** (`mcp/server.ts`) exposing `tailwag_list_filaments`, `tailwag_solve_palette`, `tailwag_simulate_layer_stack`, `tailwag_export_3mf_project`, and `tailwag_calibrate_td` for autonomous AI agent solving (Fixes #1).
+
+### Fixed
+- **Bambu Studio 2.x `.3MF` Config Validation & Pre-Colored Z-Band Assembly Schema** (`src/engine/exporter3mf.ts`, `src/data/bambuProjectTemplate.json`): Resolved `"The 3mf file has invalid config, load geometry data only"` warning in Bambu Studio by embedding the full Bambu Studio 2.x `project_settings.config` schema (`02.08.02.61`), `Metadata/slice_info.config`, `Metadata/cut_information.xml`, `Metadata/filament_sequence.json`, and splitting the 2.5D relief mesh into watertight horizontal Z-band sub-parts (`/3D/Objects/object_1.model`) pre-assigned to AMS extruders `1..N` (Fixes #2).
+

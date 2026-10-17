@@ -1,6 +1,7 @@
 import { zipSync, strToU8 } from 'fflate';
 import { HeightmapGrid } from './cadMeshBuilder';
 import { LayerSwapSlot } from './opticalTdEngine';
+import bambuProjectTemplate from '../data/bambuProjectTemplate.json';
 
 export interface SwapInstructionItem {
   slotIndex: number;
@@ -115,26 +116,40 @@ export function generatePlaybookText(
 }
 
 /**
- * Compiles a native Bambu Studio / OrcaSlicer .3MF Project Archive (.3mf ZIP)
- * with embedded mesh vertices/triangles, filament palette colors, 100% infill overrides,
- * and layer-by-layer swap instructions.
+ * Builds a single horizontal Z-band watertight sub-mesh (zFloor .. min(topZ, zCeil))
+ * so each filament layer range in the 3MF is a true pre-colored Bambu Studio AMS part!
  */
-export function generateNative3mfPackage(params: {
-  projectName: string;
-  grid: HeightmapGrid;
-  baseLayerMm: number;
-  layerHeightMm: number;
-  totalLayers: number;
-  slots: LayerSwapSlot[];
-}): Uint8Array {
-  const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
+function buildColorBandPartMesh(
+  grid: HeightmapGrid,
+  zFloor: number,
+  zCeil: number,
+  centerZ: number
+): { verticesXml: string[]; trianglesXml: string[]; faceCount: number } {
   const { cols, rows, widthMm, heightMm, topZ, bottomZ } = grid;
-
-  // Build indexed vertex + triangle arrays for 3D/3dmodel.model XML
   const halfW = widthMm / 2;
   const halfH = heightMm / 2;
   const xAt = (c: number) => (c / (cols - 1)) * widthMm - halfW;
   const yAt = (r: number) => halfH - (r / (rows - 1)) * heightMm;
+
+  // Compute clamped top and bottom Z for each grid cell within this horizontal filament band
+  const bandTop = new Float32Array(cols * rows);
+  const bandBot = new Float32Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) {
+    if (topZ[i] <= 0) {
+      bandTop[i] = -1;
+      bandBot[i] = 0;
+      continue;
+    }
+    const b = Math.max(bottomZ[i], zFloor);
+    const t = Math.min(topZ[i], zCeil);
+    if (t > b + 0.001) {
+      bandBot[i] = b;
+      bandTop[i] = t;
+    } else {
+      bandTop[i] = -1;
+      bandBot[i] = 0;
+    }
+  }
 
   const topVertexIndex = new Int32Array(cols * rows).fill(-1);
   const botVertexIndex = new Int32Array(cols * rows).fill(-1);
@@ -147,7 +162,9 @@ export function generateNative3mfPackage(params: {
     if (topVertexIndex[idx] !== -1) return topVertexIndex[idx];
     const vIdx = vCount++;
     topVertexIndex[idx] = vIdx;
-    verticesXml.push(`<vertex x="${xAt(c).toFixed(3)}" y="${yAt(r).toFixed(3)}" z="${topZ[idx].toFixed(3)}" />`);
+    verticesXml.push(
+      `     <vertex x="${xAt(c).toFixed(4)}" y="${yAt(r).toFixed(4)}" z="${(bandTop[idx] - centerZ).toFixed(4)}"/>`
+    );
     return vIdx;
   };
 
@@ -156,7 +173,9 @@ export function generateNative3mfPackage(params: {
     if (botVertexIndex[idx] !== -1) return botVertexIndex[idx];
     const vIdx = vCount++;
     botVertexIndex[idx] = vIdx;
-    verticesXml.push(`<vertex x="${xAt(c).toFixed(3)}" y="${yAt(r).toFixed(3)}" z="${bottomZ[idx].toFixed(3)}" />`);
+    verticesXml.push(
+      `     <vertex x="${xAt(c).toFixed(4)}" y="${yAt(r).toFixed(4)}" z="${(bandBot[idx] - centerZ).toFixed(4)}"/>`
+    );
     return vIdx;
   };
 
@@ -166,7 +185,7 @@ export function generateNative3mfPackage(params: {
     const i10 = r * cols + (c + 1);
     const i01 = (r + 1) * cols + c;
     const i11 = (r + 1) * cols + (c + 1);
-    return topZ[i00] > 0 && topZ[i10] > 0 && topZ[i01] > 0 && topZ[i11] > 0;
+    return bandTop[i00] > 0 && bandTop[i10] > 0 && bandTop[i01] > 0 && bandTop[i11] > 0;
   };
 
   for (let r = 0; r < rows - 1; r++) {
@@ -184,113 +203,285 @@ export function generateNative3mfPackage(params: {
       const b11 = ensureBotVertex(c + 1, r + 1);
 
       // Top
-      trianglesXml.push(`<triangle v1="${t00}" v2="${t01}" v3="${t10}" />`);
-      trianglesXml.push(`<triangle v1="${t10}" v2="${t01}" v3="${t11}" />`);
+      trianglesXml.push(`     <triangle v1="${t00}" v2="${t01}" v3="${t10}"/>`);
+      trianglesXml.push(`     <triangle v1="${t10}" v2="${t01}" v3="${t11}"/>`);
       // Bottom
-      trianglesXml.push(`<triangle v1="${b00}" v2="${b10}" v3="${b01}" />`);
-      trianglesXml.push(`<triangle v1="${b10}" v2="${b11}" v3="${b01}" />`);
+      trianglesXml.push(`     <triangle v1="${b00}" v2="${b10}" v3="${b01}"/>`);
+      trianglesXml.push(`     <triangle v1="${b10}" v2="${b11}" v3="${b01}"/>`);
 
       // Perimeter / Hole Walls
       if (!isValidCell(c, r - 1)) {
-        trianglesXml.push(`<triangle v1="${b00}" v2="${t00}" v3="${t10}" />`);
-        trianglesXml.push(`<triangle v1="${b00}" v2="${t10}" v3="${b10}" />`);
+        trianglesXml.push(`     <triangle v1="${b00}" v2="${t00}" v3="${t10}"/>`);
+        trianglesXml.push(`     <triangle v1="${b00}" v2="${t10}" v3="${b10}"/>`);
       }
       if (!isValidCell(c, r + 1)) {
-        trianglesXml.push(`<triangle v1="${b11}" v2="${t11}" v3="${t01}" />`);
-        trianglesXml.push(`<triangle v1="${b11}" v2="${t01}" v3="${b01}" />`);
+        trianglesXml.push(`     <triangle v1="${b11}" v2="${t11}" v3="${t01}"/>`);
+        trianglesXml.push(`     <triangle v1="${b11}" v2="${t01}" v3="${b01}"/>`);
       }
       if (!isValidCell(c - 1, r)) {
-        trianglesXml.push(`<triangle v1="${b01}" v2="${t01}" v3="${t00}" />`);
-        trianglesXml.push(`<triangle v1="${b01}" v2="${t00}" v3="${b00}" />`);
+        trianglesXml.push(`     <triangle v1="${b01}" v2="${t01}" v3="${t00}"/>`);
+        trianglesXml.push(`     <triangle v1="${b01}" v2="${t00}" v3="${b00}"/>`);
       }
       if (!isValidCell(c + 1, r)) {
-        trianglesXml.push(`<triangle v1="${b10}" v2="${t10}" v3="${t11}" />`);
-        trianglesXml.push(`<triangle v1="${b10}" v2="${t11}" v3="${b11}" />`);
+        trianglesXml.push(`     <triangle v1="${b10}" v2="${t10}" v3="${t11}"/>`);
+        trianglesXml.push(`     <triangle v1="${b10}" v2="${t11}" v3="${b11}"/>`);
       }
     }
   }
 
+  return {
+    verticesXml,
+    trianglesXml,
+    faceCount: trianglesXml.length,
+  };
+}
+
+/**
+ * Compiles a 100% Bambu Studio 2.x / OrcaSlicer compliant Multi-Color .3MF Project Archive (.3mf ZIP)
+ * using the exact Production Extension (`3D/Objects/object_1.model` + `Metadata/project_settings.config` +
+ * `Metadata/model_settings.config` + `Metadata/slice_info.config` + `Metadata/cut_information.xml`)
+ * with each horizontal TD color band pre-assigned to its AMS extruder slot!
+ */
+export function generateNative3mfPackage(params: {
+  projectName: string;
+  grid: HeightmapGrid;
+  baseLayerMm: number;
+  layerHeightMm: number;
+  totalLayers: number;
+  slots: LayerSwapSlot[];
+}): Uint8Array {
+  const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
   const playbook = buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers);
   const playbookText = generatePlaybookText(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots);
 
-  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
-  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />
-  <Default Extension="config" ContentType="text/xml" />
-  <Default Extension="json" ContentType="application/json" />
-  <Default Extension="txt" ContentType="text/plain" />
-</Types>`;
+  // Compute max Z across the entire grid
+  let maxGridZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
+  for (let i = 0; i < grid.topZ.length; i++) {
+    if (grid.topZ[i] > maxGridZ) maxGridZ = grid.topZ[i];
+  }
+  const halfZ = maxGridZ * 0.5;
 
-  const relsXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
-</Relationships>`;
+  const objBlocks: string[] = [];
+  const compEntries: string[] = [];
+  const partConfigs: string[] = [];
+  const assembleVolEntries: string[] = [];
+  let totalFaces = 0;
 
-  const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">
-  <metadata name="Application">TailWag Studio v1.0 (BoxerDawg 3D)</metadata>
-  <metadata name="Title">${projectName}</metadata>
-  <metadata name="Description">${playbookText.replace(/[<>&"]/g, '')}</metadata>
-  <resources>
-    <object id="1" name="${projectName}" type="model">
-      <mesh>
-        <vertices>
-          ${verticesXml.join('\n          ')}
-        </vertices>
-        <triangles>
-          ${trianglesXml.join('\n          ')}
-        </triangles>
-      </mesh>
-    </object>
-  </resources>
-  <build>
-    <item objectid="1" transform="1 0 0 0 1 0 0 0 1 128 128 0" printable="1" />
-  </build>
-</model>`;
+  playbook.forEach((p, idx) => {
+    const pid = idx + 1;
+    const zFloor = idx === 0 ? 0.0 : playbook[idx - 1].endZMm;
+    const zCeil = idx === playbook.length - 1 ? maxGridZ + 2.0 : p.endZMm;
 
-  // Bambu Studio / OrcaSlicer project_settings.config with pre-mapped filament colours & layer height rules
-  const projectSettingsJson = JSON.stringify(
-    {
-      name: projectName,
-      generator: 'TailWag Studio v1.0',
-      initial_layer_print_height: baseLayerMm.toFixed(2),
-      layer_height: layerHeightMm.toFixed(2),
-      sparse_infill_density: '100%',
-      sparse_infill_pattern: 'alignedrectilinear',
-      wall_loops: '1',
-      top_shell_layers: '3',
-      bottom_shell_layers: '3',
-      filament_colour: playbook.map((p) => p.hex),
-      filament_type: playbook.map(() => 'PLA'),
-      filament_settings_id: playbook.map((p) => `${p.brand} ${p.spoolName} (TD ${p.td}mm)`),
-      tailwag_layer_swaps: playbook,
-    },
-    null,
-    2
-  );
+    const bandMesh = buildColorBandPartMesh(grid, zFloor, zCeil, halfZ);
+    if (bandMesh.faceCount === 0) return;
 
-  // Height range color painting config for Bambu Studio / OrcaSlicer
-  const customHeightRangeXml = `<?xml version="1.0" encoding="UTF-8"?>
-<config>
-  <object id="1">
-    <metadata key="name" value="${projectName}" />
-    <metadata key="extruder" value="1" />
-    ${playbook
-      .map(
-        (p) =>
-          `<range min_z="${p.startZMm.toFixed(2)}" max_z="${p.endZMm.toFixed(2)}" extruder="${p.slotIndex}" filament="${p.spoolName}" hex="${p.hex}" td="${p.td}" />`
-      )
-      .join('\n    ')}
-  </object>
-</config>`;
+    totalFaces += bandMesh.faceCount;
+    const uuidObj = `0001${pid.toString(16).padStart(4, '0')}-81cb-4c03-9d28-80fed5dfa1dc`;
+    const uuidComp = `0001${idx.toString(16).padStart(4, '0')}-b206-40ff-9872-83e8017abed1`;
+    const uuidPart = `0001${pid.toString(16).padStart(4, '0')}-7e6d-4931-9a9f-7218cba9de1c`;
+    const safePartName = `Layer_${p.startLayer}_to_${p.endLayer}_${p.spoolName.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+    objBlocks.push(
+      [
+        `  <object id="${pid}" p:UUID="${uuidObj}" type="model">`,
+        `   <mesh>`,
+        `    <vertices>`,
+        ...bandMesh.verticesXml,
+        `    </vertices>`,
+        `    <triangles>`,
+        ...bandMesh.trianglesXml,
+        `    </triangles>`,
+        `   </mesh>`,
+        `  </object>`,
+      ].join('\n')
+    );
+
+    compEntries.push(
+      `    <component p:path="/3D/Objects/object_1.model" objectid="${pid}" p:UUID="${uuidComp}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>`
+    );
+
+    partConfigs.push(
+      [
+        `    <part id="${pid}" subtype="normal_part" uuid="${uuidPart}">`,
+        `      <metadata key="name" value="${safePartName}"/>`,
+        `      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>`,
+        `      <metadata key="source_file" value="${projectName}.3mf"/>`,
+        `      <metadata key="source_object_id" value="0"/>`,
+        `      <metadata key="source_volume_id" value="${idx}"/>`,
+        `      <metadata key="source_offset_x" value="0.00000"/>`,
+        `      <metadata key="source_offset_y" value="0.00000"/>`,
+        `      <metadata key="source_offset_z" value="${halfZ.toFixed(5)}"/>`,
+        `      <metadata key="extruder" value="${pid}"/>`,
+        `      <mesh_stat face_count="${bandMesh.faceCount}" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>`,
+        `    </part>`,
+      ].join('\n')
+    );
+
+    assembleVolEntries.push(
+      `   <assemble_item object_id="${playbook.length + 1}" volume_id="${idx}" transform="1 0 0 0 1 0 0 0 1 0 0 0" />`
+    );
+  });
+
+  const parentId = playbook.length + 1;
+  const cleanTitle = projectName.replace(/[<>&"]/g, '');
+
+  const objectModelXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">',
+    ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
+    ' <resources>',
+    ...objBlocks,
+    ' </resources>',
+    ' <build/>',
+    '</model>',
+  ].join('\n');
+
+  const rootModelXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">',
+    ' <metadata name="Application">BambuStudio-02.08.02.61</metadata>',
+    ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
+    ' <metadata name="CreationDate">2026-10-16</metadata>',
+    ` <metadata name="Description">TailWag Studio 3D Filament Painting (${cleanTitle})</metadata>`,
+    ' <metadata name="Designer">TailWag Studio / BoxerDawg 3D</metadata>',
+    ' <metadata name="ModificationDate">2026-10-16</metadata>',
+    ` <metadata name="ProfileTitle">${layerHeightMm.toFixed(2)}mm TailWag 100% Rectilinear TD Profile</metadata>`,
+    ` <metadata name="Title">${cleanTitle}</metadata>`,
+    ' <resources>',
+    `  <object id="${parentId}" p:UUID="00000001-61cb-4c03-9d28-80fed5dfa1dc" type="model">`,
+    '   <components>',
+    ...compEntries,
+    '   </components>',
+    '  </object>',
+    ' </resources>',
+    ' <build p:UUID="2c7c17d8-22b5-4d84-8835-1976022ea369">',
+    `  <item objectid="${parentId}" p:UUID="00000005-b1ec-4553-aec9-835e5b724bb4" transform="1 0 0 0 1 0 0 0 1 128.0000 128.0000 ${halfZ.toFixed(5)}" printable="1"/>`,
+    ' </build>',
+    '</model>',
+  ].join('\n');
+
+  const filamentMapsStr = playbook.map(() => '1').join(' ');
+  const filamentVolMapsStr = playbook.map(() => '0').join(' ');
+
+  const modelSettingsXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<config>',
+    `  <object id="${parentId}">`,
+    `    <metadata key="name" value="${cleanTitle}"/>`,
+    '    <metadata key="extruder" value="1"/>',
+    `    <metadata face_count="${totalFaces}"/>`,
+    ...partConfigs,
+    '  </object>',
+    '  <plate>',
+    '    <metadata key="plater_id" value="1"/>',
+    `    <metadata key="plater_name" value="${cleanTitle}"/>`,
+    '    <metadata key="locked" value="false"/>',
+    '    <metadata key="filament_map_mode" value="Auto For Flush"/>',
+    `    <metadata key="filament_maps" value="${filamentMapsStr}"/>`,
+    `    <metadata key="filament_volume_maps" value="${filamentVolMapsStr}"/>`,
+    '    <model_instance>',
+    `      <metadata key="object_id" value="${parentId}"/>`,
+    '      <metadata key="instance_id" value="0"/>',
+    '      <metadata key="identify_id" value="72"/>',
+    '    </model_instance>',
+    '  </plate>',
+    '  <assemble>',
+    `   <assemble_item object_id="${parentId}" instance_id="0" transform="1 0 0 0 1 0 0 0 1 0.0000 0.0000 ${halfZ.toFixed(5)}" offset="0 0 0" />`,
+    ...assembleVolEntries,
+    '  </assemble>',
+    '</config>',
+  ].join('\n');
+
+  const contentTypesXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+    ' <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    ' <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>',
+    ' <Default Extension="png" ContentType="image/png"/>',
+    ' <Default Extension="gcode" ContentType="text/x.gcode"/>',
+    '</Types>',
+  ].join('\n');
+
+  const rootRelsXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    ' <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>',
+    '</Relationships>',
+  ].join('\n');
+
+  const modelRelsXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    ' <Relationship Target="/3D/Objects/object_1.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>',
+    '</Relationships>',
+  ].join('\n');
+
+  const sliceInfoXml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<config>',
+    '  <header>',
+    '    <header_item key="X-BBL-Client-Type" value="slicer"/>',
+    '    <header_item key="X-BBL-Client-Version" value="02.08.02.61"/>',
+    '  </header>',
+    '</config>',
+  ].join('\n');
+
+  const cutInfoXml = [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    '<objects>',
+    ' <object id="1">',
+    '  <cut_id id="0" check_sum="1" connectors_cnt="0"/>',
+    ' </object>',
+    '</objects>',
+  ].join('\n');
+
+  const filamentSeqJson = JSON.stringify({
+    plate_1: { nozzle_sequence: [], optimal_assignment: [], sequence: [] },
+  });
+
+  // Clone complete Bambu Studio 2.x project_settings.config template and apply filament palette & TD slicer rules
+  const ps: Record<string, any> = JSON.parse(JSON.stringify(bambuProjectTemplate));
+  const hexColors = playbook.map((p) => p.hex);
+  const numFilaments = hexColors.length;
+
+  // Resize all per-filament array properties in project_settings.config to match numFilaments
+  for (const key of Object.keys(ps)) {
+    if (Array.isArray(ps[key]) && ps[key].length === 4 && numFilaments !== 4) {
+      const baseArr = ps[key];
+      const resized: any[] = [];
+      for (let i = 0; i < numFilaments; i++) {
+        resized.push(baseArr[i % baseArr.length]);
+      }
+      ps[key] = resized;
+    }
+  }
+
+  ps.filament_colour = hexColors;
+  if ('default_filament_colour' in ps) {
+    ps.default_filament_colour = hexColors;
+  }
+  ps.initial_layer_print_height = baseLayerMm.toFixed(2);
+  ps.layer_height = layerHeightMm.toFixed(2);
+  ps.sparse_infill_density = '100%';
+  ps.sparse_infill_pattern = 'alignedrectilinear';
+  ps.wall_loops = '1';
+  ps.top_shell_layers = '3';
+  ps.bottom_shell_layers = '3';
+  ps.enable_support = '0';
+  ps.brim_type = 'no_brim';
+  ps.enable_prime_tower = '1';
 
   const archiveFiles: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(contentTypesXml),
-    '_rels/.rels': strToU8(relsXml),
-    '3D/3dmodel.model': strToU8(modelXml),
-    'Metadata/project_settings.config': strToU8(projectSettingsJson),
-    'Metadata/model_settings.config': strToU8(customHeightRangeXml),
+    '_rels/.rels': strToU8(rootRelsXml),
+    '3D/3dmodel.model': strToU8(rootModelXml),
+    '3D/_rels/3dmodel.model.rels': strToU8(modelRelsXml),
+    '3D/Objects/object_1.model': strToU8(objectModelXml),
+    'Metadata/project_settings.config': strToU8(JSON.stringify(ps, null, 4)),
+    'Metadata/model_settings.config': strToU8(modelSettingsXml),
+    'Metadata/slice_info.config': strToU8(sliceInfoXml),
+    'Metadata/cut_information.xml': strToU8(cutInfoXml),
+    'Metadata/filament_sequence.json': strToU8(filamentSeqJson),
     'Metadata/TailWag_Swap_Playbook.txt': strToU8(playbookText),
   };
 
