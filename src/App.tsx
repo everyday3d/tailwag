@@ -113,27 +113,31 @@ export const App: React.FC = () => {
     ]
   );
 
-  const ownedSpools = useMemo(() => catalog.filter((s) => s.owned), [catalog]);
+  // Owned spools are strictly and exclusively the spools loaded from filaments.json
+  const ownedSpools = useMemo(() => catalog.filter((s) => Boolean(s.libraryId)), [catalog]);
+  const builtInSpools = useMemo(() => catalog.filter((s) => !s.libraryId), [catalog]);
+  const hasOwnedLibrary = importedLibraries.length > 0 && ownedSpools.length > 0;
+  const effectiveLibraryTab = hasOwnedLibrary ? libraryTab : 'all';
+  const effectiveSolverPoolMode = hasOwnedLibrary ? solverPoolMode : 'shown';
 
   const filteredCatalog = useMemo(() => {
-    return catalog.filter((s) => {
-      if (libraryTab === 'owned' && !s.owned) return false;
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
+    const baseList = effectiveLibraryTab === 'owned' ? ownedSpools : builtInSpools;
+    if (!searchQuery.trim()) return baseList;
+    const q = searchQuery.toLowerCase();
+    return baseList.filter(
+      (s) =>
         s.name.toLowerCase().includes(q) ||
         s.brand.toLowerCase().includes(q) ||
         s.material.toLowerCase().includes(q)
-      );
-    });
-  }, [catalog, libraryTab, searchQuery]);
+    );
+  }, [effectiveLibraryTab, ownedSpools, builtInSpools, searchQuery]);
 
   const getCandidatePoolForMode = (mode: 'owned' | 'shown', customOwnedList?: typeof catalog) => {
     if (mode === 'owned') {
       const owned = customOwnedList ?? ownedSpools;
-      return owned.length >= 2 ? owned : catalog;
+      if (owned.length >= 2) return owned;
     }
-    return filteredCatalog.length >= 2 ? filteredCatalog : catalog;
+    return filteredCatalog.length >= 2 ? filteredCatalog : builtInSpools;
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,7 +178,7 @@ export const App: React.FC = () => {
         if (effectiveLayers !== totalLayers) {
           setLayerParams(baseLayerMm, layerHeightMm, effectiveLayers);
         }
-        const pool = getCandidatePoolForMode(solverPoolMode);
+        const pool = getCandidatePoolForMode(effectiveSolverPoolMode);
         const recipes = solveOptimalPalettes(
           newImgData,
           pool,
@@ -198,7 +202,7 @@ export const App: React.FC = () => {
     modeOverride?: 'owned' | 'shown',
     colorCountOverride?: 4 | 8 | 12 | 16
   ) => {
-    const activeMode = modeOverride ?? solverPoolMode;
+    const activeMode = modeOverride ?? effectiveSolverPoolMode;
     const activeColors = colorCountOverride ?? solverColorCount;
     if (modeOverride) {
       setSolverPoolMode(modeOverride);
@@ -228,24 +232,32 @@ export const App: React.FC = () => {
   const handleFilamentJsonUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Strictly require the uploaded file to be named filaments.json
+    if (file.name.toLowerCase() !== 'filaments.json') {
+      setJsonImportBanner('Error: Imported file must be named "filaments.json".');
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const text = String(ev.target?.result || '');
-        const result = parseFilamentLibraryJson(text, file.name);
+        const result = parseFilamentLibraryJson(text, 'filaments.json');
         if (result.spools.length === 0) {
-          setJsonImportBanner('No valid filament entries found in JSON file.');
+          setJsonImportBanner('No valid filament entries found in filaments.json.');
           return;
         }
         importOwnedLibraryJson(result.spools, 'replace', {
           id: result.libraryId,
-          name: result.libraryName,
+          name: 'filaments.json',
           count: result.spools.length,
         });
         setLibraryTab('owned');
         setSolverPoolMode('owned');
         setJsonImportBanner(
-          `Loaded ${result.spools.length} spools from ${file.name} (${result.sourceFormat.toUpperCase()})`
+          `Loaded ${result.spools.length} spools from filaments.json (${result.sourceFormat.toUpperCase()})`
         );
 
         // Immediately re-solve active image against the newly imported Owned library
@@ -266,7 +278,7 @@ export const App: React.FC = () => {
         }
       } catch (err) {
         setJsonImportBanner(
-          `JSON Parse Error: ${err instanceof Error ? err.message : 'Invalid JSON file'}`
+          `JSON Parse Error: ${err instanceof Error ? err.message : 'Invalid filaments.json file'}`
         );
       }
     };
@@ -280,7 +292,7 @@ export const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'TailWag_Owned_Filaments.json';
+    a.download = 'filaments.json';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -404,48 +416,59 @@ export const App: React.FC = () => {
                 <button
                   onClick={() => jsonInputRef.current?.click()}
                   className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-orange-600/20 hover:bg-orange-600/35 border border-orange-500/40 text-orange-300 font-semibold transition"
-                  title="Import your Owned Filament Library from a HueForge or TailWag .JSON file"
+                  title="Import your Owned Filament Library (file must be named filaments.json)"
                 >
                   <FileJson className="w-3 h-3" />
-                  Import .JSON
+                  Import filaments.json
                 </button>
                 <button
                   onClick={handleExportOwnedJson}
                   className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-                  title="Export Owned Filaments to .JSON"
+                  title="Export Owned Filaments to filaments.json"
                 >
                   <Download className="w-3 h-3" />
                 </button>
               </div>
             </div>
 
-            {/* Top Tab Bar: Owned vs All Catalog */}
-            <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-              <button
-                onClick={() => setLibraryTab('owned')}
-                className={`py-1 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                  libraryTab === 'owned'
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Owned ({ownedSpools.length})
-              </button>
-              <button
-                onClick={() => setLibraryTab('all')}
-                className={`py-1 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                  libraryTab === 'all'
-                    ? 'bg-orange-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                All Catalog ({catalog.length})
-              </button>
-            </div>
+            {/* Top Tab Bar: Owned tab only exists when filaments.json is loaded */}
+            {hasOwnedLibrary ? (
+              <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                <button
+                  onClick={() => setLibraryTab('owned')}
+                  className={`py-1 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    effectiveLibraryTab === 'owned'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Owned ({ownedSpools.length})
+                </button>
+                <button
+                  onClick={() => setLibraryTab('all')}
+                  className={`py-1 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    effectiveLibraryTab === 'all'
+                      ? 'bg-orange-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  All Catalog ({builtInSpools.length})
+                </button>
+              </div>
+            ) : (
+              <div className="bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                <button
+                  onClick={() => setLibraryTab('all')}
+                  className="w-full py-1 px-2 rounded-md text-xs font-bold bg-orange-600 text-white shadow flex items-center justify-center gap-1.5"
+                >
+                  All Catalog ({builtInSpools.length})
+                </button>
+              </div>
+            )}
 
-            {/* Loaded .JSON Libraries with Remove option */}
-            {importedLibraries.length > 0 && (
+            {/* Loaded filaments.json Library with Remove option (only shown on Owned tab or when loaded) */}
+            {hasOwnedLibrary && effectiveLibraryTab === 'owned' && (
               <div className="flex flex-col gap-1">
                 {importedLibraries.map((lib) => (
                   <div
@@ -462,10 +485,12 @@ export const App: React.FC = () => {
                     <button
                       onClick={() => {
                         removeImportedLibrary(lib.id);
-                        setJsonImportBanner(`Removed library "${lib.name}"`);
+                        setLibraryTab('all');
+                        setSolverPoolMode('shown');
+                        setJsonImportBanner(`Removed "${lib.name}" — Owned tab closed`);
                       }}
                       className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-[10px] font-semibold transition shrink-0"
-                      title={`Remove ${lib.name} from Filament Library`}
+                      title={`Remove ${lib.name} and close Owned tab`}
                     >
                       <Trash2 className="w-3 h-3" />
                       Remove
@@ -476,11 +501,17 @@ export const App: React.FC = () => {
             )}
 
             {jsonImportBanner && (
-              <div className="text-[10px] px-2 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center justify-between gap-1">
+              <div
+                className={`text-[10px] px-2 py-1 rounded flex items-center justify-between gap-1 ${
+                  jsonImportBanner.startsWith('Rejected:')
+                    ? 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
+                    : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                }`}
+              >
                 <span className="truncate">{jsonImportBanner}</span>
                 <button
                   onClick={() => setJsonImportBanner(null)}
-                  className="text-emerald-400 hover:text-white font-bold px-1"
+                  className="hover:text-white font-bold px-1"
                 >
                   ×
                 </button>
@@ -493,8 +524,8 @@ export const App: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={
-                  libraryTab === 'owned'
-                    ? 'Search your Owned (.JSON) spools...'
+                  effectiveLibraryTab === 'owned'
+                    ? 'Search your filaments.json spools...'
                     : 'Search Bambu, Polymaker, Sunlu, TD...'
                 }
                 className="w-full bg-slate-900 border border-slate-700/80 rounded-lg pl-8 pr-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-orange-500"
@@ -504,19 +535,7 @@ export const App: React.FC = () => {
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
               {filteredCatalog.length === 0 ? (
                 <div className="text-center py-6 px-3 text-xs text-slate-400 bg-slate-900/50 rounded-lg border border-slate-800/80">
-                  {libraryTab === 'owned' ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <span>No matching spools in your Owned tab.</span>
-                      <button
-                        onClick={() => jsonInputRef.current?.click()}
-                        className="px-2.5 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold text-[11px]"
-                      >
-                        Upload Filament Library (.JSON)
-                      </button>
-                    </div>
-                  ) : (
-                    <span>No filaments match "{searchQuery}".</span>
-                  )}
+                  <span>No filaments match "{searchQuery}".</span>
                 </div>
               ) : (
                 filteredCatalog.map((spool) => (
@@ -684,31 +703,42 @@ export const App: React.FC = () => {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Auto-Solve Filament Source
               </span>
-              <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                <button
-                  onClick={() => handleRunAiSolver('owned')}
-                  className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                    solverPoolMode === 'owned'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Auto-solve strictly using filaments in your Owned tab / imported .JSON library"
-                >
-                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                  <span className="truncate">Owned ({ownedSpools.length})</span>
-                </button>
-                <button
-                  onClick={() => handleRunAiSolver('shown')}
-                  className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                    solverPoolMode === 'shown'
-                      ? 'bg-orange-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Auto-solve using the filaments currently displayed in the active Filament Library tab & search filter"
-                >
-                  <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
-                </button>
-              </div>
+              {hasOwnedLibrary ? (
+                <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                  <button
+                    onClick={() => handleRunAiSolver('owned')}
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                      effectiveSolverPoolMode === 'owned'
+                        ? 'bg-emerald-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Auto-solve strictly using filaments from your filaments.json library"
+                  >
+                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                    <span className="truncate">Owned ({ownedSpools.length})</span>
+                  </button>
+                  <button
+                    onClick={() => handleRunAiSolver('shown')}
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                      effectiveSolverPoolMode === 'shown'
+                        ? 'bg-orange-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Auto-solve using the filaments currently displayed in the active Filament Library tab & search filter"
+                  >
+                    <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                  <button
+                    onClick={() => handleRunAiSolver('shown')}
+                    className="w-full py-1.5 px-2 rounded-md text-[11px] font-bold bg-orange-600 text-white shadow flex items-center justify-center gap-1"
+                  >
+                    <span className="truncate">Currently Shown ({filteredCatalog.length})</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Palette Color Count Selector: 4 / 8 / 12 / 16 Colors */}
@@ -738,7 +768,7 @@ export const App: React.FC = () => {
               className="w-full py-1.5 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              {solverPoolMode === 'owned'
+              {effectiveSolverPoolMode === 'owned'
                 ? `Auto-Solve (${solverColorCount} Colors • Owned ${ownedSpools.length})`
                 : `Auto-Solve (${solverColorCount} Colors • Shown ${filteredCatalog.length})`}
             </button>

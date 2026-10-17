@@ -74,8 +74,15 @@ export interface TailWagState {
   clearAllImportedLibraries: () => void;
 }
 
-const CATALOG_STORAGE_KEY = 'tailwag_catalog_v2';
-const LIBS_STORAGE_KEY = 'tailwag_imported_libs_v2';
+const CATALOG_STORAGE_KEY = 'tailwag_catalog_v3';
+const LIBS_STORAGE_KEY = 'tailwag_imported_libs_v3';
+
+const CLEAN_BUILTIN_CATALOG: FilamentSpool[] = VERIFIED_FILAMENT_CATALOG.map((s) => ({
+  ...s,
+  owned: false,
+  libraryId: undefined,
+  libraryName: undefined,
+}));
 
 function buildSeededDefaultState(): { catalog: FilamentSpool[]; importedLibraries: ImportedLibraryMeta[] } {
   try {
@@ -85,24 +92,13 @@ function buildSeededDefaultState(): { catalog: FilamentSpool[]; importedLibrarie
       'lib-user-filaments-json'
     );
     if (parsedSeed.spools.length > 0) {
-      const baseCatalog = VERIFIED_FILAMENT_CATALOG.map((s) => ({ ...s, owned: false }));
-      const merged: FilamentSpool[] = [...parsedSeed.spools];
-      for (const existing of baseCatalog) {
-        const isDup = merged.some(
-          (m) =>
-            m.id === existing.id ||
-            (m.brand.toLowerCase() === existing.brand.toLowerCase() &&
-              m.name.toLowerCase() === existing.name.toLowerCase() &&
-              m.hex.toLowerCase() === existing.hex.toLowerCase())
-        );
-        if (!isDup) merged.push(existing);
-      }
+      const merged: FilamentSpool[] = [...parsedSeed.spools, ...CLEAN_BUILTIN_CATALOG];
       return {
         catalog: merged,
         importedLibraries: [
           {
             id: parsedSeed.libraryId,
-            name: parsedSeed.libraryName,
+            name: 'filaments.json',
             count: parsedSeed.spools.length,
           },
         ],
@@ -111,7 +107,7 @@ function buildSeededDefaultState(): { catalog: FilamentSpool[]; importedLibrarie
   } catch {
     // fallback to built-in catalog
   }
-  return { catalog: VERIFIED_FILAMENT_CATALOG, importedLibraries: [] };
+  return { catalog: CLEAN_BUILTIN_CATALOG, importedLibraries: [] };
 }
 
 function loadInitialStoreData(): { catalog: FilamentSpool[]; importedLibraries: ImportedLibraryMeta[] } {
@@ -119,14 +115,24 @@ function loadInitialStoreData(): { catalog: FilamentSpool[]; importedLibraries: 
     if (typeof window !== 'undefined' && window.localStorage) {
       const savedCat = window.localStorage.getItem(CATALOG_STORAGE_KEY);
       const savedLibs = window.localStorage.getItem(LIBS_STORAGE_KEY);
-      if (savedCat) {
-        const parsedCat = JSON.parse(savedCat);
-        const parsedLibs = savedLibs ? JSON.parse(savedLibs) : [];
-        if (Array.isArray(parsedCat) && parsedCat.length > 0) {
-          return {
-            catalog: parsedCat,
-            importedLibraries: Array.isArray(parsedLibs) ? parsedLibs : [],
-          };
+      if (savedCat && savedLibs) {
+        const parsedCat = JSON.parse(savedCat) as FilamentSpool[];
+        const parsedLibs = JSON.parse(savedLibs) as ImportedLibraryMeta[];
+        if (Array.isArray(parsedCat) && Array.isArray(parsedLibs)) {
+          // Enforce that only spools belonging to an active imported library are marked owned
+          const activeLibIds = new Set(parsedLibs.map((l) => l.id));
+          const normalizedCat = parsedCat
+            .filter((s) => !s.libraryId || activeLibIds.has(s.libraryId))
+            .map((s) => ({
+              ...s,
+              owned: Boolean(s.libraryId && activeLibIds.has(s.libraryId)),
+            }));
+          if (normalizedCat.length > 0) {
+            return {
+              catalog: normalizedCat,
+              importedLibraries: parsedLibs,
+            };
+          }
         }
       }
     }
@@ -314,24 +320,10 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       const normalizedImported = importedSpools.map((s) => ({ ...s, owned: true }));
       const baseCatalog =
         mode === 'replace'
-          ? state.catalog
-              .filter((s) => !s.libraryId)
-              .map((s) => ({ ...s, owned: false }))
+          ? CLEAN_BUILTIN_CATALOG
           : state.catalog;
 
-      const merged: FilamentSpool[] = [...normalizedImported];
-      for (const existing of baseCatalog) {
-        const isDuplicate = merged.some(
-          (m) =>
-            m.id === existing.id ||
-            (m.brand.toLowerCase() === existing.brand.toLowerCase() &&
-              m.name.toLowerCase() === existing.name.toLowerCase() &&
-              m.hex.toLowerCase() === existing.hex.toLowerCase())
-        );
-        if (!isDuplicate) {
-          merged.push(existing);
-        }
-      }
+      const merged: FilamentSpool[] = [...normalizedImported, ...baseCatalog];
 
       const nextLibs: ImportedLibraryMeta[] = libraryMeta
         ? mode === 'replace'
@@ -345,19 +337,19 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   removeImportedLibrary: (libraryId) =>
     set((state) => {
       const nextLibs = state.importedLibraries.filter((l) => l.id !== libraryId);
-      const remainingCatalog = state.catalog.filter((s) => s.libraryId !== libraryId);
+      const remainingCatalog = state.catalog
+        .filter((s) => s.libraryId !== libraryId)
+        .map((s) => (nextLibs.length === 0 ? { ...s, owned: false, libraryId: undefined } : s));
 
-      // If all imported libraries were removed, restore built-in catalog defaults so Owned isn't completely empty unless toggled
       const finalCatalog =
-        nextLibs.length === 0 ? VERIFIED_FILAMENT_CATALOG : remainingCatalog;
+        nextLibs.length === 0 ? CLEAN_BUILTIN_CATALOG : remainingCatalog;
 
       saveStoreDataToStorage(finalCatalog, nextLibs);
       return { catalog: finalCatalog, importedLibraries: nextLibs };
     }),
   clearAllImportedLibraries: () =>
     set(() => {
-      const finalCatalog = VERIFIED_FILAMENT_CATALOG.map((s) => ({ ...s, owned: false }));
-      saveStoreDataToStorage(finalCatalog, []);
-      return { catalog: finalCatalog, importedLibraries: [] };
+      saveStoreDataToStorage(CLEAN_BUILTIN_CATALOG, []);
+      return { catalog: CLEAN_BUILTIN_CATALOG, importedLibraries: [] };
     }),
 }));
