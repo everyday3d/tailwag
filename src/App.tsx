@@ -39,6 +39,7 @@ import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { CalibrationPlateModal } from './components/CalibrationPlateModal';
+import { APP_VERSION } from './appVersion';
 import { OnboardingTour, hasSeenOnboarding } from './components/OnboardingTour';
 import { ExportModal } from './components/ExportModal';
 import { buildPrintPlan } from './engine/printPlan';
@@ -82,7 +83,7 @@ export const App: React.FC = () => {
   React.useEffect(() => {
     // First launch only; the ? button in the header replays it.
     if (!hasSeenOnboarding()) {
-      const t = setTimeout(() => setIsTourOpen(true), 600);
+      const t = setTimeout(() => setIsTourOpen(true), 3600);
       return () => clearTimeout(t);
     }
   }, []);
@@ -520,7 +521,7 @@ export const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-sm tracking-tight text-white">TAILWAG STUDIO</span>
               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                v1.0 • TD Engine + MCP (experimental)
+                v{APP_VERSION} • TD Engine + MCP (experimental)
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
