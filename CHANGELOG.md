@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-16
 
 ### Added
+- **Update check (#38)**: Click the version badge to open About & Updates, check for the newest release and open its download. A quiet once-a-day startup check (switchable off) shows an 'Update available' badge. If no public release exists yet, the dialog says so.
 - **Loading screen (#37)**: Instant splash with an animated tail-wagging dog, a randomly ordered 'Did you know?' tip every few seconds (49 tips, none repeated until all are shown), the app version and a 'Part of the BoxerDawg 3D ecosystem' line. The header version now comes from package.json too.
 - **Guided onboarding tour (#36)**: A 14-step visual walkthrough with a spotlight, pulsing highlight and animated arrows covers every section (photo, pre-press, filament library, solver, Faithful/Vivid, views, preview, timeline, size and layers, CAD extras, calibration plate, export). It opens once on first launch and can be replayed from the ? button in the header. Arrow keys navigate and Esc skips.
 - **MCP server labeled experimental**: README, in-app labels and the server name now say experimental. It exports a built-in demo relief, not your photos.

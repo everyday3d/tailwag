@@ -6,4 +6,7 @@ contextBridge.exposeInMainWorld('tailwagDesktop', {
     ipcRenderer.invoke('tailwag:save-file', options),
   fetchHaAms: (config: { haUrl: string; haToken: string }) =>
     ipcRenderer.invoke('tailwag:fetch-ha-ams', config),
+  checkForUpdates: () => ipcRenderer.invoke('tailwag:check-update'),
+  openExternal: (url: string) => ipcRenderer.invoke('tailwag:open-external', url),
+  appVersion: () => ipcRenderer.invoke('tailwag:app-version'),
 });

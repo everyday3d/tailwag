@@ -40,6 +40,8 @@ import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { CalibrationPlateModal } from './components/CalibrationPlateModal';
 import { APP_VERSION } from './appVersion';
+import { UpdateModal } from './components/UpdateModal';
+import { checkForUpdate, markChecked, shouldAutoCheckNow, type UpdateResult } from './engine/updateCheck';
 import { OnboardingTour, hasSeenOnboarding } from './components/OnboardingTour';
 import { ExportModal } from './components/ExportModal';
 import { buildPrintPlan } from './engine/printPlan';
@@ -80,6 +82,18 @@ export const App: React.FC = () => {
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
   const [isCalPlateOpen, setIsCalPlateOpen] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
+  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
+  const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
+  React.useEffect(() => {
+    // Quiet startup check (at most once a day, can be turned off in the About dialog).
+    if (!shouldAutoCheckNow()) return;
+    const t = setTimeout(async () => {
+      const r = await checkForUpdate(APP_VERSION);
+      markChecked();
+      if (r.kind === 'update') setUpdateResult(r);
+    }, 6000);
+    return () => clearTimeout(t);
+  }, []);
   React.useEffect(() => {
     // First launch only; the ? button in the header replays it.
     if (!hasSeenOnboarding()) {
@@ -520,9 +534,21 @@ export const App: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-sm tracking-tight text-white">TAILWAG STUDIO</span>
-              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
+              <button
+                onClick={() => setIsUpdateOpen(true)}
+                title="About TailWag and check for updates"
+                className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 transition"
+              >
                 v{APP_VERSION} • TD Engine + MCP (experimental)
-              </span>
+              </button>
+              {updateResult?.kind === 'update' && (
+                <button
+                  onClick={() => setIsUpdateOpen(true)}
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse"
+                >
+                  Update available: v{updateResult.info.version}
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-slate-400">
               3D Filament Painting, Beer-Lambert TD Blending & Native Bambu/Orca .3MF Studio
@@ -1784,6 +1810,7 @@ export const App: React.FC = () => {
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
       <CalibrationPlateModal isOpen={isCalPlateOpen} onClose={() => setIsCalPlateOpen(false)} />
       <OnboardingTour isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
+      <UpdateModal isOpen={isUpdateOpen} onClose={() => setIsUpdateOpen(false)} result={updateResult} onResult={setUpdateResult} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} plan={plan} />

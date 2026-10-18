@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -129,6 +129,37 @@ app.whenReady().then(() => {
     }
   });
 
+  // Update check: read the public "latest release" JSON. Done here so the renderer needs no network access.
+  ipcMain.handle('tailwag:check-update', async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch('https://api.github.com/repos/everyday3d/tailwag/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': `TailWag-Studio/${app.getVersion()}` },
+        signal: controller.signal,
+      });
+      let json: unknown;
+      try {
+        json = await res.json();
+      } catch {
+        json = undefined;
+      }
+      return { ok: res.ok, status: res.status, json };
+    } catch (err: any) {
+      return { ok: false, status: 0, error: err?.name === 'AbortError' ? 'timed out' : err?.message || 'network error' };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
+  // Opens release pages in the default browser. Only this project's GitHub pages are allowed.
+  ipcMain.handle('tailwag:open-external', async (_event, url: string) => {
+    if (typeof url !== 'string' || !url.startsWith('https://github.com/everyday3d/')) return { ok: false };
+    await shell.openExternal(url);
+    return { ok: true };
+  });
+
+  ipcMain.handle('tailwag:app-version', () => app.getVersion());
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

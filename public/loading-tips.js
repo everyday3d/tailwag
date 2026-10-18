@@ -51,4 +51,5 @@ window.TAILWAG_TIPS = [
   'Name your project before exporting. The name is used for the files so they are easy to find in your slicer.',
   'Print the calibration plate once per filament batch. TD and colour can differ between spools of the same name.',
   'TailWag processes your photos on this computer. Nothing is uploaded to solve or export a print.',
+  'Click the version badge at the top left to see what is new and check for the latest TailWag update.',
 ];
