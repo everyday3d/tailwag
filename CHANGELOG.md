@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-16
 
 ### Added
+- **Guided onboarding tour (#36)**: A 14-step visual walkthrough with a spotlight, pulsing highlight and animated arrows covers every section (photo, pre-press, filament library, solver, Faithful/Vivid, views, preview, timeline, size and layers, CAD extras, calibration plate, export). It opens once on first launch and can be replayed from the ? button in the header. Arrow keys navigate and Esc skips.
 - **MCP server labeled experimental**: README, in-app labels and the server name now say experimental. It exports a built-in demo relief, not your photos.
 - **MCP export verification (#31)**: The MCP server's export tool now builds the print plan, writes the file through the verified exporters and fails instead of writing a file that does not match the plan. Hue-preserving gamut mapping was evaluated and not added: in Faithful mode the best-match search already minimizes the reported color difference per pixel, and mapping first would only add error (Vivid mode keeps its chroma boost).
 - **Calibration confidence badge (#30)**: Spools fitted from a calibration plate show "Calibrated +/-X" in the filament list and library (green at fit error 3 or less, blue to 6, amber above), with the date and worst-patch error in the tooltip.

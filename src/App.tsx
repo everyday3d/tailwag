@@ -39,6 +39,7 @@ import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { CalibrationPlateModal } from './components/CalibrationPlateModal';
+import { OnboardingTour, hasSeenOnboarding } from './components/OnboardingTour';
 import { ExportModal } from './components/ExportModal';
 import { buildPrintPlan } from './engine/printPlan';
 import { buildLayerColorLUT } from './engine/opticalTdEngine';
@@ -77,6 +78,14 @@ export const App: React.FC = () => {
   const [solverRecipes, setSolverRecipes] = useState<SolverRecipe[]>([]);
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
   const [isCalPlateOpen, setIsCalPlateOpen] = useState(false);
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  React.useEffect(() => {
+    // First launch only; the ? button in the header replays it.
+    if (!hasSeenOnboarding()) {
+      const t = setTimeout(() => setIsTourOpen(true), 600);
+      return () => clearTimeout(t);
+    }
+  }, []);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
   const [editingSpoolId, setEditingSpoolId] = useState<string | null>(null);
@@ -521,7 +530,7 @@ export const App: React.FC = () => {
         </div>
 
         {/* Center Viewport Mode Switcher */}
-        <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 p-1 rounded-lg">
+        <div data-tour="view-modes" className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 p-1 rounded-lg">
           <button
             onClick={() => setViewportMode('3d-mesh')}
             className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
@@ -573,7 +582,7 @@ export const App: React.FC = () => {
             {previewShading === 'accuracy' && !backlitLithoMode ? 'Accuracy' : 'Beauty'}
           </button>
           <button
-            onClick={() => setMatchMode(matchMode === 'faithful' ? 'vivid' : 'faithful')}
+            data-tour="match-mode" onClick={() => setMatchMode(matchMode === 'faithful' ? 'vivid' : 'faithful')}
             className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
               matchMode === 'faithful'
                 ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
@@ -595,7 +604,7 @@ export const App: React.FC = () => {
             className="hidden"
           />
           <button
-            onClick={() => fileInputRef.current?.click()}
+            data-tour="load-image" onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
           >
             <Upload className="w-3.5 h-3.5 text-orange-400" />
@@ -611,7 +620,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setIsCalPlateOpen(true)}
+            data-tour="calibration" onClick={() => setIsCalPlateOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
           >
             <Ruler className="w-3.5 h-3.5 text-emerald-400" />
@@ -619,7 +628,16 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setIsExportModalOpen(true)}
+            onClick={() => setIsTourOpen(true)}
+            title="Replay the guided tour"
+            aria-label="Replay the guided tour"
+            className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-bold text-sky-300 transition"
+          >
+            ?
+          </button>
+
+          <button
+            data-tour="export" onClick={() => setIsExportModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white shadow-md shadow-orange-600/20 transition"
           >
             <Package className="w-4 h-4" />
@@ -631,7 +649,7 @@ export const App: React.FC = () => {
       {/* Main 3-Column Studio Body */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* LEFT SIDEBAR: Filament TD Catalog & Pre-Press Lab */}
-        <aside className="w-80 bg-[#121722] border-r border-slate-800 flex flex-col min-h-0 shrink-0">
+        <aside data-tour="library" className="w-80 bg-[#121722] border-r border-slate-800 flex flex-col min-h-0 shrink-0">
           {/* Verified Filament TD Library */}
           <div className="p-3 border-b border-slate-800 flex flex-col gap-2 flex-1 min-h-0">
             {/* Header & .JSON Library Import / Export */}
@@ -911,7 +929,7 @@ export const App: React.FC = () => {
           </div>
 
           {/* Pre-Press Photo & Fur Detail Enhancement Lab */}
-          <div className="p-3 bg-[#0f141e] flex flex-col gap-2.5 shrink-0">
+          <div data-tour="prepress" className="p-3 bg-[#0f141e] flex flex-col gap-2.5 shrink-0">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5" />
@@ -1003,17 +1021,17 @@ export const App: React.FC = () => {
 
         {/* CENTER: 3D Beer-Lambert Viewport + Bottom Layer Swap Timeline */}
         <main className="flex-1 flex flex-col min-w-0 min-h-0">
-          <div className="flex-1 min-h-0 relative">
+          <div data-tour="viewport" className="flex-1 min-h-0 relative">
             <Viewport3D grid={grid} plan={plan} sourceDataUrl={sourceDataUrl} />
           </div>
-          <LayerTimeline />
+          <div data-tour="timeline" className="shrink-0"><LayerTimeline /></div>
         </main>
 
         {/* RIGHT SIDEBAR: AI Auto-Solver, Slicer Geometry & 2.5D Parametric CAD Cutouts */}
         <aside className="w-80 max-w-80 bg-[#121722] border-l border-slate-800 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-3 gap-3.5 shrink-0">
           {/* 1. AI Palette & Layer-Swap Auto-Solver / Manual Palette Builder */}
           <section
-            onDragOver={(e) => e.preventDefault()}
+            data-tour="solver" onDragOver={(e) => e.preventDefault()}
             onDrop={handleManualDropAppend}
             className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5 min-w-0"
           >
@@ -1455,7 +1473,7 @@ export const App: React.FC = () => {
           </section>
 
           {/* 2. Physical Dimensions & Layer Slicing Parameters */}
-          <section className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5">
+          <section data-tour="dims" className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
               <Box className="w-3.5 h-3.5 text-sky-400" />
               Print Dimensions & Layer Stack
@@ -1646,7 +1664,7 @@ export const App: React.FC = () => {
           </section>
 
           {/* 3. 2.5D Parametric CAD Shapes, Frames, Clock & Magnet Cutouts */}
-          <section className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5">
+          <section data-tour="cad" className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5">
             <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5" />
               2.5D CAD Shapes, Clocks & Cutouts
@@ -1764,6 +1782,7 @@ export const App: React.FC = () => {
       {/* Modals */}
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
       <CalibrationPlateModal isOpen={isCalPlateOpen} onClose={() => setIsCalPlateOpen(false)} />
+      <OnboardingTour isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} plan={plan} />
