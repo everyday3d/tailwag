@@ -1,21 +1,21 @@
-### 🐕 [[Home|TailWag Studio Wiki]]
+### 🐕 [[TailWag Studio Wiki|Home]]
 
 ---
 
 #### 🚀 Getting Started
-- [[Getting-Started|First Print Walkthrough]]
-- [[Studio-User-Guide|Studio User Guide]]
+- [[Getting Started Guide|Getting-Started]]
+- [[Studio User Guide|Studio-User-Guide]]
 
 #### 🔬 Optical Science
-- [[Filament-Painting-Science|Filament Painting Science]]
-- [[TD-Calibration-Guide|Measuring & Calibrating TD]]
+- [[Filament Painting Science|Filament-Painting-Science]]
+- [[Measuring & Calibrating TD|TD-Calibration-Guide]]
 
 #### 🖨️ Slicing & Printing
-- [[Slicer-Setup-and-Print-Settings|Slicer Settings Guide]]
-- [[Troubleshooting-and-Defect-Resolution|Defect Troubleshooting]]
+- [[Slicer Settings Guide|Slicer-Setup-and-Print-Settings]]
+- [[Defect Troubleshooting|Troubleshooting-and-Defect-Resolution]]
 
 #### 🎨 Creative & Fun
-- [[Creative-Projects-and-Fun-Ideas|Projects & Fun Ideas]]
+- [[Projects & Fun Ideas|Creative-Projects-and-Fun-Ideas]]
 
 ---
 
