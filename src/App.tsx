@@ -38,6 +38,7 @@ import { parseFilamentLibraryJson, serializeFilamentLibraryJson } from './utils/
 import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
+import { CalibrationPlateModal } from './components/CalibrationPlateModal';
 import { ExportModal } from './components/ExportModal';
 import { buildPrintPlan } from './engine/printPlan';
 import { buildLayerColorLUT } from './engine/opticalTdEngine';
@@ -75,6 +76,7 @@ export const App: React.FC = () => {
   const [jsonImportBanner, setJsonImportBanner] = useState<string | null>(null);
   const [solverRecipes, setSolverRecipes] = useState<SolverRecipe[]>([]);
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
+  const [isCalPlateOpen, setIsCalPlateOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
   const [editingSpoolId, setEditingSpoolId] = useState<string | null>(null);
@@ -606,6 +608,14 @@ export const App: React.FC = () => {
           >
             <Ruler className="w-3.5 h-3.5 text-sky-400" />
             TD Calibrator & AMS
+          </button>
+
+          <button
+            onClick={() => setIsCalPlateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
+          >
+            <Ruler className="w-3.5 h-3.5 text-emerald-400" />
+            Calibration Plate
           </button>
 
           <button
@@ -1753,6 +1763,7 @@ export const App: React.FC = () => {
 
       {/* Modals */}
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
+      <CalibrationPlateModal isOpen={isCalPlateOpen} onClose={() => setIsCalPlateOpen(false)} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} plan={plan} />

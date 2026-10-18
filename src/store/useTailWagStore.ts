@@ -683,7 +683,7 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       let slots = state.slots;
       if (edited && usedInStack) {
         slots = state.slots.map((s) => (s.spool.id === spoolId ? { ...s, spool: edited } : s));
-        if (state.sourceImageData && (patch.hex !== undefined || patch.td !== undefined)) {
+        if (state.sourceImageData && (patch.hex !== undefined || patch.td !== undefined || patch.calibration !== undefined)) {
           slots = optimizeManualSlotBoundaries(
             state.sourceImageData,
             slots,

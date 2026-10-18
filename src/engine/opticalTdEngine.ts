@@ -5,7 +5,7 @@ import {
   LinearRgb,
   DEFAULT_BACKING_LINEAR,
   layerOver,
-  profileFromColor,
+  profileForSpool,
   toDisplayRgb,
 } from './opticalModel';
 
@@ -302,10 +302,10 @@ export function buildLayerColorLUT(
 
   const profiles = new Map<string, OpticalProfile>();
   const profileOf = (spool: FilamentSpool): OpticalProfile => {
-    const key = `${spool.hex}|${spool.td}`;
+    const key = `${spool.hex}|${spool.td}|${spool.calibration?.date ?? ''}`;
     let p = profiles.get(key);
     if (!p) {
-      p = profileFromColor(hexToRgb01(spool.hex), spool.td);
+      p = profileForSpool(spool);
       profiles.set(key, p);
     }
     return p;

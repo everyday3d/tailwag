@@ -16,6 +16,8 @@ export interface FilamentSpool {
   line?: string;
   /** Id of the bundled manufacturer catalog entry this spool was created from */
   catalogId?: string;
+  /** Fitted optical profile from a printed calibration plate. Overrides the TD-based estimate. */
+  calibration?: import('../engine/opticalModel').SpoolCalibration;
   /** Spool availability. Missing means in stock. 'out' spools are excluded from the auto-solver. */
   stock?: 'ok' | 'low' | 'out';
 }

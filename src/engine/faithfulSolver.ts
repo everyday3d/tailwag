@@ -1,7 +1,7 @@
 import type { FilamentSpool } from '../data/filamentCatalog';
 import { Lab, rgbToLab } from './colorScience';
 import { LayerSwapSlot, hexToRgb01 } from './opticalTdEngine';
-import { OpticalProfile, profileFromColor } from './opticalModel';
+import { OpticalProfile, profileForSpool } from './opticalModel';
 import {
   TargetBuckets,
   buildTargetBuckets,
@@ -57,7 +57,7 @@ interface Candidate {
 function shortlist(pool: FilamentSpool[], buckets: TargetBuckets, size: number): Candidate[] {
   const all: Candidate[] = pool.map((spool) => {
     const rgb = hexToRgb01(spool.hex);
-    return { spool, profile: profileFromColor(rgb, spool.td), lab: rgbToLab(rgb) };
+    return { spool, profile: profileForSpool(spool), lab: rgbToLab(rgb) };
   });
   if (all.length <= size) return all;
 
@@ -305,7 +305,7 @@ export function faithfulScoreForSlots(
   const buckets = buildTargetBuckets(sampleGridColors(imageData, cols, rows), cols * rows, { step: { L: 4, a: 6, b: 6 } });
   const ends = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
   const labs = layerLabsForEnds(
-    ends.map((s) => profileFromColor(hexToRgb01(s.spool.hex), s.spool.td)),
+    ends.map((s) => profileForSpool(s.spool)),
     ends.map((s, i) => (i === ends.length - 1 ? totalLayers : s.upToLayer)),
     totalLayers,
     layerHeightMm,

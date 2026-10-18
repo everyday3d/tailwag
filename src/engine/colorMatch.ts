@@ -1,6 +1,6 @@
 import { Lab, rgbToLab, deltaE2000, linearToSrgb } from './colorScience';
 import { LayerSwapSlot, hexToRgb01 } from './opticalTdEngine';
-import { OpticalProfile, LinearRgb, DEFAULT_BACKING_LINEAR, layerOver, profileFromColor } from './opticalModel';
+import { OpticalProfile, LinearRgb, DEFAULT_BACKING_LINEAR, layerOver, profileForSpool } from './opticalModel';
 
 /**
  * Faithful color matching: every column picks the stack depth whose predicted color is closest to
@@ -117,7 +117,7 @@ export function lutToLab(lutRgb: RGB01[]): Lab[] {
 
 /** Optical profile of a slot's spool, the same one the layer color table uses. */
 export function profileFor(slot: LayerSwapSlot): OpticalProfile {
-  return profileFromColor(hexToRgb01(slot.spool.hex), slot.spool.td);
+  return profileForSpool(slot.spool);
 }
 
 /**

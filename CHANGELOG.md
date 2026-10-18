@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-16
 
 ### Added
+- **Calibration plate (#30)**: One printable multi-filament plate (white and black backing rows, nine thickness steps per filament, corner marks) exported as a 3MF with one extruder per part. Load a phone photo, click the four corner marks, and TailWag white-balances the patches and fits each filament's color and transparency (Kubelka-Munk, per channel). Fitted profiles are stored on the spool, override the TD estimate in every color calculation, and are ignored if the optical model version changes. The plate sliced in Bambu Studio with the expected 54 layers and all four extruders.
 - **Print cost notes (#29)**: Export dialog now warns when the height-sample pitch is finer than the 0.42 mm print line, when a recipe mixes materials, and when purge waste is large; slicer settings now also pin ironing off.
 - **Slicer proof (#29)**: Bambu Studio CLI slice of a generated 3MF confirmed 24 layers, 0.16 mm first layer, 0.08 mm layers and filament swaps at exactly the PrintPlan band Z (0.64/1.12/1.60 mm).
 - **Core Beer-Lambert + Kubelka-Munk Optical TD Engine** (`src/engine/opticalTdEngine.ts`) with real-time per-layer composite color lookup tables and CIE LAB $\Delta E$ perceptual metrics (Fixes #1).

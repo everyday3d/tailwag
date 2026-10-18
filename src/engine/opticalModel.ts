@@ -96,6 +96,39 @@ export function profileFromColor(color: RGB01, tdMm: number): OpticalProfile {
   };
 }
 
+/** A fitted optical profile stored on a spool after a calibration plate has been measured. */
+export interface SpoolCalibration {
+  rInf: [number, number, number];
+  s: number;
+  /** Optically measured TD (mm), derived from the fit. */
+  tdMm: number;
+  /** Fit residual (mean CIEDE2000) over the plate patches. */
+  meanDeltaE00: number;
+  maxDeltaE00: number;
+  /** ISO date of the measurement. */
+  date: string;
+  /** Optical model the fit belongs to; a fit made under another model is ignored. */
+  modelId: string;
+}
+
+/** Identifies the model equations that calibrations are fitted against. */
+export const CALIBRATION_MODEL_ID = 'km-linear-v2';
+
+const hexToRgb01Local = (hex: string): RGB01 => {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h.padEnd(6, '0').slice(0, 6), 16);
+  return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
+};
+
+/** Optical profile of a spool: the fitted one when the spool was calibrated, otherwise the TD-based estimate. */
+export function profileForSpool(spool: { hex: string; td: number; calibration?: SpoolCalibration }): OpticalProfile {
+  const cal = spool.calibration;
+  if (cal && cal.modelId === CALIBRATION_MODEL_ID) {
+    return { rInf: [...cal.rInf], s: cal.s, tdMm: cal.tdMm, source: 'calibrated' };
+  }
+  return profileFromColor(hexToRgb01Local(spool.hex), spool.td);
+}
+
 export interface LinearRgb {
   r: number;
   g: number;
