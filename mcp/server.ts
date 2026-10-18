@@ -4,12 +4,12 @@ import * as readline from 'readline';
 import { VERIFIED_FILAMENT_CATALOG, FilamentSpool } from '../src/data/filamentCatalog';
 import {
   buildLayerColorLUT,
-  computeLayerOpacity,
   hexToRgb01,
   rgbToLab,
   deltaE,
   LayerSwapSlot,
 } from '../src/engine/opticalTdEngine';
+import { singleLayerOpacity } from '../src/engine/opticalModel';
 import {
   buildHeightmapGrid,
   generateBinaryStlFromGrid,
@@ -381,7 +381,7 @@ function handleToolCall(name: string, args: any): any {
     case 'tailwag_calibrate_td': {
       const stepMm = args.stepThicknessMm ?? 0.16;
       const measuredTd = Number((Number(args.opaqueStepNumber) * stepMm * 2.0).toFixed(1));
-      const oneLayerAlpha = Number((computeLayerOpacity(0.08, measuredTd) * 100).toFixed(1));
+      const oneLayerAlpha = Number((singleLayerOpacity(0.08, measuredTd) * 100).toFixed(1));
       const newSpool: FilamentSpool = {
         id: `mcp-custom-${Date.now()}`,
         brand: args.brand,

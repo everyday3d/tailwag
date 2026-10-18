@@ -12,6 +12,9 @@ import { LayerSwapSlot, RGB, buildLayerColorLUT } from './opticalTdEngine';
  * and carries a stable `hash` of all of it for later verification.
  */
 
+/** Identifies the optical model behind the predicted colors; part of the plan hash. */
+export const OPTICAL_MODEL_ID = 'km-linear-v1';
+
 /** Z values are snapped to this many decimals so every export agrees bit-for-bit. */
 export const Z_DECIMALS = 4;
 
@@ -73,6 +76,8 @@ export interface PrintPlan {
   bands: PrintPlanBand[];
   /** Predicted top-surface color for layers 1..totalLayers (index = layer - 1) */
   layerRgb: RGB[];
+  /** Optical model that produced layerRgb */
+  opticalModel: string;
   /** Stable hash of parameters, bands and layer grid */
   hash: string;
 }
@@ -162,7 +167,7 @@ export function buildPrintPlan(params: {
   const layerRgb = lut.map((e) => ({ ...e.rgb }));
 
   const hash = hash64([
-    `v1|${grid.cols}x${grid.rows}|${baseLayerMm}|${layerHeightMm}|${totalLayers}`,
+    `v2|${OPTICAL_MODEL_ID}|${grid.cols}x${grid.rows}|${baseLayerMm}|${layerHeightMm}|${totalLayers}`,
     bands
       .map((b) => `${b.extruder}:${b.spoolId}:${b.hex}:${b.td}:${b.startLayer}-${b.endLayer}`)
       .join(';'),
@@ -179,6 +184,7 @@ export function buildPrintPlan(params: {
     layerGrid,
     bands,
     layerRgb,
+    opticalModel: OPTICAL_MODEL_ID,
     hash,
   };
 }
@@ -207,6 +213,7 @@ export function serializePlanSummary(plan: PrintPlan, projectName: string): stri
       schema: 'tailwag-print-plan-v1',
       project: projectName,
       hash: plan.hash,
+      opticalModel: plan.opticalModel,
       grid: { cols: plan.cols, rows: plan.rows },
       baseLayerMm: plan.baseLayerMm,
       layerHeightMm: plan.layerHeightMm,

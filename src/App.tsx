@@ -92,6 +92,8 @@ export const App: React.FC = () => {
     setLighting,
     backlitLithoMode,
     setBacklitLithoMode,
+    previewShading,
+    setPreviewShading,
     widthMm,
     heightMm,
     setDimensions,
@@ -529,6 +531,19 @@ export const App: React.FC = () => {
           >
             <Sun className="w-3.5 h-3.5" />
             {backlitLithoMode ? 'Backlit Litho' : 'Front-Lit TD'}
+          </button>
+          <button
+            onClick={() => setPreviewShading(previewShading === 'accuracy' ? 'beauty' : 'accuracy')}
+            disabled={backlitLithoMode}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition disabled:opacity-40 ${
+              previewShading === 'accuracy' && !backlitLithoMode
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Accuracy: unlit, shows the predicted print color of every column. Beauty: adds studio lighting and shading."
+          >
+            <Eye className="w-3.5 h-3.5" />
+            {previewShading === 'accuracy' && !backlitLithoMode ? 'Accuracy' : 'Beauty'}
           </button>
         </div>
 

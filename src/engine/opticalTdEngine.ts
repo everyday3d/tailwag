@@ -1,4 +1,6 @@
 import { FilamentSpool } from '../data/filamentCatalog';
+import { deltaE2000 } from './colorScience';
+import { OpticalProfile, LinearRgb, layerOver, profileFromColor, toDisplayRgb } from './opticalModel';
 
 export interface LayerSwapSlot {
   id: string;
@@ -73,6 +75,7 @@ export function computeSinglePassOpacity(thicknessMm: number, tdMm: number): num
  * This allows a filament with a given TD to produce a continuous gradient of intermediate shades
  * as successive 0.08mm layers are stacked on top of an under-color.
  */
+// Legacy heuristic: not used by the layer color table. See opticalModel.ts for the single model.
 export function computeLayerOpacity(thicknessMm: number, tdMm: number): number {
   if (thicknessMm <= 0) return 0;
   const safeTd = Math.max(0.1, tdMm);
@@ -86,6 +89,7 @@ export function computeLayerOpacity(thicknessMm: number, tdMm: number): number {
  * Blends an underlying plastic color with an overlay plastic layer of thickness t.
  * Uses gamma-corrected optical mixing with thickness-dependent opacity.
  */
+// Legacy heuristic: not used by the layer color table. See opticalModel.ts for the single model.
 export function blendColorsThroughThickness(
   baseRgb01: RGB,
   topColor01: RGB,
@@ -112,6 +116,7 @@ export function blendColorsThroughThickness(
  * using the Kubelka-Munk two-flux light transport equation.
  * Models real-world physical pigment density and organic non-linear color shifting in melted plastics.
  */
+// Legacy gamma-space Kubelka-Munk: not used by the layer color table. See opticalModel.ts (linear light).
 export function computeKubelkaMunkReflectance(
   rg: number,
   rInf: number,
@@ -156,6 +161,7 @@ export function computeKubelkaMunkReflectance(
  * Blends an underlying plastic color with an overlay pigment layer using the
  * physical Kubelka-Munk two-flux model, simulating real melted polymer interactions.
  */
+// Legacy gamma-space Kubelka-Munk: not used by the layer color table. See opticalModel.ts (linear light).
 export function blendPigmentsKubelkaMunk(
   baseRgb01: RGB,
   topColor01: RGB,
@@ -266,55 +272,72 @@ export function applySubsurfaceLightDiffusion2D(
 }
 
 /**
- * Computes the exact composite RGB color for every discrete layer index (1..totalLayers)
- * given the baseLayerMm (0.16mm initial layer), layerHeightMm (0.08mm), and ordered LayerSwapSlots.
+ * Computes the composite color for every discrete layer index (1..totalLayers) given the
+ * baseLayerMm (initial layer), layerHeightMm and the ordered LayerSwapSlots.
+ *
+ * The default 'physical' model is the single optical model used by the solver, the viewport,
+ * the print plan and every export (see opticalModel.ts). 'kubelka-munk' is accepted as an alias.
+ * 'hybrid-gamma' is the earlier heuristic blend, kept only to compare against.
  */
 export function buildLayerColorLUT(
   totalLayers: number,
   baseLayerMm: number,
   layerHeightMm: number,
   slots: LayerSwapSlot[],
-  options?: { model?: 'hybrid-gamma' | 'kubelka-munk' }
+  options?: { model?: 'physical' | 'kubelka-munk' | 'hybrid-gamma' }
 ): { layer: number; zHeightMm: number; rgb: RGB; hex: string; activeSpool: FilamentSpool }[] {
   if (slots.length === 0) return [];
 
   const sortedSlots = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
   const lut: { layer: number; zHeightMm: number; rgb: RGB; hex: string; activeSpool: FilamentSpool }[] = [];
-  const model = options?.model ?? 'hybrid-gamma';
+  const model = options?.model ?? 'physical';
+  const legacy = model === 'hybrid-gamma';
 
-  // Layer 1 (0.16mm initial layer) starts on the build plate with the base filament
+  const profiles = new Map<string, OpticalProfile>();
+  const profileOf = (spool: FilamentSpool): OpticalProfile => {
+    const key = `${spool.hex}|${spool.td}`;
+    let p = profiles.get(key);
+    if (!p) {
+      p = profileFromColor(hexToRgb01(spool.hex), spool.td);
+      profiles.set(key, p);
+    }
+    return p;
+  };
+
   let currentColor = hexToRgb01(sortedSlots[0].spool.hex);
+  let currentLinear: LinearRgb = { r: 0, g: 0, b: 0 };
 
   for (let layer = 1; layer <= totalLayers; layer++) {
     const zHeightMm = Number((baseLayerMm + (layer - 1) * layerHeightMm).toFixed(3));
     const slot = sortedSlots.find((s) => layer <= s.upToLayer) || sortedSlots[sortedSlots.length - 1];
     const filamentRgb = hexToRgb01(slot.spool.hex);
 
-    if (layer === 1) {
-      // Initial 0.16mm layer on build plate establishes the base shadow color
-      currentColor = {
-        r: filamentRgb.r,
-        g: filamentRgb.g,
-        b: filamentRgb.b,
-      };
-    } else if (model === 'kubelka-munk') {
-      // Real physical Kubelka-Munk spectral polymer pigment model
-      currentColor = blendPigmentsKubelkaMunk(currentColor, filamentRgb, slot.spool.td, layerHeightMm);
+    if (legacy) {
+      if (layer === 1) {
+        currentColor = { ...filamentRgb };
+      } else {
+        const stepAlpha = computeLayerOpacity(layerHeightMm, slot.spool.td);
+        const gamma = 1.35;
+        const blendChannel = (prev: number, next: number) => {
+          const pLin = Math.pow(Math.max(0, prev), gamma);
+          const nLin = Math.pow(Math.max(0, next), gamma);
+          return Math.pow(Math.max(0, pLin * (1 - stepAlpha) + nLin * stepAlpha), 1 / gamma);
+        };
+        currentColor = {
+          r: blendChannel(currentColor.r, filamentRgb.r),
+          g: blendChannel(currentColor.g, filamentRgb.g),
+          b: blendChannel(currentColor.b, filamentRgb.b),
+        };
+      }
     } else {
-      // Each 0.08mm layer optically blends with the underlying color according to its TD value
-      const stepAlpha = computeLayerOpacity(layerHeightMm, slot.spool.td);
-      const gamma = 1.35;
-      const blendChannel = (prev: number, next: number) => {
-        const pLin = Math.pow(Math.max(0, prev), gamma);
-        const nLin = Math.pow(Math.max(0, next), gamma);
-        const mixed = pLin * (1 - stepAlpha) + nLin * stepAlpha;
-        return Math.pow(Math.max(0, mixed), 1 / gamma);
-      };
-      currentColor = {
-        r: blendChannel(currentColor.r, filamentRgb.r),
-        g: blendChannel(currentColor.g, filamentRgb.g),
-        b: blendChannel(currentColor.b, filamentRgb.b),
-      };
+      const profile = profileOf(slot.spool);
+      if (layer === 1) {
+        // The initial layers form an opaque base of the first filament
+        currentLinear = { r: profile.rInf[0], g: profile.rInf[1], b: profile.rInf[2] };
+      } else {
+        currentLinear = layerOver(currentLinear, profile, layerHeightMm);
+      }
+      currentColor = toDisplayRgb(currentLinear);
     }
 
     lut.push({
@@ -329,34 +352,11 @@ export function buildLayerColorLUT(
   return lut;
 }
 
+/** sRGB (0..1) to CIELAB (D65). Single implementation lives in colorScience.ts. */
+export { rgbToLab } from './colorScience';
+
 /**
- * Convert RGB (0..1) to CIE LAB for perceptual ΔE color matching in AI Auto-Solver
+ * Perceptual color difference. This is CIEDE2000 (kL = kC = kH = 1); the earlier CIE76
+ * Euclidean distance was removed so the metric that selects colors is the one that is reported.
  */
-export function rgbToLab(rgb: RGB): { L: number; a: number; b: number } {
-  const toLinear = (c: number) => (c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92);
-  const r = toLinear(rgb.r);
-  const g = toLinear(rgb.g);
-  const b = toLinear(rgb.b);
-
-  const x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
-  const y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.0;
-  const z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
-
-  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-  const fx = f(x);
-  const fy = f(y);
-  const fz = f(z);
-
-  return {
-    L: 116 * fy - 16,
-    a: 500 * (fx - fy),
-    b: 200 * (fy - fz),
-  };
-}
-
-export function deltaE(lab1: { L: number; a: number; b: number }, lab2: { L: number; a: number; b: number }): number {
-  const dL = lab1.L - lab2.L;
-  const da = lab1.a - lab2.a;
-  const db = lab1.b - lab2.b;
-  return Math.sqrt(dL * dL + da * da + db * db);
-}
+export const deltaE = deltaE2000;

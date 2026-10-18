@@ -1,5 +1,6 @@
 import { FilamentSpool } from '../data/filamentCatalog';
 import { LayerSwapSlot, buildLayerColorLUT, hexToRgb01, rgbToLab } from './opticalTdEngine';
+import { deltaE2000 } from './colorScience';
 
 export interface LABColor {
   L: number;
@@ -194,92 +195,10 @@ export interface ImageColorAnalysis {
  * across all hues, saturations, and lightness levels without any hardcoded color rules.
  */
 export function ciede2000(lab1: LABColor, lab2: LABColor): number {
-  const L1 = lab1.L;
-  const a1 = lab1.a;
-  const b1 = lab1.b;
-  const L2 = lab2.L;
-  const a2 = lab2.a;
-  const b2 = lab2.b;
-
-  const avgL = (L1 + L2) * 0.5;
-  const C1 = Math.hypot(a1, b1);
-  const C2 = Math.hypot(a2, b2);
-  const avgC = (C1 + C2) * 0.5;
-
-  const avgC7 = Math.pow(avgC, 7);
-  const pow25_7 = 6103515625; // 25^7
-  const G = 0.5 * (1 - Math.sqrt(avgC7 / (avgC7 + pow25_7)));
-
-  const a1p = (1 + G) * a1;
-  const a2p = (1 + G) * a2;
-  const C1p = Math.hypot(a1p, b1);
-  const C2p = Math.hypot(a2p, b2);
-  const avgCp = (C1p + C2p) * 0.5;
-
-  const radToDeg = 180 / Math.PI;
-  const degToRad = Math.PI / 180;
-
-  let h1p = Math.atan2(b1, a1p) * radToDeg;
-  if (h1p < 0) h1p += 360;
-  let h2p = Math.atan2(b2, a2p) * radToDeg;
-  if (h2p < 0) h2p += 360;
-
-  const dLp = L2 - L1;
-  const dCp = C2p - C1p;
-
-  let dhp = 0;
-  if (C1p * C2p !== 0) {
-    if (Math.abs(h2p - h1p) <= 180) {
-      dhp = h2p - h1p;
-    } else if (h2p - h1p > 180) {
-      dhp = h2p - h1p - 360;
-    } else {
-      dhp = h2p - h1p + 360;
-    }
-  }
-  const dHp = 2 * Math.sqrt(C1p * C2p) * Math.sin((dhp * 0.5) * degToRad);
-
-  let avgHp = h1p + h2p;
-  if (C1p * C2p === 0) {
-    avgHp = h1p + h2p;
-  } else if (Math.abs(h1p - h2p) <= 180) {
-    avgHp = (h1p + h2p) * 0.5;
-  } else if (h1p + h2p < 360) {
-    avgHp = (h1p + h2p + 360) * 0.5;
-  } else {
-    avgHp = (h1p + h2p - 360) * 0.5;
-  }
-
-  const T =
-    1 -
-    0.17 * Math.cos((avgHp - 30) * degToRad) +
-    0.24 * Math.cos(2 * avgHp * degToRad) +
-    0.32 * Math.cos((3 * avgHp + 6) * degToRad) -
-    0.20 * Math.cos((4 * avgHp - 63) * degToRad);
-
-  const dTheta = 30 * Math.exp(-Math.pow((avgHp - 275) / 25, 2));
-  const avgCp7 = Math.pow(avgCp, 7);
-  const RC = 2 * Math.sqrt(avgCp7 / (avgCp7 + pow25_7));
-
-  const avgLm50_2 = Math.pow(avgL - 50, 2);
-  const SL = 1 + (0.015 * avgLm50_2) / Math.sqrt(20 + avgLm50_2);
-  const SC = 1 + 0.045 * avgCp;
-  const SH = 1 + 0.015 * avgCp * T;
-  const RT = -Math.sin(2 * dTheta * degToRad) * RC;
-
-  // Weighting factors: slightly prioritize hue & chroma fidelity (kL = 1.15, kC = 1.0, kH = 0.85)
-  // so filament color selection never sacrifices hue accuracy for raw brightness
-  const kL = 1.15;
-  const kC = 1.0;
-  const kH = 0.85;
-
-  const termL = dLp / (kL * SL);
-  const termC = dCp / (kC * SC);
-  const termH = dHp / (kH * SH);
-
-  return Math.sqrt(
-    Math.max(0, termL * termL + termC * termC + termH * termH + RT * termC * termH)
-  );
+  // Solver-weighted CIEDE2000: slightly prioritizes hue and chroma fidelity (kL = 1.15, kC = 1.0, kH = 0.85)
+  // so color selection never sacrifices hue accuracy for raw brightness. The standard, unweighted
+  // metric used for reporting is deltaE2000 in colorScience.ts.
+  return deltaE2000(lab1, lab2, 1.15, 1.0, 0.85);
 }
 
 export interface QuantizedSample {

@@ -29,6 +29,8 @@ export interface TailWagState {
   lightAzimuthDeg: number;
   lightElevationDeg: number;
   backlitLithoMode: boolean;
+  /** 'accuracy' shows the predicted sRGB color of every column unlit; 'beauty' adds studio lighting. */
+  previewShading: 'accuracy' | 'beauty';
   slicePreviewMaxLayer: number;
   renderVersion: number;
   solverColorMode: 'natural' | 'cmyk' | 'manual';
@@ -65,6 +67,7 @@ export interface TailWagState {
   setSplitRatio: (ratio: number) => void;
   setLighting: (azimuth: number, elevation: number) => void;
   setBacklitLithoMode: (backlit: boolean) => void;
+  setPreviewShading: (mode: 'accuracy' | 'beauty') => void;
   setSlicePreviewMaxLayer: (layer: number) => void;
   setSourceImageData: (imageData: ImageData | null) => void;
   setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
@@ -214,6 +217,7 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   lightAzimuthDeg: 38,
   lightElevationDeg: 58,
   backlitLithoMode: false,
+  previewShading: 'accuracy',
   slicePreviewMaxLayer: 24,
   renderVersion: 0,
   solverColorMode: 'natural',
@@ -274,6 +278,7 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   setSplitRatio: (splitRatio) => set({ splitRatio }),
   setLighting: (lightAzimuthDeg, lightElevationDeg) => set({ lightAzimuthDeg, lightElevationDeg }),
   setBacklitLithoMode: (backlitLithoMode) => set({ backlitLithoMode }),
+  setPreviewShading: (previewShading) => set({ previewShading }),
   setSlicePreviewMaxLayer: (slicePreviewMaxLayer) => set({ slicePreviewMaxLayer }),
   setDimensions: (widthMm, heightMm) => set({ widthMm, heightMm }),
   setLayerParams: (baseLayerMm, layerHeightMm, totalLayers) =>

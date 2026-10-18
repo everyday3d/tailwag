@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Maximize2, Minimize2, Compass, Eye } from 'lucide-react';
 import { HeightmapGrid } from '../engine/cadMeshBuilder';
 import { PrintPlan, planLayerRgb } from '../engine/printPlan';
+import { srgbToLinear } from '../engine/colorScience';
 import { useTailWagStore } from '../store/useTailWagStore';
 
 interface Viewport3DProps {
@@ -20,6 +21,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
+  const standardMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const basicMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const backLightRef = useRef<THREE.PointLight | null>(null);
 
@@ -34,6 +37,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
     lightAzimuthDeg,
     lightElevationDeg,
     backlitLithoMode,
+    previewShading,
     slicePreviewMaxLayer,
     baseLayerMm,
     baseSolidThicknessMm,
@@ -248,6 +252,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
       side: THREE.DoubleSide,
     });
 
+    // Unlit material for the accuracy preview: shows the predicted color of each column exactly
+    const basicMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    standardMatRef.current = material;
+    basicMatRef.current = basicMaterial;
+
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
     meshRef.current = mesh;
@@ -291,15 +300,25 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
         bCol = Math.min(1, bCol * 0.45 + transmit * 0.72);
       }
 
-      colArr[v * 3] = rCol;
-      colArr[v * 3 + 1] = gCol;
-      colArr[v * 3 + 2] = bCol;
+      // Vertex colors are interpreted as linear light and encoded to sRGB on output, so the
+      // predicted sRGB color must be linearized first or the preview comes out too light.
+      colArr[v * 3] = srgbToLinear(rCol);
+      colArr[v * 3 + 1] = srgbToLinear(gCol);
+      colArr[v * 3 + 2] = srgbToLinear(bCol);
     }
 
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
-    (mesh.material as THREE.MeshStandardMaterial).roughness = backlitLithoMode ? 0.35 : 0.52;
-    (mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
+    // Accuracy mode is unlit; the backlit lithophane simulation needs lighting, so it uses the lit material.
+    const unlit = previewShading === 'accuracy' && !backlitLithoMode;
+    const standard = standardMatRef.current;
+    const basic = basicMatRef.current;
+    if (standard && basic) {
+      mesh.material = unlit ? basic : standard;
+      standard.roughness = backlitLithoMode ? 0.35 : 0.52;
+      standard.needsUpdate = true;
+      basic.needsUpdate = true;
+    }
 
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
@@ -309,6 +328,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
     plan,
     slicePreviewMaxLayer,
     backlitLithoMode,
+    previewShading,
     baseLayerMm,
     baseSolidThicknessMm,
     layerHeightMm,

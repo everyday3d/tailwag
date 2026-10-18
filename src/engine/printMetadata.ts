@@ -10,6 +10,8 @@ export interface PrintMetadata {
   project: string;
   printPlanId: string;
   printPlanHash: string;
+  /** Optical model behind the predicted colors; TD-based values are estimates until calibrated */
+  opticalModel: string;
   /** Total height of the tallest column, snapped to the layer grid */
   recommendedTotalPrintHeightMm: number;
   baseLayerThicknessMm: number;
@@ -67,6 +69,7 @@ export function buildPrintMetadata(
     project: projectName,
     printPlanId: shortPlanHash(plan),
     printPlanHash: plan.hash,
+    opticalModel: plan.opticalModel,
     recommendedTotalPrintHeightMm: layerTopZ(plan.maxPrintedLayer, plan.baseLayerMm, plan.layerHeightMm),
     baseLayerThicknessMm: plan.baseLayerMm,
     layerHeightMm: plan.layerHeightMm,
