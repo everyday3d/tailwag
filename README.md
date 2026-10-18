@@ -151,19 +151,26 @@ Releases are published as `.dmg` installers and `.zip` bundles on the [releases 
 - **Apple Silicon (M1, M2, M3, M4)**: Download `TailWag-Setup-*-mac-arm64.dmg`.
 - **Intel Macs**: Download `TailWag-Setup-*-mac-x64.dmg`.
 
-Open the downloaded `.dmg` and drag **TailWag Studio.app** to your `/Applications` folder.
+Open the downloaded `.dmg` and drag **TailWag Studio.app** into your `/Applications` folder.
 
-### "TailWag Studio is damaged and can't be opened" or "Unidentified Developer"
-Because TailWag Studio is a free community project without a paid Apple Developer certificate, macOS Gatekeeper blocks it by default on the first launch. This is standard behavior for open-source apps.
+### First launch: Right-click > Open (Unsigned App Gatekeeper)
 
-**How to open:**
-1. **Quick Method**: Right-click (or Control-click) `TailWag Studio.app` in `/Applications`, choose **Open**, and click **Open** in the confirmation prompt.
-2. **Terminal Command (cleanest)**: Open Terminal and run:
-   ```bash
-   xattr -cr /Applications/TailWag\ Studio.app
-   ```
-   This clears the quarantine attribute applied to files downloaded from the web.
-3. **System Settings**: Go to **System Settings > Privacy & Security**, scroll down to the **Security** section, and click **Open Anyway**.
+Because TailWag Studio is a free open-source project without a paid Apple Developer certificate, macOS Gatekeeper blocks opening on a normal double-click. **Unsigned macOS apps need right-click, Open on first launch**:
+
+1. **Right-click (or Control-click)** `TailWag Studio.app` in `/Applications`.
+2. Select **Open** from the menu.
+3. Click **Open** in the confirmation dialog.
+
+macOS remembers your permission and will open the app normally on standard double-click thereafter.
+
+#### If macOS says "TailWag Studio is damaged and can't be opened"
+If Gatekeeper prevents opening or flags the file:
+- **Terminal (cleanest)**: Open Terminal and run:
+  ```bash
+  xattr -cr /Applications/TailWag\ Studio.app
+  ```
+  This clears the `com.apple.quarantine` extended attribute applied to downloads.
+- **System Settings**: Open **System Settings > Privacy & Security**, scroll down to the **Security** section, and click **Open Anyway**.
 ## Notices and reporting bugs
 
 TailWag Studio is a new release and can have bugs. Please report them on the [issue tracker](https://github.com/everyday3d/tailwag/issues); the bug report form asks for your version and the steps to reproduce.

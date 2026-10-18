@@ -113,7 +113,7 @@ export const UpdateModal: React.FC<Props> = ({ isOpen, onClose, result, onResult
               )}
             </div>
             <div className="text-[10px] text-slate-500">
-              Close TailWag before running the installer. Your library and calibrations are kept.
+              Close TailWag before running the installer. Your library and calibrations are kept. On macOS, right-click and choose Open on first launch.
             </div>
           </div>
         )}
