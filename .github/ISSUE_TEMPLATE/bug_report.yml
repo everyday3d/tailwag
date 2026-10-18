@@ -1,0 +1,44 @@
+name: Bug report
+description: Something is wrong or not working as expected
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping. TailWag Studio 1.1 is a new release, so bugs are expected.
+        Please do not include personal information, access codes or passwords.
+  - type: input
+    id: version
+    attributes:
+      label: TailWag version
+      description: Click the version badge at the top left of the app.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows version and slicer
+      placeholder: "Windows 11, Bambu Studio 2.x"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, and what went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Load a photo\n2. ..."
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or other details
+      description: Paste or drag in images. If an export was blocked, include the message shown.

@@ -2,10 +2,15 @@
 
 [![Release](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
-[![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 > **Next-Generation Desktop 3D Filament Painting (Front-Lit Beer-Lambert TD Blending), AI Palette & Layer-Swap Solver, 2.5D Parametric CAD Cutouts, and Native Bambu Studio / OrcaSlicer `.3MF` Exporter + Built-in MCP Server.**
 
+> [!WARNING]
+> **New release, bugs possible.** TailWag Studio 1.1 is new and may contain bugs, and predicted colours are estimates until you calibrate your filaments. If you find a problem, please [open an issue](https://github.com/everyday3d/tailwag/issues).
+
+> [!NOTE]
+> **Independent project.** TailWag Studio is not affiliated with or endorsed by HueForge, Bambu Lab, Prusa, or any filament maker. We do not own or claim to own HueForge or any other third-party name or trademark. See [NOTICE.md](NOTICE.md).
 ---
 
 ## 🌟 Key Features
@@ -103,6 +108,12 @@ Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/s
 | `tailwag_simulate_layer_stack` | Simulates Beer-Lambert TD blending for any filament stack and returns the per-layer hex LUT. |
 | `tailwag_export_3mf_project` | Headlessly builds a watertight 2.5D mesh with CAD cutouts and writes `.3mf` + `_Swap_Playbook.txt`. |
 | `tailwag_calibrate_td` | Computes filament $TD$ from step-wedge opacity readings and exports the calibration wedge `.stl`. |
+
+## Notices and reporting bugs
+
+TailWag Studio is a new release and can have bugs. Please report them on the [issue tracker](https://github.com/everyday3d/tailwag/issues); the bug report form asks for your version and the steps to reproduce.
+
+HueForge, Bambu Lab, Bambu Studio, OrcaSlicer, PrusaSlicer and the filament brands named in this project belong to their respective owners. We do not own or claim to own them, and this project is not affiliated with or endorsed by any of them. Full details are in [NOTICE.md](NOTICE.md).
 
 ## License
 

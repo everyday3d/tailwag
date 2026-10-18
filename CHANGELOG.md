@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Version 1.0.0 was internal and never published, so this is the first public release and includes everything below.
 
 ### Changed
+- **Notices and bug reporting**: Added NOTICE.md (no affiliation with or ownership of HueForge, Bambu Lab, Prusa or other third-party names, early-release notice), README callouts, a Bug report issue form, and corrected the README license badge from Proprietary to MIT.
 - **README spotlight**: Added a screenshot tour of the studio (loading screen, Faithful vs Vivid, Accuracy vs Beauty, split compare, layer timeline, filament library and editor, calibration plate, export fidelity report, shape and frame, updates) with screenshots under docs/screenshots.
 - **MIT License**: Added a LICENSE file and set the package license to MIT (was marked proprietary).
 - **Repository cleanup for going public**: Removed the unused standalone Python tool and the personal Desktop-shortcut helper from the repository, removed the personal code-index step from the build, and replaced a private network address in the Home Assistant field with a neutral default.
