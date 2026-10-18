@@ -116,6 +116,14 @@ Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/s
 
 TailWag Studio is a new, small project and the installer is **not code-signed yet** (a code-signing certificate costs money and a new app also has no "reputation" with Microsoft). Because of that, Windows may stop you when you run it, even though the file is fine. This is normal for unsigned apps and does not mean the file is infected.
 
+### Install via WinGet (Windows Package Manager)
+
+Install or update TailWag Studio via terminal:
+
+```powershell
+winget install everyday3d.TailWagStudio
+```
+
 ### The blue screen ("Windows protected your PC", Microsoft Defender SmartScreen)
 1. Click **More info** (the small link under the message).
 2. Click **Run anyway**.
