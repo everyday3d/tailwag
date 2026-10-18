@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive, Image as ImageIcon, Braces } from 'lucide-react';
 import { useTailWagStore } from '../store/useTailWagStore';
 import { HeightmapGrid } from '../engine/cadMeshBuilder';
+import { analyzePrintCost } from '../engine/printEconomics';
 import { PrintPlan, shortPlanHash } from '../engine/printPlan';
 import { buildPrintMetadata, serializePrintMetadata } from '../engine/printMetadata';
 import { renderPlanComparisonPng } from '../engine/planPreview';
@@ -79,6 +80,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
   const fidelity = useMemo(
     () => (isOpen && sourceImageData ? buildFidelityReport({ plan, image: sourceImageData, slots }) : null),
     [isOpen, plan, sourceImageData, slots]
+  );
+  const printCost = useMemo(
+    () =>
+      analyzePrintCost({
+        plan,
+        widthMm: grid.widthMm,
+        materials: slots.map((s) => s.spool.material),
+      }),
+    [plan, grid.widthMm, slots]
   );
   const fidelitySummary = useMemo(() => (fidelity ? summarizeFidelity(fidelity) : undefined), [fidelity]);
   const heatPng = useMemo(() => (fidelity ? renderFidelityHeatmapPng(fidelity) : null), [fidelity]);
@@ -416,9 +426,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
                 <div className="text-[10px] text-slate-400">
                   {Math.round(fidelity.gamutLimitedShare * 100)}% of the photo is beyond this palette's reach. {fidelity.swapCount} filament change{fidelity.swapCount === 1 ? '' : 's'}.
                 </div>
-                {fidelity.warnings.length > 0 && (
+                {(fidelity.warnings.length > 0 || printCost.warnings.length > 0) && (
                   <ul className="list-disc pl-4 text-[11px] text-amber-300">
-                    {fidelity.warnings.map((w, i) => (
+                    {[...fidelity.warnings, ...printCost.warnings].map((w, i) => (
                       <li key={i}>{w}</li>
                     ))}
                   </ul>

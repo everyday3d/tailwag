@@ -10,6 +10,7 @@ export const PINNED_SLICER_SETTINGS: Record<string, string> = {
   bottom_shell_layers: '999',
   enable_support: '0',
   brim_type: 'no_brim',
+  ironing_type: 'no ironing',
   enable_prime_tower: '1',
 };
 
