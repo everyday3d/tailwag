@@ -20,6 +20,8 @@ export default defineConfig({
   server: {
     port: 5188,
     strictPort: true,
+    // Packaging writes thousands of files into release/; watching them locks files and breaks the build.
+    watch: { ignored: ['**/release/**', '**/dist-electron/**', '**/.codegraph/**'] },
   },
   build: {
     outDir: 'dist',
