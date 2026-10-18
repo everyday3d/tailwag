@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-16
 
 ### Added
+- **Slicer proof (#29)**: Bambu Studio CLI slice of a generated 3MF confirmed 24 layers, 0.16 mm first layer, 0.08 mm layers and filament swaps at exactly the PrintPlan band Z (0.64/1.12/1.60 mm).
 - **Core Beer-Lambert + Kubelka-Munk Optical TD Engine** (`src/engine/opticalTdEngine.ts`) with real-time per-layer composite color lookup tables and CIE LAB $\Delta E$ perceptual metrics (Fixes #1).
 - **Interactive Three.js 3D Filament Painting Viewport** (`src/components/Viewport3D.tsx`) featuring split-screen source wipe comparison, studio key-light azimuth/elevation controls, X-ray layer cutaway scrubber, and Front-Lit vs. Back-Lit Lithophane mode (Fixes #1).
 - **AI Palette & Layer-Swap Auto-Solver** (`src/engine/autoSolver.ts`) generating optimal true-tone, BoxerDawg warm portrait pop, and archival monochrome recipes from owned AMS spools or full brand catalog (Fixes #1).
