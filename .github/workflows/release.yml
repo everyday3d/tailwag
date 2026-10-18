@@ -6,9 +6,19 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Git tag to release (e.g. v1.2.0)'
+      platform:
+        description: 'Platform to build'
         required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mac
+          - windows
+      tag:
+        description: 'Git tag to attach to (leave blank for workflow artifacts only)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -16,6 +26,7 @@ permissions:
 jobs:
   build-windows:
     name: Build Windows (x64)
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'mac'
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -49,6 +60,7 @@ jobs:
 
   build-mac:
     name: Build macOS (arm64 & x64)
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -83,6 +95,7 @@ jobs:
 
   publish:
     name: Checksums & GitHub Release
+    if: always() && !cancelled() && !contains(needs.*.result, 'failure') && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.tag != ''))
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +126,6 @@ jobs:
             artifacts/SHA256SUMS.txt
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

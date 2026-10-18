@@ -58,6 +58,7 @@
     "mac": {
       "icon": "build/icon.png",
       "category": "public.app-category.graphics-design",
+      "artifactName": "TailWag-${version}-mac-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
