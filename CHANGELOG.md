@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Save and open projects (#44)**: The new Save and Open buttons in the header (Ctrl+S and Ctrl+O) write and read a single `.tailwag` file with your photo, filament stack and swap layers, size and layer settings, pre-press sliders, shape options and your colour, match and relief choices. Filaments are stored in the file with their colour, TD and calibration, so a project opens correctly even if your library changed. Opening restores the same preview, the print plan ID is saved so it can be compared, and a damaged, foreign or newer file is rejected with a clear message. The desktop app offers to reopen your last project when it starts.
+- **Undo and redo (#45)**: Undo and Redo buttons in the header (Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z) cover your filament stack and swap layers (spool swaps, reordering, adding, removing, slider moves), size and layer settings, pre-press sliders, shape and frame options, and the colour and match modes. Edits within about half a second are one step, so a slider drag is a single undo. Undo and redo restore exactly what was there and never re-solve your Manual layers. Up to 100 steps are kept, and loading a photo or project clears them. Text fields keep their own undo.
+- A tour step and two loading tips explain saving and undo, and the header now fits on one row at 1366 px and wider.
 ### Changed
 - **Catalog data corrections are community-driven (#32, #43)**: Brand-by-brand verification of approximate catalog colors was replaced by an open, ongoing issue where owners report corrections through the Filament data form. DATA_SOURCES.md was updated.
 - **Windows install help**: README now explains the blue "Windows protected your PC" (SmartScreen) screen, "file is blocked" and browser or antivirus warnings, how to get past each one, and how to check the download's SHA-256.

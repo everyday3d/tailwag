@@ -13,6 +13,7 @@ import {
   Shapes,
   Target,
   Package,
+  Save,
   PartyPopper,
   X,
   ChevronLeft,
@@ -67,6 +68,13 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'bottom',
   },
   {
+    target: 'project',
+    title: 'Save and reopen your work',
+    body: 'The folder and disk buttons save and open a project: your photo, filaments, swap layers and every setting in one file. Nothing is lost when you close the app.',
+    tips: ['Ctrl+S saves and Ctrl+O opens.', 'Next time you start, TailWag offers to reopen your last project.'],
+    icon: <Save className={ICON} />,
+    placement: 'bottom',
+  },  {
     target: 'prepress',
     title: '2. Tidy the photo (pre-press)',
     body: 'Adjust contrast, detail and smoothing before anything is solved. The 3D view updates as you move the sliders.',
@@ -491,4 +499,4 @@ export const OnboardingTour: React.FC<Props> = ({ isOpen, onClose }) => {
 };
 
 // Lucide icons imported above are only used inside TOUR_STEPS; keep the unused-import linter quiet if one is added.
-void [Library, Wand2, Scale, Eye, Box, Layers, Ruler, Shapes, Target, Package, SlidersHorizontal];
+void [Save, Library, Wand2, Scale, Eye, Box, Layers, Ruler, Shapes, Target, Package, SlidersHorizontal];

@@ -24,6 +24,10 @@ import {
   Plus,
   Hand,
   Pencil,
+  FolderOpen,
+  Save,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { useTailWagStore } from './store/useTailWagStore';
 import { createDefaultPortraitImageData } from './utils/defaultPortrait';
@@ -41,6 +45,18 @@ import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { CalibrationPlateModal } from './components/CalibrationPlateModal';
 import { APP_VERSION } from './appVersion';
 import { UpdateModal } from './components/UpdateModal';
+import { appHistory } from './store/appHistory';
+import { useHistoryStatus } from './store/undoHistory';
+import { buildProject, decodeImage, parseProject } from './engine/projectFile';
+import {
+  canReopenLastProject,
+  forgetLastProject,
+  getLastProject,
+  imageDataToDataUrl,
+  noteOpenedProject,
+  readProjectFile,
+  saveProjectFile,
+} from './utils/projectIO';
 import { checkForUpdate, markChecked, shouldAutoCheckNow, type UpdateResult } from './engine/updateCheck';
 import { OnboardingTour, hasSeenOnboarding } from './components/OnboardingTour';
 import { ExportModal } from './components/ExportModal';
@@ -263,6 +279,126 @@ export const App: React.FC = () => {
     return faithful.length > 0 ? [...faithful, ...legacy] : legacy;
   };
 
+  // ---- Projects: save and open a whole piece of work ------------------------------------------
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  const history = useHistoryStatus();
+  const [lastProject, setLastProject] = useState(() => (canReopenLastProject() ? getLastProject() : null));
+
+  const applyProjectText = (text: string, filePath?: string) => {
+    const parsed = parseProject(text);
+    if (!parsed.ok) {
+      setJsonImportBanner(`Rejected: ${parsed.error}`);
+      return;
+    }
+    const project = parsed.project;
+    const decoded = decodeImage(project.image);
+    const image = new ImageData(new Uint8ClampedArray(decoded.data), decoded.width, decoded.height);
+    setSourceImageData(image);
+    setSourceDataUrl(imageDataToDataUrl(image));
+    useTailWagStore.getState().loadProject(project, image);
+    appHistory.clear();
+    noteOpenedProject(filePath, project.name);
+    setLastProject(null);
+    setJsonImportBanner(`Opened project "${project.name}"`);
+    // The same picture and settings must give the same print plan; say so if they do not.
+    if (project.planHash) {
+      window.setTimeout(() => {
+        if (planRef.current.hash !== project.planHash) {
+          setJsonImportBanner(
+            `Opened "${project.name}", but it now builds a slightly different model than when it was saved (TailWag was updated). Check the preview before printing.`
+          );
+        }
+      }, 2500);
+    }
+  };
+
+  const handleSaveProject = async () => {
+    const s = useTailWagStore.getState();
+    const project = buildProject(
+      {
+        projectName: s.projectName,
+        widthMm: s.widthMm,
+        heightMm: s.heightMm,
+        lockAspect: s.lockAspect,
+        baseLayerMm: s.baseLayerMm,
+        baseSolidThicknessMm: s.baseSolidThicknessMm,
+        layerHeightMm: s.layerHeightMm,
+        totalLayers: s.totalLayers,
+        totalDepthMm: s.totalDepthMm,
+        meshResolution: s.meshResolution,
+        gamma: s.gamma,
+        contrast: s.contrast,
+        detailEnhance: s.detailEnhance,
+        invertLuminance: s.invertLuminance,
+        cad: s.cad,
+        matchMode: s.matchMode,
+        solverColorMode: s.solverColorMode,
+        manualRelief: s.manualRelief,
+        previewShading: s.previewShading,
+        backlitLithoMode: s.backlitLithoMode,
+        viewportMode: s.viewportMode,
+        splitRatio: s.splitRatio,
+        slots: s.slots,
+        sourceImageData,
+      },
+      APP_VERSION,
+      planRef.current.hash
+    );
+    try {
+      const res = await saveProjectFile(project);
+      if (res.saved) setJsonImportBanner(`Saved project "${project.name}"`);
+    } catch (e) {
+      setJsonImportBanner(`Rejected: The project could not be saved (${e instanceof Error ? e.message : 'unknown error'}).`);
+    }
+  };
+
+  const handleOpenProject = async (path?: string) => {
+    const res = await readProjectFile(path);
+    if (!res) return;
+    if ('error' in res) {
+      setJsonImportBanner(`Rejected: ${res.error}`);
+      if (path) {
+        forgetLastProject();
+        setLastProject(null);
+      }
+      return;
+    }
+    applyProjectText(res.text, res.filePath);
+  };
+
+  const projectActionsRef = useRef({ save: handleSaveProject, open: handleOpenProject });
+  projectActionsRef.current = { save: handleSaveProject, open: handleOpenProject };
+  React.useEffect(() => {
+    const inTextField = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      if (!el) return false;
+      if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+      if (el.tagName !== 'INPUT') return false;
+      const type = (el as HTMLInputElement).type;
+      return type !== 'range' && type !== 'checkbox' && type !== 'radio' && type !== 'button';
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && k === 's') {
+        e.preventDefault();
+        void projectActionsRef.current.save();
+      } else if (!e.shiftKey && k === 'o') {
+        e.preventDefault();
+        void projectActionsRef.current.open();
+      } else if (k === 'z' && !inTextField(e.target)) {
+        e.preventDefault();
+        if (e.shiftKey) appHistory.redo();
+        else appHistory.undo();
+      } else if (k === 'y' && !e.shiftKey && !inTextField(e.target)) {
+        e.preventDefault();
+        appHistory.redo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -286,6 +422,7 @@ export const App: React.FC = () => {
         const newImgData = ctx.getImageData(0, 0, w, h);
         setSourceImageData(newImgData);
         setStoreSourceImageData(newImgData);
+        appHistory.clear(); // undo must never carry edits from the old photo onto the new one
         setSourceDataUrl(dataUrl);
 
         // Standardized 246x246mm build plate envelope sizing preserving exact aspect ratio
@@ -539,13 +676,13 @@ export const App: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-sm tracking-tight text-white">TAILWAG STUDIO</span>
+              <span className="font-extrabold text-sm tracking-tight text-white whitespace-nowrap">TAILWAG STUDIO</span>
               <button
                 onClick={() => setIsUpdateOpen(true)}
                 title="About TailWag and check for updates"
-                className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 transition"
+                className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 transition whitespace-nowrap"
               >
-                v{APP_VERSION} • TD Engine + MCP (experimental)
+                v{APP_VERSION}<span className="hidden min-[1750px]:inline"> • TD Engine + MCP (experimental)</span>
               </button>
               {updateResult?.kind === 'update' && (
                 <button
@@ -556,7 +693,7 @@ export const App: React.FC = () => {
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-slate-400 hidden min-[1750px]:block">
               3D Filament Painting, Beer-Lambert TD Blending & Native Bambu/Orca .3MF Studio
             </p>
           </div>
@@ -637,6 +774,40 @@ export const App: React.FC = () => {
             className="hidden"
           />
           <button
+            onClick={() => appHistory.undo()}
+            disabled={history.undoCount === 0}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition disabled:opacity-35 disabled:hover:bg-slate-800"
+          >
+            <Undo2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => appHistory.redo()}
+            disabled={history.redoCount === 0}
+            title="Redo (Ctrl+Y)"
+            aria-label="Redo"
+            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition disabled:opacity-35 disabled:hover:bg-slate-800"
+          >
+            <Redo2 className="w-4 h-4" />
+          </button>          <button
+            data-tour="project"
+            onClick={() => void handleOpenProject()}
+            title="Open a saved project (Ctrl+O)"
+            aria-label="Open a saved project"
+            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
+          >
+            <FolderOpen className="w-4 h-4 text-amber-400" />
+          </button>
+          <button
+            onClick={() => void handleSaveProject()}
+            title="Save this project (Ctrl+S)"
+            aria-label="Save this project"
+            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
+          >
+            <Save className="w-4 h-4 text-emerald-400" />
+          </button>
+          <button
             data-tour="load-image" onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
           >
@@ -679,6 +850,26 @@ export const App: React.FC = () => {
         </div>
       </header>
 
+      {lastProject && (
+        <div className="px-4 py-1.5 bg-sky-500/10 border-b border-sky-500/30 text-[11px] text-sky-200 flex items-center gap-3">
+          <span className="truncate">Reopen your last project, "{lastProject.name}"?</span>
+          <button
+            onClick={() => void handleOpenProject(lastProject.path)}
+            className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold"
+          >
+            Reopen
+          </button>
+          <button
+            onClick={() => {
+              forgetLastProject();
+              setLastProject(null);
+            }}
+            className="hover:text-white underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {/* Main 3-Column Studio Body */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* LEFT SIDEBAR: Filament TD Catalog & Pre-Press Lab */}

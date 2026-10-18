@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld('tailwagDesktop', {
   checkForUpdates: () => ipcRenderer.invoke('tailwag:check-update'),
   openExternal: (url: string) => ipcRenderer.invoke('tailwag:open-external', url),
   appVersion: () => ipcRenderer.invoke('tailwag:app-version'),
+  openProject: (path?: string) => ipcRenderer.invoke('tailwag:open-project', path),
 });

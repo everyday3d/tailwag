@@ -145,6 +145,30 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('tailwag:app-version', () => app.getVersion());
+
+  // Opens a TailWag project: a file dialog, or a known path (only .tailwag files are read).
+  ipcMain.handle('tailwag:open-project', async (_event, knownPath?: string) => {
+    try {
+      let target = typeof knownPath === 'string' && knownPath ? knownPath : undefined;
+      if (target) {
+        if (!target.toLowerCase().endsWith('.tailwag')) return { canceled: false, error: 'That is not a TailWag project file.' };
+      } else {
+        if (!mainWindow) return { canceled: true };
+        const res = await dialog.showOpenDialog(mainWindow, {
+          filters: [{ name: 'TailWag project', extensions: ['tailwag'] }],
+          properties: ['openFile'],
+        });
+        if (res.canceled || !res.filePaths[0]) return { canceled: true };
+        target = res.filePaths[0];
+      }
+      const stat = await fs.promises.stat(target);
+      if (stat.size > 60 * 1024 * 1024) return { canceled: false, error: 'That file is too large to be a TailWag project.' };
+      const text = await fs.promises.readFile(target, 'utf8');
+      return { canceled: false, filePath: target, text };
+    } catch (err: any) {
+      return { canceled: false, error: err?.code === 'ENOENT' ? 'The project file was moved or deleted.' : err?.message || 'The file could not be read.' };
+    }
+  });
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

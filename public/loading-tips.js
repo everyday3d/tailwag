@@ -52,4 +52,6 @@ window.TAILWAG_TIPS = [
   'Print the calibration plate once per filament batch. TD and colour can differ between spools of the same name.',
   'TailWag processes your photos on this computer. Nothing is uploaded to solve or export a print.',
   'Click the version badge at the top left to see what is new and check for the latest TailWag update.',
+  'Save your work with the disk button or Ctrl+S, and open it later with Ctrl+O. A project keeps your photo, filaments and every setting.',
+  'Made a mistake? Undo and redo (Ctrl+Z and Ctrl+Y) cover your filaments, swap layers, sizes and sliders. Dragging a slider counts as one step.',
 ];

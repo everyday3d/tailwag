@@ -5,6 +5,7 @@ import { CadCutoutConfig } from '../engine/cadMeshBuilder';
 import { parseFilamentLibraryJson } from '../utils/filamentJsonIO';
 import { optimizeManualSlotBoundaries } from '../engine/autoSolver';
 import { createDefaultPortraitImageData } from '../utils/defaultPortrait';
+import { projectSlots, type ProjectFile } from '../engine/projectFile';
 import userDefaultFilamentsRaw from '../data/userDefaultFilaments.json';
 import {
   addSpoolToMyLibrary,
@@ -79,6 +80,8 @@ export interface TailWagState {
   setSourceImageData: (imageData: ImageData | null) => void;
   setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
   setManualRelief: (mode: 'rematch' | 'fixed') => void;
+  /** Replaces the whole project (picture, stack, settings) with a validated project file. */
+  loadProject: (project: ProjectFile, image: ImageData) => void;
   triggerReRender: () => void;
   setDimensions: (widthMm: number, heightMm: number) => void;
   setLayerParams: (baseLayerMm: number, layerHeightMm: number, totalLayers: number) => void;
@@ -309,7 +312,17 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
     }
     set((state) => ({ manualRelief, renderVersion: (state.renderVersion ?? 0) + 1 }));
   },
-  triggerReRender: () =>
+  loadProject: (project, image) =>
+    set((state) => ({
+      ...project.settings,
+      cad: { ...state.cad, ...project.settings.cad },
+      projectName: project.name,
+      slots: projectSlots(project),
+      sourceImageData: image,
+      slicePreviewMaxLayer: project.settings.totalLayers,
+      slotsAdjusting: false,
+      renderVersion: (state.renderVersion ?? 0) + 1,
+    })),  triggerReRender: () =>
     set((state) => ({
       renderVersion: (state.renderVersion ?? 0) + 1,
     })),
