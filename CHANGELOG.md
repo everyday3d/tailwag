@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Version 1.0.0 was internal and never published, so this is the first public release and includes everything below.
 
 ### Changed
+- **MIT License**: Added a LICENSE file and set the package license to MIT (was marked proprietary).
 - **Repository cleanup for going public**: Removed the unused standalone Python tool and the personal Desktop-shortcut helper from the repository, removed the personal code-index step from the build, and replaced a private network address in the Home Assistant field with a neutral default.
 - **Saved 3MF files are no longer rewritten by Bambu Studio**: The optional post-save pass that re-exported a saved .3mf through the Bambu Studio command line (when installed) was removed. It could change the file after TailWag had verified it, so what you save is now exactly what was verified.
 

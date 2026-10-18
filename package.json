@@ -4,7 +4,7 @@
   "description": "🐕 TailWag — 3D Filament Painting & TD Lithophane Studio",
   "main": "dist-electron/main.js",
   "author": "BoxerDawg 3D (everyday3d)",
-  "license": "Proprietary",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "vite",
