@@ -2,6 +2,7 @@
 
 [![Release](https://img.shields.io/badge/Version-1.2.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=apple)](https://github.com/everyday3d/tailwag/releases)
+[![Wiki Documentation](https://img.shields.io/badge/Docs-Wiki-purple?style=flat-square&logo=github)](https://github.com/everyday3d/tailwag/wiki)
 [![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
