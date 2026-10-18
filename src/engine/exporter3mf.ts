@@ -1,6 +1,14 @@
 import { zipSync, strToU8 } from 'fflate';
 import { HeightmapGrid, generateBinaryStlFromGrid } from './cadMeshBuilder';
 import { LayerSwapSlot } from './opticalTdEngine';
+import {
+  PrintPlan,
+  buildPrintPlan,
+  computeBands,
+  layerTopZ,
+  serializePlanSummary,
+  shortPlanHash,
+} from './printPlan';
 import bambuProjectTemplate from '../data/bambuProjectTemplate.json';
 
 export interface SwapInstructionItem {
@@ -27,14 +35,12 @@ export function buildSwapPlaybook(
   totalLayers: number
 ): SwapInstructionItem[] {
   const sorted = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
+  // Band boundaries and Z values come from the PrintPlan logic so guides, the 3MF and the viewport agree.
+  const bands = computeBands(slots, baseLayerMm, layerHeightMm, totalLayers);
   const items: SwapInstructionItem[] = [];
-  let currentStartLayer = 1;
 
-  sorted.forEach((slot, idx) => {
-    const startLayer = currentStartLayer;
-    const endLayer = idx === sorted.length - 1 ? totalLayers : slot.upToLayer;
-    const startZMm = Number((baseLayerMm + (startLayer - 1) * layerHeightMm).toFixed(2));
-    const endZMm = Number((baseLayerMm + (endLayer - 1) * layerHeightMm).toFixed(2));
+  bands.forEach((band, idx) => {
+    const slot = sorted[idx];
     const amsSlotNumber = (idx % 4) + 1;
     const amsUnitSlot = slot.spool.amsSlot || `AMS Slot A${amsSlotNumber}`;
 
@@ -43,24 +49,22 @@ export function buildSwapPlaybook(
       const prevSlotIdx = idx - 4;
       const prevSpool = sorted[prevSlotIdx]?.spool.name || `Slot A${amsSlotNumber}`;
       const swapWindowLayer = sorted[prevSlotIdx].upToLayer + 1;
-      chainingAction = `Single-AMS Chaining: After Layer ${swapWindowLayer} (${(baseLayerMm + (swapWindowLayer - 1) * layerHeightMm).toFixed(2)}mm), unload ${prevSpool} from Slot A${amsSlotNumber} and load ${slot.spool.name}.`;
+      chainingAction = `Single-AMS Chaining: After Layer ${swapWindowLayer} (${layerTopZ(swapWindowLayer, baseLayerMm, layerHeightMm).toFixed(2)}mm), unload ${prevSpool} from Slot A${amsSlotNumber} and load ${slot.spool.name}.`;
     }
 
     items.push({
-      slotIndex: idx + 1,
-      spoolName: slot.spool.name,
-      brand: slot.spool.brand,
-      hex: slot.spool.hex,
-      td: slot.spool.td,
-      startLayer,
-      endLayer,
-      startZMm,
-      endZMm,
+      slotIndex: band.slotIndex,
+      spoolName: band.spoolName,
+      brand: band.brand,
+      hex: band.hex,
+      td: band.td,
+      startLayer: band.startLayer,
+      endLayer: band.endLayer,
+      startZMm: band.startZMm,
+      endZMm: band.endZMm,
       amsUnitSlot,
       chainingAction,
     });
-
-    currentStartLayer = endLayer + 1;
   });
 
   return items;
@@ -520,8 +524,17 @@ export function generateNoAmsStlPackageZip(params: {
   layerHeightMm: number;
   totalLayers: number;
   slots: LayerSwapSlot[];
+  /** The plan the preview was built from. Built here when omitted. */
+  plan?: PrintPlan;
 }): Uint8Array {
   const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
+  const fresh = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
+  const plan = params.plan ?? fresh;
+  if (plan.hash !== fresh.hash) {
+    throw new Error(
+      `Stale PrintPlan (${shortPlanHash(plan)}) does not match the model being exported (${shortPlanHash(fresh)}). Rebuild the plan and export again.`
+    );
+  }
   const stlBuffer = generateBinaryStlFromGrid(grid);
   const htmlGuide = generateSingleExtruderHtmlGuide(
     projectName,
@@ -544,7 +557,10 @@ export function generateNoAmsStlPackageZip(params: {
     {
       [`${projectName}_TailWag_rev1.stl`]: new Uint8Array(stlBuffer),
       [`${projectName}_Color_Change_Guide.html`]: strToU8(htmlGuide),
-      [`${projectName}_Swap_Playbook.txt`]: strToU8(txtPlaybook),
+      [`${projectName}_Swap_Playbook.txt`]: strToU8(
+        `${txtPlaybook}\n\nPrint Plan ID: ${shortPlanHash(plan)} (full hash ${plan.hash})\n`
+      ),
+      [`${projectName}_TailWag_PrintPlan.json`]: strToU8(serializePlanSummary(plan, projectName)),
     },
     { level: 6 }
   );
@@ -684,10 +700,21 @@ export function generateNative3mfPackage(params: {
   layerHeightMm: number;
   totalLayers: number;
   slots: LayerSwapSlot[];
+  /** The plan the preview was built from. Built here when omitted. */
+  plan?: PrintPlan;
 }): Uint8Array {
   const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
+  const fresh = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
+  const plan = params.plan ?? fresh;
+  if (plan.hash !== fresh.hash) {
+    throw new Error(
+      `Stale PrintPlan (${shortPlanHash(plan)}) does not match the model being exported (${shortPlanHash(fresh)}). Rebuild the plan and export again.`
+    );
+  }
   const playbook = buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers);
-  const playbookText = generatePlaybookText(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots);
+  const playbookText =
+    generatePlaybookText(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots) +
+    `\n\nPrint Plan ID: ${shortPlanHash(plan)} (full hash ${plan.hash})\n`;
 
   // Compute max Z across the entire grid
   let maxGridZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
@@ -704,8 +731,10 @@ export function generateNative3mfPackage(params: {
 
   playbook.forEach((p, idx) => {
     const pid = idx + 1;
-    const zFloor = idx === 0 ? 0.0 : playbook[idx - 1].endZMm;
-    const zCeil = idx === playbook.length - 1 ? maxGridZ + 2.0 : p.endZMm;
+    // Band Z limits come straight from the plan, so they sit exactly on layer boundaries.
+    const band = plan.bands[idx];
+    const zFloor = band.floorZMm;
+    const zCeil = idx === playbook.length - 1 ? maxGridZ + 2.0 : band.ceilZMm;
 
     const bandMesh = buildColorBandPartMesh(grid, zFloor, zCeil, halfZ);
     if (bandMesh.faceCount === 0) return;
@@ -918,6 +947,7 @@ export function generateNative3mfPackage(params: {
     'Metadata/cut_information.xml': strToU8(cutInfoXml),
     'Metadata/filament_sequence.json': strToU8(filamentSeqJson),
     'Metadata/TailWag_Swap_Playbook.txt': strToU8(playbookText),
+    'Metadata/TailWag_PrintPlan.json': strToU8(serializePlanSummary(plan, projectName)),
   };
 
   return zipSync(archiveFiles, { level: 6 });

@@ -39,6 +39,7 @@ import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
+import { buildPrintPlan } from './engine/printPlan';
 import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
 import { SpoolEditModal } from './components/SpoolEditModal';
 import {
@@ -166,6 +167,12 @@ export const App: React.FC = () => {
       invertLuminance,
       cad,
     ]
+  );
+
+  // Single source of truth for what will be printed: the viewport and every export read this plan.
+  const plan = useMemo(
+    () => buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers }),
+    [grid, slots, baseLayerMm, layerHeightMm, totalLayers]
   );
 
   // Owned spools are strictly and exclusively the spools loaded from filaments.json
@@ -936,7 +943,7 @@ export const App: React.FC = () => {
         {/* CENTER: 3D Beer-Lambert Viewport + Bottom Layer Swap Timeline */}
         <main className="flex-1 flex flex-col min-w-0 min-h-0">
           <div className="flex-1 min-h-0 relative">
-            <Viewport3D grid={grid} sourceDataUrl={sourceDataUrl} />
+            <Viewport3D grid={grid} plan={plan} sourceDataUrl={sourceDataUrl} />
           </div>
           <LayerTimeline />
         </main>
@@ -1697,7 +1704,7 @@ export const App: React.FC = () => {
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
-      <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} />
+      <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} plan={plan} />
     </div>
   );
 };

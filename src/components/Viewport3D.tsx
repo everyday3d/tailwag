@@ -3,15 +3,17 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Maximize2, Minimize2, Compass, Eye } from 'lucide-react';
 import { HeightmapGrid } from '../engine/cadMeshBuilder';
-import { buildLayerColorLUT } from '../engine/opticalTdEngine';
+import { PrintPlan, planLayerRgb } from '../engine/printPlan';
 import { useTailWagStore } from '../store/useTailWagStore';
 
 interface Viewport3DProps {
   grid: HeightmapGrid;
+  /** What will be printed. Colors come from here, never re-derived from luminance. */
+  plan: PrintPlan;
   sourceDataUrl: string;
 }
 
-export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) => {
+export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUrl }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -40,11 +42,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     slots,
     renderVersion,
   } = useTailWagStore();
-
-  const layerLUT = useMemo(
-    () => buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots),
-    [totalLayers, baseLayerMm, layerHeightMm, slots]
-  );
 
   const setCameraPreset = (preset: 'top-down' | 'angled-3d') => {
     const cam = cameraRef.current;
@@ -260,9 +257,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
   useEffect(() => {
     const mesh = meshRef.current;
     const cellMap = vertexCellMapRef.current;
-    if (!mesh || cellMap.length === 0 || layerLUT.length === 0) return;
+    if (!mesh || cellMap.length === 0 || plan.layerRgb.length === 0) return;
 
-    const { topZ, normLum } = grid;
+    const { topZ } = grid;
     const maxAllowedLayer = Math.max(1, Math.min(totalLayers, slicePreviewMaxLayer));
     const maxSliceZ = baseLayerMm + (maxAllowedLayer - 1) * layerHeightMm;
     const zVisualScale = 2.5;
@@ -278,21 +275,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
       const clampedZ = Math.min(rawZ, maxSliceZ);
       posArr[v * 3 + 2] = clampedZ * zVisualScale;
 
-      const targetBaseLayers =
-        baseSolidThicknessMm !== undefined
-          ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
-          : Math.min(5, Math.max(1, Math.floor(totalLayers * 0.22)));
-      const minBaseLayer = Math.min(Math.max(1, totalLayers - 2), targetBaseLayers);
-      const cellLayer = Math.max(
-        1,
-        Math.min(maxAllowedLayer, minBaseLayer + Math.round(normLum[idx] * (totalLayers - minBaseLayer)))
-      );
-      const lutEntry = layerLUT[cellLayer - 1] || layerLUT[layerLUT.length - 1];
+      // Layer comes from the print plan (the same slicing rule the exports use), not from luminance.
+      const planLayer = plan.layerGrid[idx];
+      const cellLayer = Math.max(1, Math.min(maxAllowedLayer, planLayer));
+      const layerRgb = planLayerRgb(plan, cellLayer);
 
-      const layerStepShade = cellLayer % 2 === 0 ? 1.0 : 0.965;
-      let rCol = lutEntry.rgb.r * layerStepShade;
-      let gCol = lutEntry.rgb.g * layerStepShade;
-      let bCol = lutEntry.rgb.b * layerStepShade;
+      let rCol = layerRgb.r;
+      let gCol = layerRgb.g;
+      let bCol = layerRgb.b;
 
       if (backlitLithoMode) {
         const transmit = Math.exp(-0.55 * clampedZ);
@@ -316,7 +306,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     }
   }, [
     grid,
-    layerLUT,
+    plan,
     slicePreviewMaxLayer,
     backlitLithoMode,
     baseLayerMm,

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive } from 'lucide-react';
 import { useTailWagStore } from '../store/useTailWagStore';
 import { HeightmapGrid, generateBinaryStlFromGrid } from '../engine/cadMeshBuilder';
+import { PrintPlan, shortPlanHash } from '../engine/printPlan';
 import {
   buildSwapPlaybook,
   generatePlaybookText,
@@ -14,12 +15,15 @@ interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   grid: HeightmapGrid;
+  /** The plan the preview is showing; exports are verified against it. */
+  plan: PrintPlan;
 }
 
-export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid }) => {
+export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid, plan }) => {
   const { projectName, baseLayerMm, layerHeightMm, totalLayers, slots } = useTailWagStore();
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const playbook = useMemo(
     () => buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers),
@@ -27,13 +31,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid 
   );
 
   const playbookText = useMemo(
-    () => generatePlaybookText(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots),
-    [projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots]
+    () =>
+      generatePlaybookText(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots) +
+      `\n\nPrint Plan ID: ${shortPlanHash(plan)} (full hash ${plan.hash})\n`,
+    [projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots, plan]
   );
 
   const htmlGuide = useMemo(
-    () => generateSingleExtruderHtmlGuide(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots),
-    [projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots]
+    () =>
+      generateSingleExtruderHtmlGuide(projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots).replace(
+        '</body>',
+        `<p style="font:12px monospace;color:#888;text-align:center">Print Plan ID: ${shortPlanHash(plan)}</p></body>`
+      ),
+    [projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots, plan]
   );
 
   if (!isOpen) return null;
@@ -69,26 +79,42 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid 
   };
 
   const handleExport3MF = () => {
-    const pkg = generateNative3mfPackage({
+    setExportError(null);
+    let pkg: Uint8Array;
+    try {
+    pkg = generateNative3mfPackage({
       projectName,
       grid,
       baseLayerMm,
       layerHeightMm,
       totalLayers,
       slots,
+      plan,
     });
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     saveUint8OrBuffer(pkg, `${projectName}_TailWag_rev1.3mf`, '3mf');
   };
 
   const handleExportNoAmsBundleZip = () => {
-    const zipBytes = generateNoAmsStlPackageZip({
+    setExportError(null);
+    let zipBytes: Uint8Array;
+    try {
+    zipBytes = generateNoAmsStlPackageZip({
       projectName,
       grid,
       baseLayerMm,
       layerHeightMm,
       totalLayers,
       slots,
+      plan,
     });
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     saveUint8OrBuffer(zipBytes, `${projectName}_NoAMS_STL_and_Pause_Guide_rev1.zip`, 'zip');
   };
 
@@ -116,6 +142,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#121722] border border-slate-700 rounded-xl max-w-4xl w-full p-5 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+        {exportError && (
+          <div className="text-xs px-3 py-2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300">Export blocked: {exportError}</div>
+        )}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
             <Package className="w-5 h-5 text-orange-400" />
@@ -124,7 +153,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid 
                 Export .3MF (Multi-Color AMS) or .STL + Layer-Pause Guide (Single-Head / No-AMS)
               </h2>
               <p className="text-xs text-slate-400">
-                Initial Layer: {baseLayerMm.toFixed(2)}mm • Layer Height: {layerHeightMm.toFixed(2)}mm • 100% Rectilinear Infill • Total: {totalLayers} Layers
+                Initial Layer: {baseLayerMm.toFixed(2)}mm • Layer Height: {layerHeightMm.toFixed(2)}mm • 100% Rectilinear Infill • Total: {totalLayers} Layers � Print Plan {shortPlanHash(plan)}
               </p>
             </div>
           </div>
