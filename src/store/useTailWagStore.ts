@@ -3,6 +3,8 @@ import { FilamentSpool, VERIFIED_FILAMENT_CATALOG } from '../data/filamentCatalo
 import { LayerSwapSlot } from '../engine/opticalTdEngine';
 import { CadCutoutConfig } from '../engine/cadMeshBuilder';
 import { parseFilamentLibraryJson } from '../utils/filamentJsonIO';
+import { optimizeManualSlotBoundaries } from '../engine/autoSolver';
+import { createDefaultPortraitImageData } from '../utils/defaultPortrait';
 import userDefaultFilamentsRaw from '../data/userDefaultFilaments.json';
 
 export type ViewportMode = '3d-mesh' | 'split' | 'source' | 'heightmap';
@@ -21,6 +23,9 @@ export interface TailWagState {
   lightElevationDeg: number;
   backlitLithoMode: boolean;
   slicePreviewMaxLayer: number;
+  renderVersion: number;
+  solverColorMode: 'natural' | 'cmyk' | 'manual';
+  sourceImageData: ImageData | null;
 
   // Physical & Slicer Layer Parameters
   widthMm: number;
@@ -54,6 +59,9 @@ export interface TailWagState {
   setLighting: (azimuth: number, elevation: number) => void;
   setBacklitLithoMode: (backlit: boolean) => void;
   setSlicePreviewMaxLayer: (layer: number) => void;
+  setSourceImageData: (imageData: ImageData | null) => void;
+  setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
+  triggerReRender: () => void;
   setDimensions: (widthMm: number, heightMm: number) => void;
   setLayerParams: (baseLayerMm: number, layerHeightMm: number, totalLayers: number) => void;
   setTotalDepthMm: (depthMm: number) => void;
@@ -79,6 +87,17 @@ export interface TailWagState {
   ) => void;
   removeImportedLibrary: (libraryId: string) => void;
   clearAllImportedLibraries: () => void;
+}
+
+function getInitialImageData(): ImageData | null {
+  try {
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+      return createDefaultPortraitImageData(320).imageData;
+    }
+  } catch {
+    // fallback if canvas or 2d context unavailable
+  }
+  return null;
 }
 
 const CATALOG_STORAGE_KEY = 'tailwag_catalog_v4';
@@ -184,6 +203,20 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   lightElevationDeg: 58,
   backlitLithoMode: false,
   slicePreviewMaxLayer: 24,
+  renderVersion: 0,
+  solverColorMode: 'natural',
+  sourceImageData: getInitialImageData(),
+
+  setSourceImageData: (imageData) =>
+    set((state) => ({
+      sourceImageData: imageData,
+      renderVersion: (state.renderVersion ?? 0) + 1,
+    })),
+  setSolverColorMode: (mode) => set({ solverColorMode: mode }),
+  triggerReRender: () =>
+    set((state) => ({
+      renderVersion: (state.renderVersion ?? 0) + 1,
+    })),
 
   widthMm: 246,
   heightMm: 246,
@@ -306,7 +339,11 @@ export const useTailWagStore = create<TailWagState>((set) => ({
   setMeshResolution: (meshResolution) => set({ meshResolution }),
   setPrePress: (partial) => set((state) => ({ ...state, ...partial })),
   setCadConfig: (partial) => set((state) => ({ cad: { ...state.cad, ...partial } })),
-  setSlots: (slots) => set({ slots }),
+  setSlots: (slots) =>
+    set((state) => ({
+      slots,
+      renderVersion: (state.renderVersion ?? 0) + 1,
+    })),
   updateSlotLayer: (slotId, upToLayer) =>
     set((state) => {
       const idx = state.slots.findIndex((s) => s.id === slotId);
@@ -334,12 +371,33 @@ export const useTailWagStore = create<TailWagState>((set) => ({
         }
       }
       next[N - 1].upToLayer = state.totalLayers;
-      return { slots: next };
+      return {
+        slots: next,
+        solverColorMode: 'manual',
+        renderVersion: (state.renderVersion ?? 0) + 1,
+      };
     }),
   updateSlotSpool: (slotId, spool) =>
-    set((state) => ({
-      slots: state.slots.map((s) => (s.id === slotId ? { ...s, spool } : s)),
-    })),
+    set((state) => {
+      const nextSlots = state.slots.map((s) => (s.id === slotId ? { ...s, spool } : s));
+      let tuned = nextSlots;
+      if (state.sourceImageData) {
+        tuned = optimizeManualSlotBoundaries(
+          state.sourceImageData,
+          nextSlots,
+          state.totalLayers,
+          state.baseLayerMm,
+          state.layerHeightMm,
+          state.baseSolidThicknessMm
+        );
+      }
+      return {
+        slots: tuned,
+        solverColorMode: 'manual',
+        viewportMode: state.viewportMode === 'source' ? '3d-mesh' : state.viewportMode,
+        renderVersion: (state.renderVersion ?? 0) + 1,
+      };
+    }),
   addSlot: (spool) =>
     set((state) => {
       if (state.slots.length >= 16) return state;
@@ -353,25 +411,40 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       ];
       const count = nextSlots.length;
       const nextTotalLayers = Math.max(state.totalLayers, count * 2);
-      const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
-      const distributed = nextSlots.map((s, idx) => {
-        if (idx === count - 1) return { ...s, upToLayer: nextTotalLayers };
-        if (idx === 0) return { ...s, upToLayer: minBaseLayer };
-        const frac = idx / (count - 1);
-        const targetL = Math.round(minBaseLayer + frac * (nextTotalLayers - minBaseLayer));
-        const clampedL = Math.max(idx + 1, Math.min(nextTotalLayers - (count - 1 - idx), targetL));
-        return { ...s, upToLayer: clampedL };
-      });
-      for (let i = 1; i < count; i++) {
-        if (distributed[i].upToLayer <= distributed[i - 1].upToLayer) {
-          distributed[i] = { ...distributed[i], upToLayer: Math.min(nextTotalLayers, distributed[i - 1].upToLayer + 1) };
+      let tuned = nextSlots;
+      if (state.sourceImageData) {
+        tuned = optimizeManualSlotBoundaries(
+          state.sourceImageData,
+          nextSlots,
+          nextTotalLayers,
+          state.baseLayerMm,
+          state.layerHeightMm,
+          state.baseSolidThicknessMm
+        );
+      } else {
+        const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
+        tuned = nextSlots.map((s, idx) => {
+          if (idx === count - 1) return { ...s, upToLayer: nextTotalLayers };
+          if (idx === 0) return { ...s, upToLayer: minBaseLayer };
+          const frac = idx / (count - 1);
+          const targetL = Math.round(minBaseLayer + frac * (nextTotalLayers - minBaseLayer));
+          const clampedL = Math.max(idx + 1, Math.min(nextTotalLayers - (count - 1 - idx), targetL));
+          return { ...s, upToLayer: clampedL };
+        });
+        for (let i = 1; i < count; i++) {
+          if (tuned[i].upToLayer <= tuned[i - 1].upToLayer) {
+            tuned[i] = { ...tuned[i], upToLayer: Math.min(nextTotalLayers, tuned[i - 1].upToLayer + 1) };
+          }
         }
+        tuned[count - 1] = { ...tuned[count - 1], upToLayer: nextTotalLayers };
       }
-      distributed[count - 1] = { ...distributed[count - 1], upToLayer: nextTotalLayers };
       return {
         totalLayers: nextTotalLayers,
         slicePreviewMaxLayer: nextTotalLayers,
-        slots: distributed,
+        slots: tuned,
+        solverColorMode: 'manual',
+        viewportMode: state.viewportMode === 'source' ? '3d-mesh' : state.viewportMode,
+        renderVersion: (state.renderVersion ?? 0) + 1,
       };
     }),
   insertSpoolAt: (spool, targetIndex) =>
@@ -389,25 +462,40 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       });
       const count = nextSlots.length;
       const nextTotalLayers = Math.max(state.totalLayers, count * 2);
-      const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
-      const distributed = nextSlots.map((s, idx) => {
-        if (idx === count - 1) return { ...s, upToLayer: nextTotalLayers };
-        if (idx === 0) return { ...s, upToLayer: minBaseLayer };
-        const frac = idx / (count - 1);
-        const targetL = Math.round(minBaseLayer + frac * (nextTotalLayers - minBaseLayer));
-        const clampedL = Math.max(idx + 1, Math.min(nextTotalLayers - (count - 1 - idx), targetL));
-        return { ...s, upToLayer: clampedL };
-      });
-      for (let i = 1; i < count; i++) {
-        if (distributed[i].upToLayer <= distributed[i - 1].upToLayer) {
-          distributed[i] = { ...distributed[i], upToLayer: Math.min(nextTotalLayers, distributed[i - 1].upToLayer + 1) };
+      let tuned = nextSlots;
+      if (state.sourceImageData) {
+        tuned = optimizeManualSlotBoundaries(
+          state.sourceImageData,
+          nextSlots,
+          nextTotalLayers,
+          state.baseLayerMm,
+          state.layerHeightMm,
+          state.baseSolidThicknessMm
+        );
+      } else {
+        const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
+        tuned = nextSlots.map((s, idx) => {
+          if (idx === count - 1) return { ...s, upToLayer: nextTotalLayers };
+          if (idx === 0) return { ...s, upToLayer: minBaseLayer };
+          const frac = idx / (count - 1);
+          const targetL = Math.round(minBaseLayer + frac * (nextTotalLayers - minBaseLayer));
+          const clampedL = Math.max(idx + 1, Math.min(nextTotalLayers - (count - 1 - idx), targetL));
+          return { ...s, upToLayer: clampedL };
+        });
+        for (let i = 1; i < count; i++) {
+          if (tuned[i].upToLayer <= tuned[i - 1].upToLayer) {
+            tuned[i] = { ...tuned[i], upToLayer: Math.min(nextTotalLayers, tuned[i - 1].upToLayer + 1) };
+          }
         }
+        tuned[count - 1] = { ...tuned[count - 1], upToLayer: nextTotalLayers };
       }
-      distributed[count - 1] = { ...distributed[count - 1], upToLayer: nextTotalLayers };
       return {
         totalLayers: nextTotalLayers,
         slicePreviewMaxLayer: nextTotalLayers,
-        slots: distributed,
+        slots: tuned,
+        solverColorMode: 'manual',
+        viewportMode: state.viewportMode === 'source' ? '3d-mesh' : state.viewportMode,
+        renderVersion: (state.renderVersion ?? 0) + 1,
       };
     }),
   reorderSlots: (fromIndex, toIndex) =>
@@ -422,31 +510,51 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       ) {
         return state;
       }
-      // Capture current monotonic layer boundaries before reordering spools
-      const layerBoundaries = state.slots.map((s) => s.upToLayer).sort((a, b) => a - b);
-      layerBoundaries[N - 1] = state.totalLayers;
-      for (let i = 1; i < N; i++) {
-        if (layerBoundaries[i] <= layerBoundaries[i - 1]) {
-          layerBoundaries[i] = Math.min(state.totalLayers, layerBoundaries[i - 1] + 1);
-        }
-      }
-
       const reordered = [...state.slots];
       const [moved] = reordered.splice(fromIndex, 1);
       reordered.splice(toIndex, 0, moved);
 
-      const updated = reordered.map((slot, idx) => ({
-        ...slot,
-        upToLayer: layerBoundaries[idx],
-      }));
-      return { slots: updated };
+      let tuned = reordered;
+      if (state.sourceImageData) {
+        tuned = optimizeManualSlotBoundaries(
+          state.sourceImageData,
+          reordered,
+          state.totalLayers,
+          state.baseLayerMm,
+          state.layerHeightMm,
+          state.baseSolidThicknessMm
+        );
+      } else {
+        const layerBoundaries = state.slots.map((s) => s.upToLayer).sort((a, b) => a - b);
+        layerBoundaries[N - 1] = state.totalLayers;
+        for (let i = 1; i < N; i++) {
+          if (layerBoundaries[i] <= layerBoundaries[i - 1]) {
+            layerBoundaries[i] = Math.min(state.totalLayers, layerBoundaries[i - 1] + 1);
+          }
+        }
+        tuned = reordered.map((slot, idx) => ({
+          ...slot,
+          upToLayer: layerBoundaries[idx],
+        }));
+      }
+
+      return {
+        slots: tuned,
+        solverColorMode: 'manual',
+        viewportMode: state.viewportMode === 'source' ? '3d-mesh' : state.viewportMode,
+        renderVersion: (state.renderVersion ?? 0) + 1,
+      };
     }),
   distributeSlotsEvenly: () =>
     set((state) => {
       const count = state.slots.length;
       if (count === 0) return state;
       if (count === 1) {
-        return { slots: [{ ...state.slots[0], upToLayer: state.totalLayers }] };
+        return {
+          slots: [{ ...state.slots[0], upToLayer: state.totalLayers }],
+          solverColorMode: 'manual',
+          renderVersion: (state.renderVersion ?? 0) + 1,
+        };
       }
       const minBaseLayer = Math.min(Math.max(2, Math.floor(state.totalLayers / count)), 6);
       const distributed = state.slots.map((s, idx) => {
@@ -463,26 +571,48 @@ export const useTailWagStore = create<TailWagState>((set) => ({
         }
       }
       distributed[count - 1] = { ...distributed[count - 1], upToLayer: state.totalLayers };
-      return { slots: distributed };
+      return {
+        slots: distributed,
+        solverColorMode: 'manual',
+        renderVersion: (state.renderVersion ?? 0) + 1,
+      };
     }),
   removeSlot: (slotId) =>
     set((state) => {
       if (state.slots.length <= 1) return state;
       const filtered = state.slots.filter((s) => s.id !== slotId);
-      const count = filtered.length;
-      for (let i = 0; i < count - 1; i++) {
-        const maxAllowed = state.totalLayers - (count - 1 - i);
-        const minAllowed = i === 0 ? 1 : filtered[i - 1].upToLayer + 1;
-        filtered[i] = {
-          ...filtered[i],
-          upToLayer: Math.max(minAllowed, Math.min(maxAllowed, filtered[i].upToLayer)),
+      let tuned = filtered;
+      if (state.sourceImageData) {
+        tuned = optimizeManualSlotBoundaries(
+          state.sourceImageData,
+          filtered,
+          state.totalLayers,
+          state.baseLayerMm,
+          state.layerHeightMm,
+          state.baseSolidThicknessMm
+        );
+      } else {
+        const count = filtered.length;
+        for (let i = 0; i < count - 1; i++) {
+          const maxAllowed = state.totalLayers - (count - 1 - i);
+          const minAllowed = i === 0 ? 1 : filtered[i - 1].upToLayer + 1;
+          filtered[i] = {
+            ...filtered[i],
+            upToLayer: Math.max(minAllowed, Math.min(maxAllowed, filtered[i].upToLayer)),
+          };
+        }
+        filtered[count - 1] = {
+          ...filtered[count - 1],
+          upToLayer: state.totalLayers,
         };
+        tuned = filtered;
       }
-      filtered[count - 1] = {
-        ...filtered[count - 1],
-        upToLayer: state.totalLayers,
+      return {
+        slots: tuned,
+        solverColorMode: 'manual',
+        viewportMode: state.viewportMode === 'source' ? '3d-mesh' : state.viewportMode,
+        renderVersion: (state.renderVersion ?? 0) + 1,
       };
-      return { slots: filtered };
     }),
   addCustomSpoolToCatalog: (spool) =>
     set((state) => {

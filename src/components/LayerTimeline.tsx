@@ -100,8 +100,12 @@ export const LayerTimeline: React.FC = () => {
           <span>
             BEER-LAMBERT TD LAYER BLEND TIMELINE ({slots.length} COLORS • {totalLayers} LAYERS)
           </span>
-          <span className="text-[10px] font-normal text-slate-400 hidden sm:inline">
-            • Drag colors from Library onto palette or drag cards to rearrange lay-down order
+          <span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 hidden md:inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Auto-Tune &amp; Re-Render
+          </span>
+          <span className="text-[10px] font-normal text-slate-400 hidden lg:inline">
+            • Changing filaments or order re-renders stack immediately
           </span>
         </div>
 

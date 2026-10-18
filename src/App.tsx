@@ -51,7 +51,6 @@ export const App: React.FC = () => {
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
   const [solverColorCount, setSolverColorCount] = useState<4 | 7 | 8 | 12 | 16>(4);
-  const [solverColorMode, setSolverColorMode] = useState<'natural' | 'cmyk' | 'manual'>('natural');
   const [manualDragOverIdx, setManualDragOverIdx] = useState<number | 'append' | null>(null);
   const [manualDraggingSlotIdx, setManualDraggingSlotIdx] = useState<number | null>(null);
   const [jsonImportBanner, setJsonImportBanner] = useState<string | null>(null);
@@ -66,6 +65,9 @@ export const App: React.FC = () => {
     setProjectName,
     viewportMode,
     setViewportMode,
+    solverColorMode,
+    setSolverColorMode,
+    setSourceImageData: setStoreSourceImageData,
     lightAzimuthDeg,
     lightElevationDeg,
     setLighting,
@@ -106,6 +108,11 @@ export const App: React.FC = () => {
     importOwnedLibraryJson,
     removeImportedLibrary,
   } = useTailWagStore();
+
+  // Synchronize initial default portrait image with store for automatic boundary tuning
+  React.useEffect(() => {
+    setStoreSourceImageData(defaultImg.imageData);
+  }, [defaultImg, setStoreSourceImageData]);
 
   // Compute 2.5D Heightmap Grid reactively
   const grid = useMemo(
@@ -191,6 +198,7 @@ export const App: React.FC = () => {
         ctx.drawImage(img, 0, 0, w, h);
         const newImgData = ctx.getImageData(0, 0, w, h);
         setSourceImageData(newImgData);
+        setStoreSourceImageData(newImgData);
         setSourceDataUrl(dataUrl);
 
         // Standardized 246x246mm build plate envelope sizing preserving exact aspect ratio
@@ -993,10 +1001,21 @@ export const App: React.FC = () => {
                             title="Drop a library filament on swatch to replace this slot"
                           />
                           <div className="min-w-0 flex-1">
-                            <div className="text-[11px] font-semibold text-white truncate">
-                              {slot.spool.name}
-                            </div>
-                            <div className="text-[9px] text-slate-400 font-mono truncate">
+                            <select
+                              value={slot.spool.id}
+                              onChange={(e) => {
+                                const found = catalog.find((c) => c.id === e.target.value);
+                                if (found) updateSlotSpool(slot.id, found);
+                              }}
+                              className="bg-slate-950 border border-slate-700/80 rounded px-1 py-0.5 text-[11px] font-semibold text-white truncate w-full focus:outline-none focus:border-emerald-500 cursor-pointer"
+                            >
+                              {catalog.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.brand} — {c.name} (TD {c.td}mm)
+                                </option>
+                              ))}
+                            </select>
+                            <div className="text-[9px] text-slate-400 font-mono truncate mt-0.5">
                               L{startLayer}–L{endLayer} • TD {slot.spool.td.toFixed(1)}mm
                             </div>
                           </div>

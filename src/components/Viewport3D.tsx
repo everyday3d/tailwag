@@ -38,6 +38,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     layerHeightMm,
     totalLayers,
     slots,
+    renderVersion,
   } = useTailWagStore();
 
   const layerLUT = useMemo(
@@ -308,11 +309,22 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, sourceDataUrl }) =
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
     (mesh.material as THREE.MeshStandardMaterial).roughness = backlitLithoMode ? 0.35 : 0.52;
+    (mesh.material as THREE.MeshStandardMaterial).needsUpdate = true;
 
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
-  }, [grid, layerLUT, slicePreviewMaxLayer, backlitLithoMode, baseLayerMm, baseSolidThicknessMm, layerHeightMm, totalLayers]);
+  }, [
+    grid,
+    layerLUT,
+    slicePreviewMaxLayer,
+    backlitLithoMode,
+    baseLayerMm,
+    baseSolidThicknessMm,
+    layerHeightMm,
+    totalLayers,
+    renderVersion,
+  ]);
 
   return (
     <div className="relative w-full h-full bg-[#090d14] overflow-hidden select-none">

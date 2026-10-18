@@ -1910,6 +1910,7 @@ export function optimizeManualSlotBoundaries(
   let bestScore = scoreEnds(currentEnds);
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < count - 1; i++) {
+      if (slots[i]?.locked) continue;
       const minL = i === 0 ? Math.max(2, Math.min(4, currentEnds[1] - 1)) : currentEnds[i - 1] + 1;
       const maxL = currentEnds[i + 1] - 1;
       let bestLayerForI = currentEnds[i];
