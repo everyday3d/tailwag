@@ -10,6 +10,8 @@ import {
   LayerSwapSlot,
 } from '../src/engine/opticalTdEngine';
 import { singleLayerOpacity } from '../src/engine/opticalModel';
+import { buildPrintPlan } from '../src/engine/printPlan';
+import { generateVerified3mfPackage, generateVerifiedStl } from '../src/engine/verifiedExport';
 import {
   buildHeightmapGrid,
   generateBinaryStlFromGrid,
@@ -351,19 +353,23 @@ function handleToolCall(name: string, args: any): any {
       }));
 
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      // Same path as the app: build the print plan once, write the file, re-read it and compare.
+      // A mismatch throws, so a wrong file is never written.
+      const plan = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
       if (outPath.toLowerCase().endsWith('.stl')) {
-        const stlBuf = generateBinaryStlFromGrid(grid);
-        fs.writeFileSync(outPath, Buffer.from(stlBuf));
+        const stl = generateVerifiedStl(grid, plan);
+        fs.writeFileSync(outPath, Buffer.from(stl.data));
       } else {
-        const pkg = generateNative3mfPackage({
+        const pkg = generateVerified3mfPackage({
           projectName,
           grid,
           baseLayerMm,
           layerHeightMm,
           totalLayers,
           slots,
+          plan,
         });
-        fs.writeFileSync(outPath, Buffer.from(pkg));
+        fs.writeFileSync(outPath, Buffer.from(pkg.data));
       }
 
       const playbookPath = outPath.replace(/\.[^.]+$/, '_Swap_Playbook.txt');
