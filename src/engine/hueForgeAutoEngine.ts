@@ -1312,6 +1312,39 @@ export function runHueForgeAutoEngine(
     config.sCurveSteepness ?? 1.25,
     config.sCurveMidpoint ?? 0.48
   );
+  // ============================================================================
+  // UNCOUPLED PIPELINE 1: Structural Height-Map (Sharpness & Edge Contours)
+  // ============================================================================
+  // Generates physical 3D relief contours (tree trunks, branch edges, silhouettes, road boundaries)
+  // directly from rawAdjustedLum via edge-aware unsharp masking, completely uncoupled
+  // from color smoothing filters so physical geometry is never eroded.
+  const structuralSharpenedLum = applyEdgeAwareHeightmapSharpening(
+    rawAdjustedLum,
+    imageData.width,
+    imageData.height,
+    { strength: 0.95, coringThreshold: 0.015, maxOvershoot: 0.18 }
+  );
+
+  // Dynamic range stretch on structural height-map to span 100% of available relief depth
+  let minLum = 1.0;
+  let maxLum = 0.0;
+  for (let i = 0; i < structuralSharpenedLum.length; i++) {
+    if (structuralSharpenedLum[i] < minLum) minLum = structuralSharpenedLum[i];
+    if (structuralSharpenedLum[i] > maxLum) maxLum = structuralSharpenedLum[i];
+  }
+  const lumSpan = maxLum - minLum;
+  const adjustedLuminance = new Float32Array(structuralSharpenedLum.length);
+  if (lumSpan > 0.08) {
+    for (let i = 0; i < structuralSharpenedLum.length; i++) {
+      adjustedLuminance[i] = Math.max(0.0, Math.min(1.0, (structuralSharpenedLum[i] - minLum) / lumSpan));
+    }
+  } else {
+    adjustedLuminance.set(structuralSharpenedLum);
+  }
+
+  // ============================================================================
+  // UNCOUPLED PIPELINE 2: Color-Assignment Matrix (Bilateral Color Blending)
+  // ============================================================================
   // Spatial coherence bilateral filtering on heightmap luminance before layer assignment:
   // Suppresses random background micro-spikes (leaves, rough ground texture) from creating erratic digital static
   const coherentLum = applyBilateralHeightmapFilter(
@@ -1330,34 +1363,6 @@ export function runHueForgeAutoEngine(
     0.35,
     0.08
   );
-
-  // Detail-Preserving Edge-Aware Sharpening (Unsharp Masking in Height Space):
-  // Sharpens micro-details (tree trunks, branches, fine silhouettes, sharp boundaries)
-  // so they don't get blurred out by previous smoothing passes.
-  const sharpenedLum = applyEdgeAwareHeightmapSharpening(
-    smoothedLum,
-    imageData.width,
-    imageData.height,
-    { strength: 0.85, coringThreshold: 0.02, maxOvershoot: 0.15 }
-  );
-
-  // Contrast-Stretched Dynamic Range Allocation:
-  // Dynamically re-normalizes the heightmap across active pixels to utilize 100% of the available Z-depth
-  let minLum = 1.0;
-  let maxLum = 0.0;
-  for (let i = 0; i < sharpenedLum.length; i++) {
-    if (sharpenedLum[i] < minLum) minLum = sharpenedLum[i];
-    if (sharpenedLum[i] > maxLum) maxLum = sharpenedLum[i];
-  }
-  const lumSpan = maxLum - minLum;
-  const adjustedLuminance = new Float32Array(sharpenedLum.length);
-  if (lumSpan > 0.08) {
-    for (let i = 0; i < sharpenedLum.length; i++) {
-      adjustedLuminance[i] = Math.max(0.0, Math.min(1.0, (sharpenedLum[i] - minLum) / lumSpan));
-    }
-  } else {
-    adjustedLuminance.set(sharpenedLum);
-  }
 
   // 4. Optical Layer Ordering
   const ordered = orderFilamentStack(matched);

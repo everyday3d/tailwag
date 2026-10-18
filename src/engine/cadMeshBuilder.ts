@@ -872,52 +872,37 @@ export function buildHeightmapGrid(params: {
     }
   }
 
-  // 1. Apply edge-preserving spatial coherence bilateral filter to height map before layer-swap assignment.
-  // Suppresses random background micro-spikes (leaves, rough pavement/ground gravel) while preserving true silhouette boundaries
-  const coherentLum = applyBilateralHeightmapFilter(enhancedLum, cols, rows, 1.8, 0.08);
-
-  // 2. Spatial Gradient Smoothing with Major Edge Masking (Constraint 3):
-  // Penalizes sudden height discontinuities between neighbor pixels unless coinciding with major edges
-  const smoothedLum = applySpatialGradientSmoothing(coherentLum, cols, rows, 0.35, 0.08);
-
-  // 2b. Detail-Preserving Edge-Aware Sharpening (Unsharp Masking in Height Space):
-  // Restores sharpness on micro-details (tree trunks, branches, fine silhouettes, sharp boundaries)
-  // so they don't get blurred out by previous smoothing passes.
-  const sharpenedLum = applyEdgeAwareHeightmapSharpening(smoothedLum, cols, rows, {
-    strength: 0.85,
-    coringThreshold: 0.02,
-    maxOvershoot: 0.15,
+  // ============================================================================
+  // UNCOUPLED PIPELINE 1: Structural Height-Map (Sharpness & Edge Contours)
+  // ============================================================================
+  // Generates physical 3D relief contours (tree trunks, branch edges, silhouettes, road boundaries)
+  // directly from enhanced luminance via edge-preserving unsharp masking, completely uncoupled
+  // from color smoothing filters so physical geometry is never eroded.
+  const structuralSharpenedLum = applyEdgeAwareHeightmapSharpening(enhancedLum, cols, rows, {
+    strength: 0.95,
+    coringThreshold: 0.015,
+    maxOvershoot: 0.18,
   });
 
-  // 2c. Contrast-Stretched Dynamic Range Allocation:
-  // Dynamically re-normalizes the heightmap across active pixels so that shadows hit the base layer
-  // and highlights hit the max height limit, utilizing 100% of the available Z-depth.
-  let minLum = 1.0;
-  let maxLum = 0.0;
+  // Dynamic range stretch on structural height-map to span 100% of available relief depth
+  let minStruct = 1.0;
+  let maxStruct = 0.0;
   for (let i = 0; i < cols * rows; i++) {
-    if (sharpenedLum[i] < minLum) minLum = sharpenedLum[i];
-    if (sharpenedLum[i] > maxLum) maxLum = sharpenedLum[i];
+    if (structuralSharpenedLum[i] < minStruct) minStruct = structuralSharpenedLum[i];
+    if (structuralSharpenedLum[i] > maxStruct) maxStruct = structuralSharpenedLum[i];
   }
-  const lumSpan = maxLum - minLum;
-  const finalLum = new Float32Array(cols * rows);
-  if (lumSpan > 0.08) {
+  const structSpan = maxStruct - minStruct;
+  const structuralHeightmap = new Float32Array(cols * rows);
+  if (structSpan > 0.08) {
     for (let i = 0; i < cols * rows; i++) {
-      finalLum[i] = Math.max(0.0, Math.min(1.0, (sharpenedLum[i] - minLum) / lumSpan));
+      structuralHeightmap[i] = Math.max(0.0, Math.min(1.0, (structuralSharpenedLum[i] - minStruct) / structSpan));
     }
   } else {
-    finalLum.set(sharpenedLum);
+    structuralHeightmap.set(structuralSharpenedLum);
   }
 
-  const clockStencilMask = cad.clockMode ? renderClockStencilMask(cols, rows, cad.clockStencil) : new Uint8Array(cols * rows);
-  const maxReliefZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
-  const halfW = widthMm / 2;
-  const halfH = heightMm / 2;
-  const frameNormThreshold = (cad.frameWidthMm / Math.max(widthMm, heightMm)) * 2.0;
-
-  // 3. Adaptive Quantization Banding Control & Edge-Protected Region Merging:
-  // Instead of flat block quantization, dynamically adjust layer-height snapping based on local gradients.
-  // Allow tighter, smoother micro-steps in high-detail / edge zones, and reserve discrete steps for flat backgrounds.
-  const edgeMask = computeSobelEdgeMask(finalLum, cols, rows);
+  // High-contrast structural edge detection
+  const edgeMask = computeSobelEdgeMask(structuralHeightmap, cols, rows);
   const isEdgeZone = new Uint8Array(cols * rows);
   const edgeThreshold = 0.08;
   for (let i = 0; i < cols * rows; i++) {
@@ -925,6 +910,36 @@ export function buildHeightmapGrid(params: {
       isEdgeZone[i] = 1;
     }
   }
+
+  // ============================================================================
+  // UNCOUPLED PIPELINE 2: Color-Assignment Matrix (Bilateral Color Blending)
+  // ============================================================================
+  // Applies bilateral filtering and spatial gradient smoothing to prevent color banding
+  // and harsh color transitions, without degrading the physical structural contours.
+  const coherentLum = applyBilateralHeightmapFilter(enhancedLum, cols, rows, 1.8, 0.08);
+  const colorSmoothedLum = applySpatialGradientSmoothing(coherentLum, cols, rows, 0.35, 0.08);
+
+  let minColor = 1.0;
+  let maxColor = 0.0;
+  for (let i = 0; i < cols * rows; i++) {
+    if (colorSmoothedLum[i] < minColor) minColor = colorSmoothedLum[i];
+    if (colorSmoothedLum[i] > maxColor) maxColor = colorSmoothedLum[i];
+  }
+  const colorSpan = maxColor - minColor;
+  const finalColorLum = new Float32Array(cols * rows);
+  if (colorSpan > 0.08) {
+    for (let i = 0; i < cols * rows; i++) {
+      finalColorLum[i] = Math.max(0.0, Math.min(1.0, (colorSmoothedLum[i] - minColor) / colorSpan));
+    }
+  } else {
+    finalColorLum.set(colorSmoothedLum);
+  }
+
+  const clockStencilMask = cad.clockMode ? renderClockStencilMask(cols, rows, cad.clockStencil) : new Uint8Array(cols * rows);
+  const maxReliefZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
+  const halfW = widthMm / 2;
+  const halfH = heightMm / 2;
+  const frameNormThreshold = (cad.frameWidthMm / Math.max(widthMm, heightMm)) * 2.0;
 
   const minBaseLayer =
     baseSolidThicknessMm !== undefined
@@ -934,7 +949,7 @@ export function buildHeightmapGrid(params: {
   const rawDiscreteLayers = new Uint16Array(cols * rows);
   const continuousLayers = new Float32Array(cols * rows);
   for (let i = 0; i < cols * rows; i++) {
-    const contL = minBaseLayer + finalLum[i] * (totalLayers - minBaseLayer);
+    const contL = minBaseLayer + finalColorLum[i] * (totalLayers - minBaseLayer);
     continuousLayers[i] = contL;
     rawDiscreteLayers[i] = Math.max(minBaseLayer, Math.min(totalLayers, Math.round(contL)));
   }
@@ -989,10 +1004,11 @@ export function buildHeightmapGrid(params: {
 
       if (isEdgeZone[idx] === 1) {
         // High-contrast / edge zone: continuous micro-steps preserve sharp slopes & fine geometry
-        const contL = Math.max(minBaseLayer, Math.min(totalLayers, continuousLayers[idx]));
-        discreteLayer = Math.round(contL);
-        cellLum = (contL - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
-        zMm = baseLayerMm + (contL - 1) * layerHeightMm;
+        // Use structural heightmap directly so physical contours are never degraded by color smoothing!
+        const structContL = minBaseLayer + structuralHeightmap[idx] * (totalLayers - minBaseLayer);
+        discreteLayer = Math.round(structContL);
+        cellLum = structuralHeightmap[idx];
+        zMm = baseLayerMm + (structContL - 1) * layerHeightMm;
       } else {
         // Flat background gradient: clean discrete layer snapping
         cellLum = (discreteLayer - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
