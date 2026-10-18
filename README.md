@@ -1,6 +1,7 @@
 # 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.1.2`)
 
 [![Release](https://img.shields.io/badge/Version-1.1.2-orange?style=flat-square&logo=windows)](CHANGELOG.md)
+[![Platforms: Windows | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=apple)](https://github.com/everyday3d/tailwag/releases)
 [![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
@@ -10,7 +11,7 @@
 > **New release, bugs possible.** TailWag Studio 1.1 is new and may contain bugs, and predicted colours are estimates until you calibrate your filaments. If you find a problem, please [open an issue](https://github.com/everyday3d/tailwag/issues).
 
 > [!NOTE]
-> **Windows shows a blue warning or blocks the file?** The installer is not code-signed yet. See [how to get past it](#installing-on-windows-and-the-blue-windows-protected-your-pc-screen).
+> **Windows shows a blue warning or macOS blocks the app?** The releases are not code-signed yet. See [how to open on Windows](#installing-on-windows-and-the-blue-windows-protected-your-pc-screen) and [how to open on macOS](#installing-on-macos-apple-silicon--intel).
 
 > **Independent project.** TailWag Studio is not affiliated with or endorsed by HueForge, Bambu Lab, Prusa, or any filament maker. We do not own or claim to own HueForge or any other third-party name or trademark. See [NOTICE.md](NOTICE.md).
 ---
@@ -143,6 +144,26 @@ Get-FileHash .\TailWag-Setup-1.1.2.exe -Algorithm SHA256
 The two values should be identical. You can also read every line of the source code in this repository.
 
 Still stuck? Please [open an issue](https://github.com/everyday3d/tailwag/issues) and say which message you see.
+
+## Installing on macOS (Apple Silicon & Intel)
+
+Releases are published as `.dmg` installers and `.zip` bundles on the [releases page](https://github.com/everyday3d/tailwag/releases):
+- **Apple Silicon (M1, M2, M3, M4)**: Download `TailWag-Setup-*-mac-arm64.dmg`.
+- **Intel Macs**: Download `TailWag-Setup-*-mac-x64.dmg`.
+
+Open the downloaded `.dmg` and drag **TailWag Studio.app** to your `/Applications` folder.
+
+### "TailWag Studio is damaged and can't be opened" or "Unidentified Developer"
+Because TailWag Studio is a free community project without a paid Apple Developer certificate, macOS Gatekeeper blocks it by default on the first launch. This is standard behavior for open-source apps.
+
+**How to open:**
+1. **Quick Method**: Right-click (or Control-click) `TailWag Studio.app` in `/Applications`, choose **Open**, and click **Open** in the confirmation prompt.
+2. **Terminal Command (cleanest)**: Open Terminal and run:
+   ```bash
+   xattr -cr /Applications/TailWag\ Studio.app
+   ```
+   This clears the quarantine attribute applied to files downloaded from the web.
+3. **System Settings**: Go to **System Settings > Privacy & Security**, scroll down to the **Security** section, and click **Open Anyway**.
 ## Notices and reporting bugs
 
 TailWag Studio is a new release and can have bugs. Please report them on the [issue tracker](https://github.com/everyday3d/tailwag/issues); the bug report form asks for your version and the steps to reproduce.

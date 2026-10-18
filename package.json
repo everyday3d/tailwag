@@ -13,7 +13,9 @@
     "electron:dev": "concurrently -k \"vite --port 5188\" \"wait-on tcp:5188 && electron .\"",
     "electron:pack": "npm run build && electron-builder --dir",
     "electron:dist": "npm run build && electron-builder",
-    "test": "vitest run"
+    "electron:mac": "npm run build && electron-builder --mac",
+    "electron:win": "npm run build && electron-builder --win",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "fflate": "^0.8.2",
@@ -53,6 +55,32 @@
       "build/icon.ico",
       "build/icon.png"
     ],
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.graphics-design",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "TailWag-Setup-${version}-mac-${arch}.${ext}"
+    },
     "win": {
       "icon": "build/icon.ico",
       "target": [

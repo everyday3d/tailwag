@@ -51,21 +51,35 @@ interface ReleasePayload {
 }
 
 /** Reads a GitHub "latest release" response. Returns null for anything unusable (drafts, no version). */
-export function parseRelease(payload: unknown): UpdateInfo | null {
+export function parseRelease(payload: unknown, platform?: string): UpdateInfo | null {
   if (!payload || typeof payload !== 'object') return null;
   const p = payload as ReleasePayload;
   if (p.draft) return null;
   const version = parseVersion(p.tag_name ?? p.name ?? '');
   if (!version) return null;
   const text = `${version.core.join('.')}${version.pre ? '-' + version.pre : ''}`;
-  const setup = (p.assets ?? []).find((a) => /setup.*\.exe$/i.test(a.name ?? ''));
-  const anyExe = (p.assets ?? []).find((a) => /\.exe$/i.test(a.name ?? ''));
+
+  const isDarwin = platform === 'darwin' || (typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent));
+  const assets = p.assets ?? [];
+
+  let downloadUrl: string | undefined;
+  if (isDarwin) {
+    const dmg = assets.find((a) => /\.dmg$/i.test(a.name ?? ''));
+    const macZip = assets.find((a) => /mac.*\.zip$/i.test(a.name ?? ''));
+    downloadUrl = (dmg ?? macZip)?.browser_download_url;
+  }
+  if (!downloadUrl) {
+    const setup = assets.find((a) => /setup.*\.exe$/i.test(a.name ?? ''));
+    const anyExe = assets.find((a) => /\.exe$/i.test(a.name ?? ''));
+    downloadUrl = (setup ?? anyExe)?.browser_download_url;
+  }
+
   return {
     version: text,
     name: p.name || `TailWag Studio ${text}`,
     notes: (p.body ?? '').trim(),
     pageUrl: p.html_url ?? RELEASES_PAGE_URL,
-    downloadUrl: (setup ?? anyExe)?.browser_download_url,
+    downloadUrl,
     publishedAt: p.published_at,
   };
 }
@@ -79,7 +93,7 @@ export interface RawResponse {
 }
 
 /** Turns a raw response into a user-facing result. Pure, so it can be tested without a network. */
-export function interpretResponse(current: string, res: RawResponse): UpdateResult {
+export function interpretResponse(current: string, res: RawResponse, platform?: string): UpdateResult {
   if (res.status === 404) {
     return { kind: 'unavailable', reason: 'No public release was found yet, so there is nothing newer to offer.' };
   }
@@ -89,7 +103,7 @@ export function interpretResponse(current: string, res: RawResponse): UpdateResu
       reason: res.error ? `Could not reach the update server (${res.error}).` : `The update server answered with an error (HTTP ${res.status}).`,
     };
   }
-  const info = parseRelease(res.json);
+  const info = parseRelease(res.json, platform);
   if (!info) return { kind: 'unavailable', reason: 'The latest release did not contain a readable version number.' };
   const cmp = compareVersions(info.version, current);
   if (cmp > 0) return { kind: 'update', current, info };
