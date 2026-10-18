@@ -85,7 +85,7 @@ export interface TailWagState {
   addCustomSpoolToCatalog: (spool: FilamentSpool) => void;
   /** Adds to "My Filaments" (owned). Returns an error message when rejected, else null. */
   addSpoolToMyFilaments: (spool: FilamentSpool) => string | null;
-  updateSpool: (spoolId: string, patch: Partial<FilamentSpool>) => void;
+  updateSpool: (spoolId: string, patch: Partial<FilamentSpool>, opts?: { force?: boolean }) => void;
   removeMySpool: (spoolId: string) => void;
   toggleSpoolOwned: (spoolId: string) => void;
   syncAmsSpools: (amsSpools: FilamentSpool[]) => void;
@@ -637,11 +637,30 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
     set({ catalog: result.catalog, importedLibraries: result.importedLibraries });
     return null;
   },
-  updateSpool: (spoolId, patch) =>
+  updateSpool: (spoolId, patch, opts) =>
     set((state) => {
-      const next = updateSpoolInCatalog(state.catalog, spoolId, patch);
+      const next = updateSpoolInCatalog(state.catalog, spoolId, patch, opts);
       saveStoreDataToStorage(next, state.importedLibraries);
-      return { catalog: next, renderVersion: (state.renderVersion ?? 0) + 1 };
+      const edited = next.find((s) => s.id === spoolId);
+
+      // Slots hold copies of spools: keep them in sync, and re-tune swap layers when an
+      // edited spool is actually in the stack (its color/TD changes the optical result).
+      const usedInStack = !!edited && state.slots.some((s) => s.spool.id === spoolId);
+      let slots = state.slots;
+      if (edited && usedInStack) {
+        slots = state.slots.map((s) => (s.spool.id === spoolId ? { ...s, spool: edited } : s));
+        if (state.sourceImageData && (patch.hex !== undefined || patch.td !== undefined)) {
+          slots = optimizeManualSlotBoundaries(
+            state.sourceImageData,
+            slots,
+            state.totalLayers,
+            state.baseLayerMm,
+            state.layerHeightMm,
+            state.baseSolidThicknessMm
+          );
+        }
+      }
+      return { catalog: next, slots, renderVersion: (state.renderVersion ?? 0) + 1 };
     }),
   removeMySpool: (spoolId) =>
     set((state) => {

@@ -292,7 +292,19 @@ export const FilamentLibraryModal: React.FC<Props> = ({ isOpen, onClose }) => {
                         <div className="min-w-0">
                           <div className="text-xs font-semibold text-slate-100 truncate">{e.name}</div>
                           <div className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                            <span className="text-slate-300 font-medium">{e.brand}</span>
+                            {e.sourceUrl ? (
+                              <a
+                                href={e.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-slate-300 font-medium hover:text-orange-300 underline decoration-dotted"
+                                title={`Verify against ${e.brand}'s page`}
+                              >
+                                {e.brand}
+                              </a>
+                            ) : (
+                              <span className="text-slate-300 font-medium">{e.brand}</span>
+                            )}
                             <span>•</span>
                             <span className="px-1 rounded bg-slate-800 text-slate-300">{e.material}</span>
                             <span>•</span>

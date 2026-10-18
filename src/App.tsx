@@ -23,6 +23,7 @@ import {
   ArrowDown,
   Plus,
   Hand,
+  Pencil,
 } from 'lucide-react';
 import { useTailWagStore } from './store/useTailWagStore';
 import { createDefaultPortraitImageData } from './utils/defaultPortrait';
@@ -39,6 +40,7 @@ import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
 import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
+import { SpoolEditModal } from './components/SpoolEditModal';
 import {
   filterAndSortSpools,
   amsSlotsOf,
@@ -72,6 +74,7 @@ export const App: React.FC = () => {
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
+  const [editingSpoolId, setEditingSpoolId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -816,13 +819,23 @@ export const App: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => addSlot(spool)}
-                      disabled={slots.length >= 16}
-                      className="px-2 py-1 rounded bg-slate-900 hover:bg-orange-600 text-[11px] font-semibold text-slate-300 hover:text-white border border-slate-700 transition shrink-0 disabled:opacity-40"
-                    >
-                      + Stack
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => setEditingSpoolId(spool.id)}
+                        className="p-1 rounded bg-slate-900 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition"
+                        title="Edit this filament (name, color, TD, AMS slot)"
+                        aria-label={`Edit ${spool.name}`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => addSlot(spool)}
+                        disabled={slots.length >= 16}
+                        className="px-2 py-1 rounded bg-slate-900 hover:bg-orange-600 text-[11px] font-semibold text-slate-300 hover:text-white border border-slate-700 transition disabled:opacity-40"
+                      >
+                        + Stack
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -1683,6 +1696,7 @@ export const App: React.FC = () => {
       {/* Modals */}
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
+      <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} />
     </div>
   );

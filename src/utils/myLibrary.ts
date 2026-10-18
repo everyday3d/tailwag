@@ -64,7 +64,8 @@ export function addSpoolToMyLibrary(
 export function updateSpoolInCatalog(
   catalog: FilamentSpool[],
   spoolId: string,
-  patch: Partial<FilamentSpool>
+  patch: Partial<FilamentSpool>,
+  opts: { force?: boolean } = {}
 ): FilamentSpool[] {
   return catalog.map((s) => {
     if (s.id !== spoolId) return s;
@@ -72,7 +73,7 @@ export function updateSpoolInCatalog(
     if (patch.td !== undefined || patch.tdSource !== undefined) {
       const incoming: TdSource = patch.tdSource ?? 'user';
       const existing: TdSource = s.tdSource ?? 'catalog';
-      if (TD_SOURCE_RANK[incoming] < TD_SOURCE_RANK[existing]) {
+      if (!opts.force && TD_SOURCE_RANK[incoming] < TD_SOURCE_RANK[existing]) {
         next.td = s.td;
         next.tdSource = s.tdSource;
       } else {

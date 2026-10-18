@@ -35,6 +35,8 @@ export interface CatalogEntry extends FilamentSpool {
   hueFamily: HueFamily;
   confidence: 'approx' | 'verified';
   source: string;
+  /** Public manufacturer page to verify the color against, when known */
+  sourceUrl?: string;
 }
 
 type Row = [brand: string, line: string, material: FilamentSpool['material'], name: string, hex: string];
@@ -138,6 +140,23 @@ const ROWS: Row[] = [
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
+/**
+ * Public manufacturer pages each brand's colors were compiled against. Colors are still
+ * approximate (see MANUFACTURER_CATALOG_SOURCE); the URL tells a reviewer where to verify.
+ * Every brand present in the catalog must have an entry (enforced by a test).
+ */
+export const BRAND_SOURCES: Record<string, string> = {
+  'Bambu Lab': 'https://bambulab.com/en/filament',
+  Polymaker: 'https://polymaker.com',
+  eSun: 'https://www.esun3d.com',
+  Elegoo: 'https://www.elegoo.com',
+  Sunlu: 'https://www.sunlu.com',
+  Hatchbox: 'https://www.hatchbox3d.com',
+  Overture: 'https://overturebrand.com',
+  Prusament: 'https://www.prusa3d.com/category/prusament/',
+  Creality: 'https://www.creality.com',
+};
+
 /** Classifies a hex color into a coarse family for filtering. */
 export function hueFamilyOf(hex: string): HueFamily {
   const lab = rgbToLab(hexToRgb01(hex));
@@ -179,6 +198,7 @@ function buildCatalog(): CatalogEntry[] {
       tdSource: 'catalog',
       confidence: 'verified',
       source: 'Bundled verified catalog',
+      sourceUrl: BRAND_SOURCES[v.brand],
     });
     seen.add(catalogId);
   }
@@ -201,6 +221,7 @@ function buildCatalog(): CatalogEntry[] {
       hueFamily: hueFamilyOf(hex),
       confidence: 'approx',
       source: MANUFACTURER_CATALOG_SOURCE,
+      sourceUrl: BRAND_SOURCES[brand],
     });
   }
   return out;

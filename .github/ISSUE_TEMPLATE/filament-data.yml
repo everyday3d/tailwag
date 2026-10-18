@@ -1,0 +1,48 @@
+name: Filament data
+description: Add or correct a filament color or TD value
+title: "filament-data: <brand> <color name>"
+labels: ["filament-data"]
+body:
+  - type: input
+    id: brand
+    attributes:
+      label: Brand
+      placeholder: Bambu Lab
+    validations:
+      required: true
+  - type: input
+    id: line
+    attributes:
+      label: Product line
+      placeholder: PLA Basic
+  - type: input
+    id: name
+    attributes:
+      label: Color name
+    validations:
+      required: true
+  - type: input
+    id: hex
+    attributes:
+      label: Hex color
+      placeholder: "#RRGGBB"
+    validations:
+      required: true
+  - type: input
+    id: td
+    attributes:
+      label: TD (mm), if known
+  - type: dropdown
+    id: how
+    attributes:
+      label: How was this obtained?
+      options:
+        - Manufacturer color chart
+        - My own measurement
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes or source link
