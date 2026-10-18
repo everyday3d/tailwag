@@ -275,6 +275,7 @@ interface Props {
 export const OnboardingTour: React.FC<Props> = ({ isOpen, onClose }) => {
   // Development-only deep link (?tourstep=N) used to inspect a single step; ignored in production builds.
   const [step, setStep] = useState(() => {
+    if (typeof window === 'undefined') return 0;
     if (!(import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) return 0;
     const n = Number(new URLSearchParams(window.location.search).get('tourstep'));
     return Number.isInteger(n) && n >= 0 && n < TOUR_STEPS.length ? n : 0;
