@@ -40,6 +40,16 @@ import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
 import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
 import {
+  filterAndSortSpools,
+  amsSlotsOf,
+  solverUsable,
+  nextStock,
+  stockOf,
+  STOCK_LABEL,
+  type StockFilter,
+  type SortMode,
+} from './utils/libraryView';
+import {
   computeStandardBedDimensions,
   STANDARD_BUILD_PLATE_MAX_BBOX_MM,
 } from './engine/layerSliceConverter';
@@ -51,6 +61,9 @@ export const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
+  const [amsFilter, setAmsFilter] = useState<string>('all');
+  const [stockFilter, setStockFilter] = useState<StockFilter>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('default');
   const [solverColorCount, setSolverColorCount] = useState<4 | 7 | 8 | 12 | 16>(4);
   const [manualDragOverIdx, setManualDragOverIdx] = useState<number | 'append' | null>(null);
   const [manualDraggingSlotIdx, setManualDraggingSlotIdx] = useState<number | null>(null);
@@ -107,6 +120,7 @@ export const App: React.FC = () => {
     updateSlotSpool,
     removeSlot,
     toggleSpoolOwned,
+    updateSpool,
     importOwnedLibraryJson,
     removeImportedLibrary,
   } = useTailWagStore();
@@ -158,24 +172,26 @@ export const App: React.FC = () => {
   const effectiveLibraryTab = hasOwnedLibrary ? libraryTab : 'all';
   const effectiveSolverPoolMode = hasOwnedLibrary ? solverPoolMode : 'shown';
 
+  const amsSlotOptions = useMemo(() => amsSlotsOf(catalog), [catalog]);
+
   const filteredCatalog = useMemo(() => {
     const baseList = effectiveLibraryTab === 'owned' ? ownedSpools : builtInSpools;
-    if (!searchQuery.trim()) return baseList;
-    const q = searchQuery.toLowerCase();
-    return baseList.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.brand.toLowerCase().includes(q) ||
-        s.material.toLowerCase().includes(q)
-    );
-  }, [effectiveLibraryTab, ownedSpools, builtInSpools, searchQuery]);
+    return filterAndSortSpools(baseList, {
+      query: searchQuery,
+      ams: amsFilter,
+      stock: stockFilter,
+      sort: sortMode,
+    });
+  }, [effectiveLibraryTab, ownedSpools, builtInSpools, searchQuery, amsFilter, stockFilter, sortMode]);
 
+  // Spools marked "Out" are never offered to the auto-solver.
   const getCandidatePoolForMode = (mode: 'owned' | 'shown', customOwnedList?: typeof catalog) => {
     if (mode === 'owned') {
-      const owned = customOwnedList ?? ownedSpools;
+      const owned = solverUsable(customOwnedList ?? ownedSpools);
       if (owned.length >= 2) return owned;
     }
-    return filteredCatalog.length >= 2 ? filteredCatalog : builtInSpools;
+    const shown = solverUsable(filteredCatalog);
+    return shown.length >= 2 ? shown : solverUsable(builtInSpools);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -687,6 +703,52 @@ export const App: React.FC = () => {
               />
             </div>
 
+            <div className="grid grid-cols-3 gap-1.5">
+              <select
+                value={amsFilter}
+                onChange={(e) => setAmsFilter(e.target.value)}
+                className="bg-slate-900 border border-slate-700/80 rounded-lg px-1.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-orange-500"
+                aria-label="Filter by AMS slot"
+                title="Filter by AMS slot"
+              >
+                <option value="all">All slots</option>
+                <option value="loaded">Loaded in AMS</option>
+                <option value="none">Not in AMS</option>
+                {amsSlotOptions.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value as StockFilter)}
+                className="bg-slate-900 border border-slate-700/80 rounded-lg px-1.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-orange-500"
+                aria-label="Filter by stock"
+                title="Filter by stock"
+              >
+                <option value="all">Any stock</option>
+                <option value="available">Available</option>
+                <option value="ok">In stock</option>
+                <option value="low">Low</option>
+                <option value="out">Out</option>
+              </select>
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+                className="bg-slate-900 border border-slate-700/80 rounded-lg px-1.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-orange-500"
+                aria-label="Sort filaments"
+                title="Sort filaments"
+              >
+                <option value="default">Default order</option>
+                <option value="td-asc">TD low → high</option>
+                <option value="td-desc">TD high → low</option>
+                <option value="lightness">Dark → light</option>
+                <option value="name">Name</option>
+                <option value="brand">Brand</option>
+              </select>
+            </div>
+
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
               {filteredCatalog.length === 0 ? (
                 <div className="text-center py-6 px-3 text-xs text-slate-400 bg-slate-900/50 rounded-lg border border-slate-800/80">
@@ -733,6 +795,19 @@ export const App: React.FC = () => {
                           <span>•</span>
                           <span className="text-orange-400 font-mono">TD {spool.td.toFixed(1)}mm</span>
                           <TdSourceBadge source={spool.tdSource} />
+                          <button
+                            onClick={() => updateSpool(spool.id, { stock: nextStock(spool.stock) })}
+                            title="Click to cycle stock: In stock → Low → Out (Out is skipped by the auto-solver)"
+                            className={`px-1 rounded text-[9px] font-semibold border ${
+                              stockOf(spool) === 'ok'
+                                ? 'border-slate-700 text-slate-400 hover:text-slate-200'
+                                : stockOf(spool) === 'low'
+                                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+                                  : 'border-rose-500/50 bg-rose-500/15 text-rose-300'
+                            }`}
+                          >
+                            {STOCK_LABEL[stockOf(spool)]}
+                          </button>
                           {spool.amsSlot && (
                             <span className="px-1 rounded bg-sky-500/20 text-sky-300 font-mono">
                               {spool.amsSlot}

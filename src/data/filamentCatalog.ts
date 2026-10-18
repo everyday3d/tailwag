@@ -16,6 +16,8 @@ export interface FilamentSpool {
   line?: string;
   /** Id of the bundled manufacturer catalog entry this spool was created from */
   catalogId?: string;
+  /** Spool availability. Missing means in stock. 'out' spools are excluded from the auto-solver. */
+  stock?: 'ok' | 'low' | 'out';
 }
 
 export type {

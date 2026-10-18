@@ -253,6 +253,11 @@ export function parseFilamentLibraryJson(
       td: Math.round(td * 10) / 10,
       owned: true,
       amsSlot: typeof item.amsSlot === 'string' ? item.amsSlot : undefined,
+      stock: item.stock === 'low' || item.stock === 'out' ? item.stock : undefined,
+      tdSource:
+        item.tdSource === 'measured' || item.tdSource === 'user' || item.tdSource === 'estimate'
+          ? item.tdSource
+          : 'user',
       libraryId,
       libraryName,
     });
@@ -285,6 +290,8 @@ export function serializeFilamentLibraryJson(spools: FilamentSpool[]): string {
       td: s.td,
       owned: s.owned,
       amsSlot: s.amsSlot,
+      stock: s.stock,
+      tdSource: s.tdSource,
       Brand: s.brand,
       Name: s.name,
       Type: s.material,
@@ -300,6 +307,9 @@ export function serializeFilamentLibraryJson(spools: FilamentSpool[]): string {
       Transmissivity: s.td,
       Owned: s.owned,
       uuid: s.id,
+      amsSlot: s.amsSlot,
+      stock: s.stock,
+      tdSource: s.tdSource,
     })),
   };
   return JSON.stringify(payload, null, 2);
