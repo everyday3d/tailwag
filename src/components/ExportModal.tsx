@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive, Image as ImageIcon, Braces } from 'lucide-react';
 import { useTailWagStore } from '../store/useTailWagStore';
-import { HeightmapGrid, generateBinaryStlFromGrid } from '../engine/cadMeshBuilder';
+import { HeightmapGrid } from '../engine/cadMeshBuilder';
 import { PrintPlan, shortPlanHash } from '../engine/printPlan';
 import { buildPrintMetadata, serializePrintMetadata } from '../engine/printMetadata';
 import { renderPlanComparisonPng } from '../engine/planPreview';
+import { ExportVerificationError, type VerificationReport } from '../engine/verifyExport';
+import {
+  generateVerified3mfPackage,
+  generateVerifiedNoAmsBundle,
+  generateVerifiedStl,
+} from '../engine/verifiedExport';
 import {
   buildSwapPlaybook,
   generatePlaybookText,
   generateSingleExtruderHtmlGuide,
-  generateNoAmsStlPackageZip,
-  generateNative3mfPackage,
 } from '../engine/exporter3mf';
 
 interface ExportModalProps {
@@ -26,6 +30,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportIssues, setExportIssues] = useState<string[]>([]);
+  const [verifiedNote, setVerifiedNote] = useState<string | null>(null);
 
   const playbook = useMemo(
     () => buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers),
@@ -101,53 +107,74 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     }
   };
 
-  const handleExport3MF = () => {
+  // Every file is re-read and compared with the print plan before it is saved.
+  // A mismatch blocks the export; there is no override.
+  const runVerified = <T extends Uint8Array | ArrayBuffer>(
+    build: () => { data: T; report: VerificationReport },
+    filename: string,
+    ext: string
+  ) => {
     setExportError(null);
-    let pkg: Uint8Array;
+    setExportIssues([]);
+    setVerifiedNote(null);
+    let result: { data: T; report: VerificationReport };
     try {
-      pkg = generateNative3mfPackage({
-        projectName,
-        grid,
-        baseLayerMm,
-        layerHeightMm,
-        totalLayers,
-        slots,
-        plan,
-        previewPng: previewPng ?? undefined,
-      });
+      result = build();
     } catch (e) {
-      setExportError(e instanceof Error ? e.message : String(e));
+      if (e instanceof ExportVerificationError) {
+        setExportError(e.message);
+        setExportIssues(e.report.errors.map((x) => x.message));
+      } else {
+        setExportError(e instanceof Error ? e.message : String(e));
+      }
       return;
     }
-    saveUint8OrBuffer(pkg, `${projectName}_TailWag_rev1.3mf`, '3mf');
+    setExportIssues(result.report.warnings.map((w) => w.message));
+    setVerifiedNote(`Verified against print plan ${shortPlanHash(plan)}: file matches what the preview shows.`);
+    saveUint8OrBuffer(result.data, filename, ext);
   };
 
-  const handleExportNoAmsBundleZip = () => {
-    setExportError(null);
-    let zipBytes: Uint8Array;
-    try {
-      zipBytes = generateNoAmsStlPackageZip({
-        projectName,
-        grid,
-        baseLayerMm,
-        layerHeightMm,
-        totalLayers,
-        slots,
-        plan,
-        previewPng: previewPng ?? undefined,
-      });
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : String(e));
-      return;
-    }
-    saveUint8OrBuffer(zipBytes, `${projectName}_NoAMS_STL_and_Pause_Guide_rev1.zip`, 'zip');
-  };
+  const handleExport3MF = () =>
+    runVerified(
+      () =>
+        generateVerified3mfPackage({
+          projectName,
+          grid,
+          baseLayerMm,
+          layerHeightMm,
+          totalLayers,
+          slots,
+          plan,
+          previewPng: previewPng ?? undefined,
+        }),
+      `${projectName}_TailWag_rev1.3mf`,
+      '3mf'
+    );
 
-  const handleExportBinaryStl = () => {
+  const handleExportNoAmsBundleZip = () =>
+    runVerified(
+      () =>
+        generateVerifiedNoAmsBundle({
+          projectName,
+          grid,
+          baseLayerMm,
+          layerHeightMm,
+          totalLayers,
+          slots,
+          plan,
+          previewPng: previewPng ?? undefined,
+        }),
+      `${projectName}_NoAMS_STL_and_Pause_Guide_rev1.zip`,
+      'zip'
+    );
+
+  const handleExportBinaryStl = () =>
     // The Print Plan ID in the STL header ties a loose STL back to the plan that produced it.
-    const stl = generateBinaryStlFromGrid(grid, `Plan ${plan.hash}`);
-    saveUint8OrBuffer(stl, `${projectName}_TailWag_${shortPlanHash(plan)}_rev1.stl`, 'stl');
-  };
+    runVerified(
+      () => generateVerifiedStl(grid, plan),
+      `${projectName}_TailWag_${shortPlanHash(plan)}_rev1.stl`,
+      'stl'
+    );
 
   const handleExportMetadata = () => {
     saveUint8OrBuffer(
@@ -181,7 +208,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#121722] border border-slate-700 rounded-xl max-w-4xl w-full p-5 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
         {exportError && (
-          <div className="text-xs px-3 py-2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300">Export blocked: {exportError}</div>
+          <div className="text-xs px-3 py-2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 flex flex-col gap-1">
+            <span className="font-bold">Export blocked: nothing was saved.</span>
+            <span>{exportError}</span>
+            {exportIssues.length > 0 && (
+              <ul className="list-disc pl-4 text-[11px] text-rose-200">
+                {exportIssues.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {!exportError && verifiedNote && (
+          <div className="text-xs px-3 py-2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex flex-col gap-1">
+            <span>{verifiedNote}</span>
+            {exportIssues.length > 0 && (
+              <ul className="list-disc pl-4 text-[11px] text-amber-300">
+                {exportIssues.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">

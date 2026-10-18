@@ -10,6 +10,8 @@ import {
   shortPlanHash,
 } from './printPlan';
 import { buildPrintMetadata, serializePrintMetadata } from './printMetadata';
+import { buildColorBandPartMesh } from './bandMesh';
+import { PINNED_SLICER_SETTINGS, layerSettingsFor } from './slicerSettings';
 import bambuProjectTemplate from '../data/bambuProjectTemplate.json';
 
 export interface SwapInstructionItem {
@@ -574,127 +576,6 @@ export function generateNoAmsStlPackageZip(params: {
 }
 
 /**
- * Builds a single horizontal Z-band watertight sub-mesh (zFloor .. min(topZ, zCeil))
- * so each filament layer range in the 3MF is a true pre-colored Bambu Studio AMS part!
- */
-function buildColorBandPartMesh(
-  grid: HeightmapGrid,
-  zFloor: number,
-  zCeil: number,
-  centerZ: number
-): { verticesXml: string[]; trianglesXml: string[]; faceCount: number } {
-  const { cols, rows, widthMm, heightMm, topZ, bottomZ } = grid;
-  const halfW = widthMm / 2;
-  const halfH = heightMm / 2;
-  const xAt = (c: number) => (c / (cols - 1)) * widthMm - halfW;
-  const yAt = (r: number) => halfH - (r / (rows - 1)) * heightMm;
-
-  // Compute clamped top and bottom Z for each grid cell within this horizontal filament band
-  const bandTop = new Float32Array(cols * rows);
-  const bandBot = new Float32Array(cols * rows);
-  for (let i = 0; i < cols * rows; i++) {
-    if (topZ[i] <= 0) {
-      bandTop[i] = -1;
-      bandBot[i] = 0;
-      continue;
-    }
-    const b = Math.max(bottomZ[i], zFloor);
-    const t = Math.min(topZ[i], zCeil);
-    if (t > b + 0.001) {
-      bandBot[i] = b;
-      bandTop[i] = t;
-    } else {
-      bandTop[i] = -1;
-      bandBot[i] = 0;
-    }
-  }
-
-  const topVertexIndex = new Int32Array(cols * rows).fill(-1);
-  const botVertexIndex = new Int32Array(cols * rows).fill(-1);
-  const verticesXml: string[] = [];
-  const trianglesXml: string[] = [];
-  let vCount = 0;
-
-  const ensureTopVertex = (c: number, r: number): number => {
-    const idx = r * cols + c;
-    if (topVertexIndex[idx] !== -1) return topVertexIndex[idx];
-    const vIdx = vCount++;
-    topVertexIndex[idx] = vIdx;
-    verticesXml.push(
-      `     <vertex x="${xAt(c).toFixed(4)}" y="${yAt(r).toFixed(4)}" z="${(bandTop[idx] - centerZ).toFixed(4)}"/>`
-    );
-    return vIdx;
-  };
-
-  const ensureBotVertex = (c: number, r: number): number => {
-    const idx = r * cols + c;
-    if (botVertexIndex[idx] !== -1) return botVertexIndex[idx];
-    const vIdx = vCount++;
-    botVertexIndex[idx] = vIdx;
-    verticesXml.push(
-      `     <vertex x="${xAt(c).toFixed(4)}" y="${yAt(r).toFixed(4)}" z="${(bandBot[idx] - centerZ).toFixed(4)}"/>`
-    );
-    return vIdx;
-  };
-
-  const isValidCell = (c: number, r: number) => {
-    if (c < 0 || c >= cols - 1 || r < 0 || r >= rows - 1) return false;
-    const i00 = r * cols + c;
-    const i10 = r * cols + (c + 1);
-    const i01 = (r + 1) * cols + c;
-    const i11 = (r + 1) * cols + (c + 1);
-    return bandTop[i00] > 0 && bandTop[i10] > 0 && bandTop[i01] > 0 && bandTop[i11] > 0;
-  };
-
-  for (let r = 0; r < rows - 1; r++) {
-    for (let c = 0; c < cols - 1; c++) {
-      if (!isValidCell(c, r)) continue;
-
-      const t00 = ensureTopVertex(c, r);
-      const t10 = ensureTopVertex(c + 1, r);
-      const t01 = ensureTopVertex(c, r + 1);
-      const t11 = ensureTopVertex(c + 1, r + 1);
-
-      const b00 = ensureBotVertex(c, r);
-      const b10 = ensureBotVertex(c + 1, r);
-      const b01 = ensureBotVertex(c, r + 1);
-      const b11 = ensureBotVertex(c + 1, r + 1);
-
-      // Top
-      trianglesXml.push(`     <triangle v1="${t00}" v2="${t01}" v3="${t10}"/>`);
-      trianglesXml.push(`     <triangle v1="${t10}" v2="${t01}" v3="${t11}"/>`);
-      // Bottom
-      trianglesXml.push(`     <triangle v1="${b00}" v2="${b10}" v3="${b01}"/>`);
-      trianglesXml.push(`     <triangle v1="${b10}" v2="${b11}" v3="${b01}"/>`);
-
-      // Perimeter / Hole Walls
-      if (!isValidCell(c, r - 1)) {
-        trianglesXml.push(`     <triangle v1="${b00}" v2="${t00}" v3="${t10}"/>`);
-        trianglesXml.push(`     <triangle v1="${b00}" v2="${t10}" v3="${b10}"/>`);
-      }
-      if (!isValidCell(c, r + 1)) {
-        trianglesXml.push(`     <triangle v1="${b11}" v2="${t11}" v3="${t01}"/>`);
-        trianglesXml.push(`     <triangle v1="${b11}" v2="${t01}" v3="${b01}"/>`);
-      }
-      if (!isValidCell(c - 1, r)) {
-        trianglesXml.push(`     <triangle v1="${b01}" v2="${t01}" v3="${t00}"/>`);
-        trianglesXml.push(`     <triangle v1="${b01}" v2="${t00}" v3="${b00}"/>`);
-      }
-      if (!isValidCell(c + 1, r)) {
-        trianglesXml.push(`     <triangle v1="${b10}" v2="${t10}" v3="${t11}"/>`);
-        trianglesXml.push(`     <triangle v1="${b10}" v2="${t11}" v3="${b11}"/>`);
-      }
-    }
-  }
-
-  return {
-    verticesXml,
-    trianglesXml,
-    faceCount: trianglesXml.length,
-  };
-}
-
-/**
  * Compiles a 100% Bambu Studio 2.x / OrcaSlicer compliant Multi-Color .3MF Project Archive (.3mf ZIP)
  * using the exact Production Extension (`3D/Objects/object_1.model` + `Metadata/project_settings.config` +
  * `Metadata/model_settings.config` + `Metadata/slice_info.config` + `Metadata/cut_information.xml`)
@@ -933,16 +814,7 @@ export function generateNative3mfPackage(params: {
   if ('default_filament_colour' in ps) {
     ps.default_filament_colour = hexColors;
   }
-  ps.initial_layer_print_height = baseLayerMm.toFixed(2);
-  ps.layer_height = layerHeightMm.toFixed(2);
-  ps.sparse_infill_density = '100%';
-  ps.sparse_infill_pattern = 'alignedrectilinear';
-  ps.wall_loops = '1';
-  ps.top_shell_layers = '999';
-  ps.bottom_shell_layers = '999';
-  ps.enable_support = '0';
-  ps.brim_type = 'no_brim';
-  ps.enable_prime_tower = '1';
+  Object.assign(ps, layerSettingsFor(baseLayerMm, layerHeightMm), PINNED_SLICER_SETTINGS);
 
   const archiveFiles: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(contentTypesXml),
