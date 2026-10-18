@@ -29,7 +29,7 @@
 
 > The MCP server is experimental. It exports a built-in demo relief with a grayscale solver, not your own photos or the Faithful color matching, and its tools may change.
 
-Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/server.js`) over `stdio`: (`node dist-electron/mcp/server.js`) over `stdio`:
+Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/server.js`) over `stdio`:
 
 | MCP Tool Name | Description |
 | :--- | :--- |
