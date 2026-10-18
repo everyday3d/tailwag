@@ -48,6 +48,7 @@ export const TdCalibratorModal: React.FC<TdCalibratorModalProps> = ({ isOpen, on
       material: 'PLA',
       hex,
       td: calculatedTd,
+      tdSource: 'measured',
       owned: true,
     };
     addCustomSpoolToCatalog(newSpool);

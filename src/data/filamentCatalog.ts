@@ -10,6 +10,12 @@ export interface FilamentSpool {
   amsSlot?: string; // e.g. "AMS 1 - A1"
   libraryId?: string;
   libraryName?: string;
+  /** Where `td` came from. Missing means legacy data, treated as 'catalog'. */
+  tdSource?: import('../engine/tdPrior').TdSource;
+  /** Product line, e.g. "PLA Basic" or "PolyTerra" */
+  line?: string;
+  /** Id of the bundled manufacturer catalog entry this spool was created from */
+  catalogId?: string;
 }
 
 export type {

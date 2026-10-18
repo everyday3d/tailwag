@@ -38,6 +38,7 @@ import { Viewport3D } from './components/Viewport3D';
 import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
+import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
 import {
   computeStandardBedDimensions,
   STANDARD_BUILD_PLATE_MAX_BBOX_MM,
@@ -57,6 +58,7 @@ export const App: React.FC = () => {
   const [solverRecipes, setSolverRecipes] = useState<SolverRecipe[]>([]);
   const [isTdModalOpen, setIsTdModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -559,6 +561,14 @@ export const App: React.FC = () => {
                   className="hidden"
                 />
                 <button
+                  onClick={() => setIsLibraryModalOpen(true)}
+                  className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-300 font-semibold transition"
+                  title="Browse the manufacturer catalog or add a filament manually"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </button>
+                <button
                   onClick={() => jsonInputRef.current?.click()}
                   className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-orange-600/20 hover:bg-orange-600/35 border border-orange-500/40 text-orange-300 font-semibold transition"
                   title="Import your Owned Filament Library (file must be named filaments.json)"
@@ -722,6 +732,7 @@ export const App: React.FC = () => {
                           <span className="px-1 rounded bg-slate-800 text-slate-300">{spool.material}</span>
                           <span>•</span>
                           <span className="text-orange-400 font-mono">TD {spool.td.toFixed(1)}mm</span>
+                          <TdSourceBadge source={spool.tdSource} />
                           {spool.amsSlot && (
                             <span className="px-1 rounded bg-sky-500/20 text-sky-300 font-mono">
                               {spool.amsSlot}
@@ -1596,6 +1607,7 @@ export const App: React.FC = () => {
 
       {/* Modals */}
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
+      <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} />
     </div>
   );

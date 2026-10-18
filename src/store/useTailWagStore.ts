@@ -6,6 +6,11 @@ import { parseFilamentLibraryJson } from '../utils/filamentJsonIO';
 import { optimizeManualSlotBoundaries } from '../engine/autoSolver';
 import { createDefaultPortraitImageData } from '../utils/defaultPortrait';
 import userDefaultFilamentsRaw from '../data/userDefaultFilaments.json';
+import {
+  addSpoolToMyLibrary,
+  updateSpoolInCatalog,
+  removeSpoolFromMyLibrary,
+} from '../utils/myLibrary';
 
 export type ViewportMode = '3d-mesh' | 'split' | 'source' | 'heightmap';
 
@@ -78,6 +83,10 @@ export interface TailWagState {
   distributeSlotsEvenly: () => void;
   removeSlot: (slotId: string) => void;
   addCustomSpoolToCatalog: (spool: FilamentSpool) => void;
+  /** Adds to "My Filaments" (owned). Returns an error message when rejected, else null. */
+  addSpoolToMyFilaments: (spool: FilamentSpool) => string | null;
+  updateSpool: (spoolId: string, patch: Partial<FilamentSpool>) => void;
+  removeMySpool: (spoolId: string) => void;
   toggleSpoolOwned: (spoolId: string) => void;
   syncAmsSpools: (amsSpools: FilamentSpool[]) => void;
   importOwnedLibraryJson: (
@@ -195,7 +204,7 @@ const defaultSpools = [
   findOwnedOrBuiltIn((s) => s.name.toLowerCase().includes('jade white'), 'bambu-pla-jade-white'),
 ];
 
-export const useTailWagStore = create<TailWagState>((set) => ({
+export const useTailWagStore = create<TailWagState>((set, get) => ({
   projectName: 'Tucker_Boxer_Portrait',
   viewportMode: '3d-mesh',
   splitRatio: 0.5,
@@ -619,6 +628,26 @@ export const useTailWagStore = create<TailWagState>((set) => ({
       const next = [spool, ...state.catalog];
       saveStoreDataToStorage(next, state.importedLibraries);
       return { catalog: next };
+    }),
+  addSpoolToMyFilaments: (spool) => {
+    const state = get();
+    const result = addSpoolToMyLibrary(state.catalog, state.importedLibraries, spool);
+    if (result.rejected) return result.rejected;
+    saveStoreDataToStorage(result.catalog, result.importedLibraries);
+    set({ catalog: result.catalog, importedLibraries: result.importedLibraries });
+    return null;
+  },
+  updateSpool: (spoolId, patch) =>
+    set((state) => {
+      const next = updateSpoolInCatalog(state.catalog, spoolId, patch);
+      saveStoreDataToStorage(next, state.importedLibraries);
+      return { catalog: next, renderVersion: (state.renderVersion ?? 0) + 1 };
+    }),
+  removeMySpool: (spoolId) =>
+    set((state) => {
+      const result = removeSpoolFromMyLibrary(state.catalog, state.importedLibraries, spoolId);
+      saveStoreDataToStorage(result.catalog, result.importedLibraries);
+      return { catalog: result.catalog, importedLibraries: result.importedLibraries };
     }),
   toggleSpoolOwned: (spoolId) =>
     set((state) => {
