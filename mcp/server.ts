@@ -230,7 +230,7 @@ const TOOLS = [
           enum: ['none', 'beveled', 'modern-lip', 'stepped'],
           description: 'Outer 3D border frame style',
         },
-        clockMode: { type: 'boolean', description: 'Enable HueForge Wall Clock center shaft bore & rear movement pocket' },
+        clockMode: { type: 'boolean', description: 'Enable wall clock center shaft bore & rear movement pocket' },
         keychainHole: { type: 'boolean', description: 'Enable top keychain hole' },
         magnetPockets: { type: 'boolean', description: 'Enable rear neodymium magnet pockets' },
       },

@@ -8,7 +8,7 @@ export interface CadCutoutConfig {
   frameStyle: FrameStyle;
   frameWidthMm: number;
   frameHeightBonusMm: number;
-  /** HueForge Wall Clock Mode */
+  /** Wall Clock Mode */
   clockMode: boolean;
   clockShaftDiameterMm: number; // default 8.2mm
   clockMovementPocket: boolean; // rear 56x56mm cavity

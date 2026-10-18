@@ -199,7 +199,7 @@ export function parseFilamentLibraryJson(
     const rawBrand = String(
       item.brand ?? item.Brand ?? item.Manufacturer ?? item.manufacturer ?? item.vendor ?? ''
     ).trim();
-    const brand = rawBrand || (isImageSwatch ? 'HueForge Image' : 'Custom');
+    const brand = rawBrand || (isImageSwatch ? 'Imported Image' : 'Custom');
 
     const rawName = String(
       item.name ?? item.Name ?? item.color_name ?? item.ColorName ?? item.title ?? ''

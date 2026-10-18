@@ -1,6 +1,6 @@
-# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.1.0`)
+# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.1.1`)
 
-[![Release](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Version-1.1.1-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
@@ -24,7 +24,7 @@
 4. **📏 Built-in TD Calibrator & Live Bambu Fleet Studio AMS Sync (`TdCalibratorModal.tsx`)**
    - Generates a 7-minute **16-Step TD Calibration Step-Wedge (`.STL`)**, calculates exact filament Transmission Distance ($TD$ in mm), and syncs live AMS trays from Home Assistant (`bambu_fleet_studio`).
 5. **📐 2.5D Parametric CAD Shapes, Frames, Clocks & Cutouts (`cadMeshBuilder.ts`)**
-   - Built-in silhouettes (*Rectangle*, *Rounded Plaque*, *Circle/Clock*, *Hexagon*, *Crest Shield*, *BoxerDawg Medallion*), 3D raised frames (*Beveled*, *Modern Lip*, *Stepped*), **HueForge Wall Clock Mode** (center quartz shaft bore, rear $56\times56\text{mm}$ movement cavity, raised top-layer stencil numerals), **Keychain Bores**, and **Rear Neodymium Magnet Pockets**.
+   - Built-in silhouettes (*Rectangle*, *Rounded Plaque*, *Circle/Clock*, *Hexagon*, *Crest Shield*, *BoxerDawg Medallion*), 3D raised frames (*Beveled*, *Modern Lip*, *Stepped*), **wall clock Mode** (center quartz shaft bore, rear $56\times56\text{mm}$ movement cavity, raised top-layer stencil numerals), **Keychain Bores**, and **Rear Neodymium Magnet Pockets**.
 6. **🤖 Built-in TailWag MCP Server (experimental) (`mcp/server.ts` / `dist-electron/mcp/server.js`)**
    - Standard JSON-RPC 2.0 stdio Model Context Protocol (MCP) server allowing AI agents to autonomously list filaments, solve optimal TD palettes, simulate layer stacks, calibrate TDs, and export `.3mf` / `.stl` projects headlessly.
 

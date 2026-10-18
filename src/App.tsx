@@ -1559,7 +1559,7 @@ export const App: React.FC = () => {
                     const val = Math.max(0.08, Math.min(0.48, parseFloat(e.target.value) || 0.16));
                     setLayerParams(Number(val.toFixed(2)), layerHeightMm, totalLayers);
                   }}
-                  title="Slicer First / Initial Layer Height in mm (default 0.16mm for HueForge)"
+                  title="Slicer First / Initial Layer Height in mm (default 0.16mm)"
                   className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-white font-mono"
                 />
               </div>
@@ -1729,12 +1729,12 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Signature HueForge Wall Clock Mode */}
+            {/* Wall Clock Mode */}
             <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2">
               <label className="flex items-center justify-between text-xs font-semibold text-slate-200 cursor-pointer">
                 <span className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-orange-400" />
-                  HueForge Wall Clock Cutout & Stencil
+                  Wall Clock Cutout & Stencil
                 </span>
                 <input
                   type="checkbox"

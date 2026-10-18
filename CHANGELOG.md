@@ -5,15 +5,22 @@ All notable changes to **TailWag Studio** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-10-18
+## [1.1.1] - 2026-10-18
 
-Version 1.0.0 was internal and never published, so this is the first public release and includes everything below.
+Patch release: legal notices, repository cleanup and wording only. No change to colour prediction, solving or export.
 
 ### Changed
 - **Notices and bug reporting**: Added NOTICE.md (no affiliation with or ownership of HueForge, Bambu Lab, Prusa or other third-party names, early-release notice), README callouts, a Bug report issue form, and corrected the README license badge from Proprietary to MIT.
 - **README spotlight**: Added a screenshot tour of the studio (loading screen, Faithful vs Vivid, Accuracy vs Beauty, split compare, layer timeline, filament library and editor, calibration plate, export fidelity report, shape and frame, updates) with screenshots under docs/screenshots.
 - **MIT License**: Added a LICENSE file and set the package license to MIT (was marked proprietary).
 - **Repository cleanup for going public**: Removed the unused standalone Python tool and the personal Desktop-shortcut helper from the repository, removed the personal code-index step from the build, and replaced a private network address in the Home Assistant field with a neutral default.
+- **Neutral wording for third-party names**: Removed the HueForge name from two on-screen labels (the wall clock option and the layer-height tooltip), the MCP tool description and the importer's label for image swatches. Compatibility with importing a HueForge filament library is unchanged.
+
+## [1.1.0] - 2026-10-18
+
+Version 1.0.0 was internal and never published, so this is the first public release and includes everything below.
+
+### Changed
 - **Saved 3MF files are no longer rewritten by Bambu Studio**: The optional post-save pass that re-exported a saved .3mf through the Bambu Studio command line (when installed) was removed. It could change the file after TailWag had verified it, so what you save is now exactly what was verified.
 
 ### Added
