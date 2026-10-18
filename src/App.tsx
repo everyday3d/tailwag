@@ -40,6 +40,7 @@ import { LayerTimeline } from './components/LayerTimeline';
 import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
 import { buildPrintPlan } from './engine/printPlan';
+import { buildLayerColorLUT } from './engine/opticalTdEngine';
 import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
 import { SpoolEditModal } from './components/SpoolEditModal';
 import {
@@ -94,6 +95,8 @@ export const App: React.FC = () => {
     setBacklitLithoMode,
     previewShading,
     setPreviewShading,
+    matchMode,
+    setMatchMode,
     widthMm,
     heightMm,
     setDimensions,
@@ -136,6 +139,15 @@ export const App: React.FC = () => {
     setStoreSourceImageData(defaultImg.imageData);
   }, [defaultImg, setStoreSourceImageData]);
 
+  // Faithful mode picks each column's depth by color match against the current stack's layer colors
+  const matchLut = useMemo(
+    () =>
+      matchMode === 'faithful' && slots.length > 0
+        ? buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots).map((e) => e.rgb)
+        : null,
+    [matchMode, slots, totalLayers, baseLayerMm, layerHeightMm]
+  );
+
   // Compute 2.5D Heightmap Grid reactively
   const grid = useMemo(
     () =>
@@ -153,6 +165,7 @@ export const App: React.FC = () => {
         detailEnhance,
         invertLuminance,
         cad,
+        colorMatch: matchLut ? { lutRgb: matchLut } : undefined,
       }),
     [
       sourceImageData,
@@ -168,6 +181,7 @@ export const App: React.FC = () => {
       detailEnhance,
       invertLuminance,
       cad,
+      matchLut,
     ]
   );
 
@@ -544,6 +558,17 @@ export const App: React.FC = () => {
           >
             <Eye className="w-3.5 h-3.5" />
             {previewShading === 'accuracy' && !backlitLithoMode ? 'Accuracy' : 'Beauty'}
+          </button>
+          <button
+            onClick={() => setMatchMode(matchMode === 'faithful' ? 'vivid' : 'faithful')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
+              matchMode === 'faithful'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                : 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40'
+            }`}
+            title="Faithful: match the photo's own colors as closely as the palette allows. Vivid: boost saturation and map brightness to height (the earlier behavior)."
+          >
+            {matchMode === 'faithful' ? 'Faithful' : 'Vivid'}
           </button>
         </div>
 

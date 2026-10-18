@@ -31,6 +31,8 @@ export interface TailWagState {
   backlitLithoMode: boolean;
   /** 'accuracy' shows the predicted sRGB color of every column unlit; 'beauty' adds studio lighting. */
   previewShading: 'accuracy' | 'beauty';
+  /** 'faithful' matches the photo's own colors; 'vivid' keeps the boosted-saturation luminance mapping. */
+  matchMode: 'faithful' | 'vivid';
   slicePreviewMaxLayer: number;
   renderVersion: number;
   solverColorMode: 'natural' | 'cmyk' | 'manual';
@@ -68,6 +70,7 @@ export interface TailWagState {
   setLighting: (azimuth: number, elevation: number) => void;
   setBacklitLithoMode: (backlit: boolean) => void;
   setPreviewShading: (mode: 'accuracy' | 'beauty') => void;
+  setMatchMode: (mode: 'faithful' | 'vivid') => void;
   setSlicePreviewMaxLayer: (layer: number) => void;
   setSourceImageData: (imageData: ImageData | null) => void;
   setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
@@ -218,6 +221,7 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   lightElevationDeg: 58,
   backlitLithoMode: false,
   previewShading: 'accuracy',
+  matchMode: 'faithful',
   slicePreviewMaxLayer: 24,
   renderVersion: 0,
   solverColorMode: 'natural',
@@ -279,6 +283,23 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   setLighting: (lightAzimuthDeg, lightElevationDeg) => set({ lightAzimuthDeg, lightElevationDeg }),
   setBacklitLithoMode: (backlitLithoMode) => set({ backlitLithoMode }),
   setPreviewShading: (previewShading) => set({ previewShading }),
+  setMatchMode: (matchMode) =>
+    set((state) => {
+      // Re-tune the swap layers for the new objective so the stack stays consistent with the mode
+      let slots = state.slots;
+      if (state.sourceImageData && state.slots.length > 1) {
+        slots = optimizeManualSlotBoundaries(
+          state.sourceImageData,
+          state.slots,
+          state.totalLayers,
+          state.baseLayerMm,
+          state.layerHeightMm,
+          state.baseSolidThicknessMm,
+          matchMode
+        );
+      }
+      return { matchMode, slots, renderVersion: (state.renderVersion ?? 0) + 1 };
+    }),
   setSlicePreviewMaxLayer: (slicePreviewMaxLayer) => set({ slicePreviewMaxLayer }),
   setDimensions: (widthMm, heightMm) => set({ widthMm, heightMm }),
   setLayerParams: (baseLayerMm, layerHeightMm, totalLayers) =>
@@ -405,7 +426,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
           state.totalLayers,
           state.baseLayerMm,
           state.layerHeightMm,
-          state.baseSolidThicknessMm
+          state.baseSolidThicknessMm,
+          state.matchMode
         );
       }
       return {
@@ -436,7 +458,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
           nextTotalLayers,
           state.baseLayerMm,
           state.layerHeightMm,
-          state.baseSolidThicknessMm
+          state.baseSolidThicknessMm,
+          state.matchMode
         );
       } else {
         const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
@@ -487,7 +510,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
           nextTotalLayers,
           state.baseLayerMm,
           state.layerHeightMm,
-          state.baseSolidThicknessMm
+          state.baseSolidThicknessMm,
+          state.matchMode
         );
       } else {
         const minBaseLayer = Math.min(Math.max(2, Math.floor(nextTotalLayers / count)), 6);
@@ -539,7 +563,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
           state.totalLayers,
           state.baseLayerMm,
           state.layerHeightMm,
-          state.baseSolidThicknessMm
+          state.baseSolidThicknessMm,
+          state.matchMode
         );
       } else {
         const layerBoundaries = state.slots.map((s) => s.upToLayer).sort((a, b) => a - b);
@@ -606,7 +631,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
           state.totalLayers,
           state.baseLayerMm,
           state.layerHeightMm,
-          state.baseSolidThicknessMm
+          state.baseSolidThicknessMm,
+          state.matchMode
         );
       } else {
         const count = filtered.length;
@@ -664,7 +690,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
             state.totalLayers,
             state.baseLayerMm,
             state.layerHeightMm,
-            state.baseSolidThicknessMm
+            state.baseSolidThicknessMm,
+            state.matchMode
           );
         }
       }

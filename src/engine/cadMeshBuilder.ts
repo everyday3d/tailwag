@@ -1,3 +1,4 @@
+import { sampleGridColors, buildTargetBuckets, assignLayersByColorMatch, lutToLab } from './colorMatch';
 export type MeshShapeMode = 'rect' | 'rounded' | 'circle' | 'hexagon' | 'paw' | 'shield';
 export type FrameStyle = 'none' | 'beveled' | 'modern-lip' | 'stepped';
 export type ClockStencilStyle = 'none' | 'modern-arabic' | 'roman' | 'paw-markers';
@@ -748,6 +749,11 @@ export function buildHeightmapGrid(params: {
   detailEnhance: number;
   invertLuminance: boolean;
   cad: CadCutoutConfig;
+  /**
+   * Faithful mode: choose each column's depth by the best color match against this layer color table
+   * (index = layer - 1) instead of mapping luminance to depth.
+   */
+  colorMatch?: { lutRgb: Array<{ r: number; g: number; b: number }> };
 }): HeightmapGrid {
   const {
     imageData,
@@ -954,6 +960,22 @@ export function buildHeightmapGrid(params: {
     rawDiscreteLayers[i] = Math.max(minBaseLayer, Math.min(totalLayers, Math.round(contL)));
   }
 
+  // Faithful color matching: each column takes the stack depth whose predicted color is closest to
+  // the photo. The luminance mapping above is only a gentle tie-breaker (anchor).
+  let matchedLayers: Uint16Array | null = null;
+  if (params.colorMatch && params.colorMatch.lutRgb.length >= totalLayers) {
+    const matchBuckets = buildTargetBuckets(sampleGridColors(imageData, cols, rows), cols * rows);
+    matchedLayers = assignLayersByColorMatch(
+      matchBuckets,
+      cols,
+      rows,
+      lutToLab(params.colorMatch.lutRgb),
+      minBaseLayer,
+      totalLayers,
+      { anchor: rawDiscreteLayers }
+    );
+  }
+
   // Morphological Filtering with Edge-Protection Mask:
   // Merges isolated pixel speckles smaller than 4 pixels into surrounding dominant region,
   // but STRICTLY PRESERVES pixels on high-contrast edges and fine structural lines (branches, silhouettes)
@@ -1002,7 +1024,12 @@ export function buildHeightmapGrid(params: {
       let cellLum: number;
       let zMm: number;
 
-      if (isEdgeZone[idx] === 1) {
+      if (matchedLayers) {
+        // Faithful: depth is exactly on a layer boundary, so every column prints as modeled
+        discreteLayer = matchedLayers[idx];
+        cellLum = (discreteLayer - minBaseLayer) / Math.max(1, totalLayers - minBaseLayer);
+        zMm = baseLayerMm + (discreteLayer - 1) * layerHeightMm;
+      } else if (isEdgeZone[idx] === 1) {
         // High-contrast / edge zone: continuous micro-steps preserve sharp slopes & fine geometry
         // Use structural heightmap directly so physical contours are never degraded by color smoothing!
         const structContL = minBaseLayer + structuralHeightmap[idx] * (totalLayers - minBaseLayer);

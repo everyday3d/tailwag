@@ -1,3 +1,4 @@
+import { sampleGridColors, buildTargetBuckets, searchSlotBoundaries } from './colorMatch';
 import { FilamentSpool } from '../data/filamentCatalog';
 import { LayerSwapSlot, buildLayerColorLUT, hexToRgb01, rgbToLab } from './opticalTdEngine';
 import {
@@ -1823,12 +1824,39 @@ export function optimizeManualSlotBoundaries(
   totalLayers: number,
   baseLayerMm: number,
   layerHeightMm: number,
-  baseSolidThicknessMm?: number
+  baseSolidThicknessMm?: number,
+  /** 'faithful' (default) minimizes the photo's best-match ΔE00; 'vivid' keeps the boosted luminance-band scoring */
+  mode: 'faithful' | 'vivid' = 'faithful'
 ): LayerSwapSlot[] {
   const count = slots.length;
   if (count === 0) return [];
   if (count === 1) {
     return [{ ...slots[0], upToLayer: totalLayers }];
+  }
+
+  if (mode === 'faithful') {
+    // Every column picks the depth that matches the photo best; the swap layers that make that match
+    // closest are found by searching all monotone boundary sets (see colorMatch.ts).
+    const cols = 56;
+    const rows = Math.max(16, Math.round((cols * imageData.height) / Math.max(1, imageData.width)));
+    const buckets = buildTargetBuckets(sampleGridColors(imageData, cols, rows), cols * rows, {
+      step: { L: 4, a: 6, b: 6 },
+    });
+    const minLayer = Math.min(
+      Math.max(1, totalLayers - 2),
+      baseSolidThicknessMm !== undefined
+        ? Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm))
+        : 1
+    );
+    const result = searchSlotBoundaries({
+      slots,
+      totalLayers,
+      baseLayerMm,
+      layerHeightMm,
+      minLayer,
+      buckets,
+    });
+    return slots.map((s, idx) => ({ ...s, upToLayer: result.ends[idx] }));
   }
 
   const samples = extractPerceptualSamples(imageData);
