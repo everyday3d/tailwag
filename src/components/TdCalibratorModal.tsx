@@ -20,7 +20,7 @@ export const TdCalibratorModal: React.FC<TdCalibratorModalProps> = ({ isOpen, on
   const [savedToast, setSavedToast] = useState(false);
 
   // Live Bambu Fleet Studio / Home Assistant AMS Sync State
-  const [haUrl, setHaUrl] = useState('http://192.168.1.207:8123');
+  const [haUrl, setHaUrl] = useState('http://homeassistant.local:8123');
   const [haToken, setHaToken] = useState('');
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
@@ -192,7 +192,7 @@ export const TdCalibratorModal: React.FC<TdCalibratorModalProps> = ({ isOpen, on
               <input
                 value={haUrl}
                 onChange={(e) => setHaUrl(e.target.value)}
-                placeholder="http://192.168.1.207:8123"
+                placeholder="http://homeassistant.local:8123"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
               />
             </div>

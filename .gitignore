@@ -16,3 +16,5 @@ tests/
 *.test.ts
 *.spec.ts
 
+# Personal convenience script (updates a local Desktop shortcut)
+scripts/update-desktop-shortcut.ps1
