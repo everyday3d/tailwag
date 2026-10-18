@@ -41,5 +41,5 @@ Defined in `BRAND_SOURCES` in `src/data/manufacturerCatalog.ts`: Bambu Lab, Poly
 
 ## Open items
 
-- Replace approximate colors with values checked against each manufacturer's page, brand by brand.
+- Approximate catalog colors and Estimate TD values are corrected over time by community reports: see issue #43 and the Filament data form.
 - Keep the personal library file free of personally identifying information (no names, paths, emails, URLs).

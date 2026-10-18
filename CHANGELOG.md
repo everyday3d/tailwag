@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Catalog data corrections are community-driven (#32, #43)**: Brand-by-brand verification of approximate catalog colors was replaced by an open, ongoing issue where owners report corrections through the Filament data form. DATA_SOURCES.md was updated.
 - **Windows install help**: README now explains the blue "Windows protected your PC" (SmartScreen) screen, "file is blocked" and browser or antivirus warnings, how to get past each one, and how to check the download's SHA-256.
 
 ## [1.1.2] - 2026-10-18
