@@ -865,7 +865,7 @@ export const App: React.FC = () => {
                           <span className="px-1 rounded bg-slate-800 text-slate-300">{spool.material}</span>
                           <span>•</span>
                           <span className="text-orange-400 font-mono">TD {spool.td.toFixed(1)}mm</span>
-                          <TdSourceBadge source={spool.tdSource} />
+                          <TdSourceBadge source={spool.tdSource} calibration={spool.calibration} />
                           <button
                             onClick={() => updateSpool(spool.id, { stock: nextStock(spool.stock) })}
                             title="Click to cycle stock: In stock → Low → Out (Out is skipped by the auto-solver)"

@@ -18,6 +18,7 @@ import {
   type TdSource,
 } from '../engine/tdPrior';
 import { MY_LIBRARY_ID } from '../utils/myLibrary';
+import { CALIBRATION_MODEL_ID, type SpoolCalibration } from '../engine/opticalModel';
 
 const MATERIALS: FilamentSpool['material'][] = [
   'PLA',
@@ -53,8 +54,20 @@ const SOURCE_BADGE: Record<TdSource, string> = {
   estimate: 'bg-amber-500/20 text-amber-300',
 };
 
-export function TdSourceBadge({ source }: { source?: TdSource }) {
+export function TdSourceBadge({ source, calibration }: { source?: TdSource; calibration?: SpoolCalibration }) {
   const s: TdSource = source ?? 'catalog';
+  if (calibration && calibration.modelId === CALIBRATION_MODEL_ID) {
+    const q = calibration.meanDeltaE00;
+    const tone = q <= 3 ? SOURCE_BADGE.measured : q <= 6 ? SOURCE_BADGE.user : SOURCE_BADGE.estimate;
+    return (
+      <span
+        className={`px-1 rounded text-[9px] font-semibold ${tone}`}
+        title={`Fitted from a printed calibration plate on ${calibration.date}. Mean fit error ${q.toFixed(1)} (worst ${calibration.maxDeltaE00.toFixed(1)}) on the CIEDE2000 scale; under 3 is hard to see.`}
+      >
+        Calibrated Â±{q.toFixed(1)}
+      </span>
+    );
+  }
   return (
     <span className={`px-1 rounded text-[9px] font-semibold ${SOURCE_BADGE[s]}`} title="Where this TD value came from">
       {TD_SOURCE_LABEL[s]}
@@ -309,7 +322,7 @@ export const FilamentLibraryModal: React.FC<Props> = ({ isOpen, onClose }) => {
                             <span className="px-1 rounded bg-slate-800 text-slate-300">{e.material}</span>
                             <span>•</span>
                             <span className="text-orange-400 font-mono">TD {e.td.toFixed(1)}mm</span>
-                            <TdSourceBadge source={e.tdSource} />
+                            <TdSourceBadge source={e.tdSource} calibration={(e as FilamentSpool).calibration} />
                             <span className="font-mono text-slate-500">{e.hex}</span>
                           </div>
                         </div>
