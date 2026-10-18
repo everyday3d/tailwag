@@ -447,7 +447,7 @@ rl.on('line', (line) => {
           protocolVersion: '2024-11-05',
           capabilities: { tools: {} },
           serverInfo: {
-            name: 'tailwag-mcp-server',
+            name: 'tailwag-mcp-server (experimental)',
             version: '1.0.0',
           },
         },

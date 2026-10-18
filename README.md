@@ -1,7 +1,7 @@
 # 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.0.0`)
 
 [![Release](https://img.shields.io/badge/Version-1.0.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
-[![MCP Server](https://img.shields.io/badge/MCP%20Server-Agent%20Ready-emerald?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
+[![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)](#)
 
 > **Next-Generation Desktop 3D Filament Painting (Front-Lit Beer-Lambert TD Blending), AI Palette & Layer-Swap Solver, 2.5D Parametric CAD Cutouts, and Native Bambu Studio / OrcaSlicer `.3MF` Exporter + Built-in MCP Server.**
@@ -20,14 +20,14 @@
    - Generates a 7-minute **16-Step TD Calibration Step-Wedge (`.STL`)**, calculates exact filament Transmission Distance ($TD$ in mm), and syncs live AMS trays from Home Assistant (`bambu_fleet_studio`).
 5. **📐 2.5D Parametric CAD Shapes, Frames, Clocks & Cutouts (`cadMeshBuilder.ts`)**
    - Built-in silhouettes (*Rectangle*, *Rounded Plaque*, *Circle/Clock*, *Hexagon*, *Crest Shield*, *BoxerDawg Medallion*), 3D raised frames (*Beveled*, *Modern Lip*, *Stepped*), **HueForge Wall Clock Mode** (center quartz shaft bore, rear $56\times56\text{mm}$ movement cavity, raised top-layer stencil numerals), **Keychain Bores**, and **Rear Neodymium Magnet Pockets**.
-6. **🤖 Built-in TailWag MCP Server (`mcp/server.ts` / `dist-electron/mcp/server.js`)**
+6. **🤖 Built-in TailWag MCP Server (experimental) (`mcp/server.ts` / `dist-electron/mcp/server.js`)**
    - Standard JSON-RPC 2.0 stdio Model Context Protocol (MCP) server allowing AI agents to autonomously list filaments, solve optimal TD palettes, simulate layer stacks, calibrate TDs, and export `.3mf` / `.stl` projects headlessly.
 
 ---
 
-## 🤖 MCP Server (Agentic Solving & Headless 3MF Generation)
+## 🤖 MCP Server (Experimental: Agentic Solving & Headless 3MF Generation)
 
-Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/server.js`) over `stdio`:
+> The MCP server is experimental. It exports a built-in demo relief with a grayscale solver, not your own photos or the Faithful color matching, and its tools may change. (`node dist-electron/mcp/server.js`) over `stdio`:
 
 | MCP Tool Name | Description |
 | :--- | :--- |

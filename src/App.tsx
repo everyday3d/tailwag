@@ -511,7 +511,7 @@ export const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-sm tracking-tight text-white">TAILWAG STUDIO</span>
               <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                v1.0 • TD Engine + MCP
+                v1.0 • TD Engine + MCP (experimental)
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -1033,7 +1033,7 @@ export const App: React.FC = () => {
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <Cpu className="w-3 h-3" />
-                MCP Ready
+                MCP (experimental)
               </span>
             </div>
 
