@@ -1,6 +1,6 @@
-# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.0.0`)
+# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.1.0`)
 
-[![Release](https://img.shields.io/badge/Version-1.0.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)](#)
 

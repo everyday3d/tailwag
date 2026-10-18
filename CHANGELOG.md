@@ -5,7 +5,12 @@ All notable changes to **TailWag Studio** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-10-16
+## [1.1.0] - 2026-10-18
+
+Version 1.0.0 was internal and never published, so this is the first public release and includes everything below.
+
+### Changed
+- **Saved 3MF files are no longer rewritten by Bambu Studio**: The optional post-save pass that re-exported a saved .3mf through the Bambu Studio command line (when installed) was removed. It could change the file after TailWag had verified it, so what you save is now exactly what was verified.
 
 ### Added
 - **Update check (#38)**: Click the version badge to open About & Updates, check for the newest release and open its download. A quiet once-a-day startup check (switchable off) shows an 'Update available' badge. If no public release exists yet, the dialog says so.

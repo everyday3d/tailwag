@@ -90,22 +90,7 @@ app.whenReady().then(() => {
     const buffer = Buffer.from(options.dataBase64, 'base64');
     await fs.promises.writeFile(result.filePath, buffer);
 
-    // If saving a .3mf and Bambu Studio is installed locally, run native CLI validation/normalization
-    if (result.filePath.toLowerCase().endsWith('.3mf')) {
-      const bambuExe = 'C:\\Program Files\\Bambu Studio\\bambu-studio.exe';
-      if (fs.existsSync(bambuExe)) {
-        try {
-          const { execFileSync } = require('child_process');
-          const tmpValidated = `${result.filePath}.validated.3mf`;
-          execFileSync(bambuExe, ['--export-3mf', tmpValidated, result.filePath], { timeout: 25000 });
-          if (fs.existsSync(tmpValidated) && fs.statSync(tmpValidated).size > 1000) {
-            fs.renameSync(tmpValidated, result.filePath);
-          }
-        } catch (e) {
-          logMsg(`Optional Bambu CLI pass skipped: ${e}`);
-        }
-      }
-    }
+    // The saved file is written exactly as verified; it is not re-exported by any external tool.
 
     return { canceled: false, filePath: result.filePath };
   });
