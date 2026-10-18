@@ -1,6 +1,13 @@
 import { FilamentSpool } from '../data/filamentCatalog';
 import { deltaE2000 } from './colorScience';
-import { OpticalProfile, LinearRgb, layerOver, profileFromColor, toDisplayRgb } from './opticalModel';
+import {
+  OpticalProfile,
+  LinearRgb,
+  DEFAULT_BACKING_LINEAR,
+  layerOver,
+  profileFromColor,
+  toDisplayRgb,
+} from './opticalModel';
 
 export interface LayerSwapSlot {
   id: string;
@@ -284,7 +291,7 @@ export function buildLayerColorLUT(
   baseLayerMm: number,
   layerHeightMm: number,
   slots: LayerSwapSlot[],
-  options?: { model?: 'physical' | 'kubelka-munk' | 'hybrid-gamma' }
+  options?: { model?: 'physical' | 'kubelka-munk' | 'hybrid-gamma'; backing?: number }
 ): { layer: number; zHeightMm: number; rgb: RGB; hex: string; activeSpool: FilamentSpool }[] {
   if (slots.length === 0) return [];
 
@@ -332,8 +339,9 @@ export function buildLayerColorLUT(
     } else {
       const profile = profileOf(slot.spool);
       if (layer === 1) {
-        // The initial layers form an opaque base of the first filament
-        currentLinear = { r: profile.rInf[0], g: profile.rInf[1], b: profile.rInf[2] };
+        // The initial layer is a translucent layer over the backing, not a solid color by decree
+        const b = options?.backing ?? DEFAULT_BACKING_LINEAR;
+        currentLinear = layerOver({ r: b, g: b, b: b }, profile, baseLayerMm);
       } else {
         currentLinear = layerOver(currentLinear, profile, layerHeightMm);
       }

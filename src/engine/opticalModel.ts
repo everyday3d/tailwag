@@ -23,6 +23,13 @@ export const TD_TRANSMITTANCE = 0.1;
 const R_INF_MIN = 0.003;
 const R_INF_MAX = 0.97;
 
+/**
+ * Linear reflectance of whatever is behind the print (a dark surface by default). Translucent base
+ * filaments show it through, so a clear or white base looks gray rather than white. Treated as an
+ * estimate until calibration.
+ */
+export const DEFAULT_BACKING_LINEAR = 0.05;
+
 export interface OpticalProfile {
   /** Linear-light infinite-thickness reflectance per channel [r, g, b] */
   rInf: [number, number, number];
@@ -115,15 +122,20 @@ export interface StackLayer {
 
 /**
  * Color seen from above for a stack listed bottom to top.
- * With `opaqueBase` (the default) the first layer is treated as opaque, which matches how
- * relief prints are made: the first layers form a solid base of one filament.
+ * By default the first layer is NOT opaque: every layer, including the first, is a translucent
+ * layer over the backing, so a translucent base filament is not credited with a solid color it
+ * does not have. Pass opaqueBase to force the old behavior.
  */
 export function compositeStack(
   layers: StackLayer[],
   options: { substrate?: LinearRgb; opaqueBase?: boolean } = {}
 ): LinearRgb {
-  const opaqueBase = options.opaqueBase ?? true;
-  let current: LinearRgb = options.substrate ?? { r: 0.02, g: 0.02, b: 0.02 };
+  const opaqueBase = options.opaqueBase ?? false;
+  let current: LinearRgb = options.substrate ?? {
+    r: DEFAULT_BACKING_LINEAR,
+    g: DEFAULT_BACKING_LINEAR,
+    b: DEFAULT_BACKING_LINEAR,
+  };
   layers.forEach((layer, i) => {
     if (i === 0 && opaqueBase) {
       current = { r: layer.profile.rInf[0], g: layer.profile.rInf[1], b: layer.profile.rInf[2] };

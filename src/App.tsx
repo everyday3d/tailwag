@@ -41,6 +41,7 @@ import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { ExportModal } from './components/ExportModal';
 import { buildPrintPlan } from './engine/printPlan';
 import { buildLayerColorLUT } from './engine/opticalTdEngine';
+import { solveFaithfulPalette } from './engine/faithfulSolver';
 import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
 import { SpoolEditModal } from './components/SpoolEditModal';
 import {
@@ -220,6 +221,16 @@ export const App: React.FC = () => {
     return shown.length >= 2 ? shown : solverUsable(builtInSpools);
   };
 
+  // Faithful mode searches spools, order and swap layers for the closest match to the photo's own
+  // colors; the earlier saturation-boosted recipes are kept after it so they stay selectable.
+  const solvePalettes = (...args: Parameters<typeof solveOptimalPalettes>): SolverRecipe[] => {
+    const [image, pool, layers, base, lh, colors, baseSolid] = args;
+    const legacy = solveOptimalPalettes(...args);
+    if (matchMode !== 'faithful') return legacy;
+    const faithful = solveFaithfulPalette(image, pool, layers, base, lh, colors ?? 4, baseSolid);
+    return faithful.length > 0 ? [...faithful, ...legacy] : legacy;
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -278,7 +289,7 @@ export const App: React.FC = () => {
         const recipes =
           solverColorMode === 'cmyk'
             ? [solveCmykPalette(newImgData, pool, targetLayers, baseLayerMm, layerHeightMm, solverColorCount)]
-            : solveOptimalPalettes(
+            : solvePalettes(
                 newImgData,
                 pool,
                 targetLayers,
@@ -338,7 +349,7 @@ export const App: React.FC = () => {
     const recipes =
       activeColorMode === 'cmyk'
         ? [solveCmykPalette(sourceImageData, pool, targetLayers, baseLayerMm, layerHeightMm, activeColors)]
-        : solveOptimalPalettes(
+        : solvePalettes(
             sourceImageData,
             pool,
             targetLayers,
@@ -450,7 +461,7 @@ export const App: React.FC = () => {
         // Immediately re-solve active image against the newly imported Owned library
         if (result.spools.length >= 2) {
           const effectiveLayers = Math.max(totalLayers, solverColorCount * 2);
-          const recipes = solveOptimalPalettes(
+          const recipes = solvePalettes(
             sourceImageData,
             result.spools,
             effectiveLayers,

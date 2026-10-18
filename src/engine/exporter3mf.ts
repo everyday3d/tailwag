@@ -531,6 +531,8 @@ export function generateNoAmsStlPackageZip(params: {
   plan?: PrintPlan;
   /** Optional target-vs-predicted comparison image to include in the package. */
   previewPng?: Uint8Array;
+  /** Optional predicted-fidelity summary to include in the metadata JSON. */
+  fidelity?: Record<string, unknown>;
 }): Uint8Array {
   const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
   const fresh = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
@@ -567,7 +569,7 @@ export function generateNoAmsStlPackageZip(params: {
       ),
       [`${projectName}_TailWag_PrintPlan.json`]: strToU8(serializePlanSummary(plan, projectName)),
       [`${projectName}_TailWag_PrintMetadata.json`]: strToU8(
-        serializePrintMetadata(buildPrintMetadata(plan, slots, projectName))
+        serializePrintMetadata(buildPrintMetadata(plan, slots, projectName, params.fidelity))
       ),
       ...(params.previewPng ? { [`${projectName}_TailWag_Preview.png`]: params.previewPng } : {}),
     },
@@ -592,6 +594,8 @@ export function generateNative3mfPackage(params: {
   plan?: PrintPlan;
   /** Optional target-vs-predicted comparison image to include in the package. */
   previewPng?: Uint8Array;
+  /** Optional predicted-fidelity summary to include in the metadata JSON. */
+  fidelity?: Record<string, unknown>;
 }): Uint8Array {
   const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
   const fresh = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
@@ -830,7 +834,7 @@ export function generateNative3mfPackage(params: {
     'Metadata/TailWag_Swap_Playbook.txt': strToU8(playbookText),
     'Metadata/TailWag_PrintPlan.json': strToU8(serializePlanSummary(plan, projectName)),
     'Metadata/TailWag_PrintMetadata.json': strToU8(
-      serializePrintMetadata(buildPrintMetadata(plan, slots, projectName))
+      serializePrintMetadata(buildPrintMetadata(plan, slots, projectName, params.fidelity))
     ),
     ...(params.previewPng ? { 'Metadata/TailWag_Preview.png': params.previewPng } : {}),
   };

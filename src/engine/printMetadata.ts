@@ -40,12 +40,15 @@ export interface PrintMetadata {
     columnShare: number;
   }>;
   swapCount: number;
+  /** Predicted closeness to the photo (see fidelityReport.ts); absent when no photo was available */
+  predictedFidelity?: Record<string, unknown>;
 }
 
 export function buildPrintMetadata(
   plan: PrintPlan,
   slots: LayerSwapSlot[],
-  projectName: string
+  projectName: string,
+  predictedFidelity?: Record<string, unknown>
 ): PrintMetadata {
   const sorted = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
 
@@ -93,6 +96,7 @@ export function buildPrintMetadata(
       columnShare: printed > 0 ? Number((counts[i] / printed).toFixed(4)) : 0,
     })),
     swapCount: changeBands.length,
+    ...(predictedFidelity ? { predictedFidelity } : {}),
   };
 }
 

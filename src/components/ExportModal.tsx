@@ -5,6 +5,11 @@ import { HeightmapGrid } from '../engine/cadMeshBuilder';
 import { PrintPlan, shortPlanHash } from '../engine/printPlan';
 import { buildPrintMetadata, serializePrintMetadata } from '../engine/printMetadata';
 import { renderPlanComparisonPng } from '../engine/planPreview';
+import {
+  buildFidelityReport,
+  renderFidelityHeatmapPng,
+  summarizeFidelity,
+} from '../engine/fidelityReport';
 import { ExportVerificationError, type VerificationReport } from '../engine/verifyExport';
 import {
   generateVerified3mfPackage,
@@ -70,9 +75,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     return () => URL.revokeObjectURL(url);
   }, [previewPng]);
 
+  // How close the predicted print is to the photo, in standard CIEDE2000
+  const fidelity = useMemo(
+    () => (isOpen && sourceImageData ? buildFidelityReport({ plan, image: sourceImageData, slots }) : null),
+    [isOpen, plan, sourceImageData, slots]
+  );
+  const fidelitySummary = useMemo(() => (fidelity ? summarizeFidelity(fidelity) : undefined), [fidelity]);
+  const heatPng = useMemo(() => (fidelity ? renderFidelityHeatmapPng(fidelity) : null), [fidelity]);
+  const [heatUrl, setHeatUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!heatPng) {
+      setHeatUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([heatPng as unknown as BlobPart], { type: 'image/png' }));
+    setHeatUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [heatPng]);
+
   const metadataJson = useMemo(
-    () => (isOpen ? serializePrintMetadata(buildPrintMetadata(plan, slots, projectName)) : ''),
-    [isOpen, plan, slots, projectName]
+    () => (isOpen ? serializePrintMetadata(buildPrintMetadata(plan, slots, projectName, fidelitySummary)) : ''),
+    [isOpen, plan, slots, projectName, fidelitySummary]
   );
 
   if (!isOpen) return null;
@@ -146,6 +169,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
           slots,
           plan,
           previewPng: previewPng ?? undefined,
+          fidelity: fidelitySummary,
         }),
       `${projectName}_TailWag_rev1.3mf`,
       '3mf'
@@ -163,6 +187,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
           slots,
           plan,
           previewPng: previewPng ?? undefined,
+          fidelity: fidelitySummary,
         }),
       `${projectName}_NoAMS_STL_and_Pause_Guide_rev1.zip`,
       'zip'
@@ -353,6 +378,61 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
             </button>
           </div>
         </div>
+
+        {/* Predicted fidelity: how close the print should be to the photo, and why */}
+        {fidelity && fidelity.printedColumns > 0 && (
+          <div className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-orange-400">Predicted Fidelity (CIEDE2000)</span>
+              <span className="text-[10px] text-slate-400">Prediction, not a measurement</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {[
+                    ['Mean', fidelity.meanDeltaE00],
+                    ['Median', fidelity.medianDeltaE00],
+                    ['95th pct', fidelity.p95DeltaE00],
+                    ['Worst', fidelity.maxDeltaE00],
+                  ].map(([label, v]) => (
+                    <div key={label as string} className="bg-slate-950 border border-slate-800 rounded p-1.5">
+                      <div className="text-sm font-bold text-white">{(v as number).toFixed(1)}</div>
+                      <div className="text-[10px] text-slate-400">{label as string}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex h-2.5 rounded overflow-hidden border border-slate-800" title="Share of columns by predicted color difference">
+                  <div style={{ width: fidelity.share.imperceptible * 100 + '%', background: '#26aa5a' }} />
+                  <div style={{ width: fidelity.share.close * 100 + '%', background: '#8cc83c' }} />
+                  <div style={{ width: fidelity.share.noticeable * 100 + '%', background: '#f0a028' }} />
+                  <div style={{ width: fidelity.share.clear * 100 + '%', background: '#d22832' }} />
+                </div>
+                <div className="text-[10px] text-slate-400 flex flex-wrap gap-x-3">
+                  <span>{Math.round(fidelity.share.imperceptible * 100)}% imperceptible (2 or less)</span>
+                  <span>{Math.round(fidelity.share.close * 100)}% close (5 or less)</span>
+                  <span>{Math.round(fidelity.share.noticeable * 100)}% noticeable (10 or less)</span>
+                  <span>{Math.round(fidelity.share.clear * 100)}% clearly different</span>
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {Math.round(fidelity.gamutLimitedShare * 100)}% of the photo is beyond this palette's reach. {fidelity.swapCount} filament change{fidelity.swapCount === 1 ? '' : 's'}.
+                </div>
+                {fidelity.warnings.length > 0 && (
+                  <ul className="list-disc pl-4 text-[11px] text-amber-300">
+                    {fidelity.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {heatUrl && (
+                <div className="flex flex-col items-center gap-1">
+                  <img src={heatUrl} alt="Heat map: green is accurate, red is clearly different" className="w-40 h-40 object-contain rounded border border-slate-800 bg-slate-950" style={{ imageRendering: 'pixelated' }} />
+                  <span className="text-[10px] text-slate-400">Green accurate, red different</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Primary Export Sections: Single-Extruder (No-AMS) vs Multi-Color AMS */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">

@@ -13,7 +13,7 @@ import { LayerSwapSlot, RGB, buildLayerColorLUT } from './opticalTdEngine';
  */
 
 /** Identifies the optical model behind the predicted colors; part of the plan hash. */
-export const OPTICAL_MODEL_ID = 'km-linear-v1';
+export const OPTICAL_MODEL_ID = 'km-linear-v2';
 
 /** Z values are snapped to this many decimals so every export agrees bit-for-bit. */
 export const Z_DECIMALS = 4;

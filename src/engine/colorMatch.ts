@@ -1,6 +1,6 @@
 import { Lab, rgbToLab, deltaE2000, linearToSrgb } from './colorScience';
 import { LayerSwapSlot, hexToRgb01 } from './opticalTdEngine';
-import { OpticalProfile, LinearRgb, layerOver, profileFromColor } from './opticalModel';
+import { OpticalProfile, LinearRgb, DEFAULT_BACKING_LINEAR, layerOver, profileFromColor } from './opticalModel';
 
 /**
  * Faithful color matching: every column picks the stack depth whose predicted color is closest to
@@ -129,7 +129,9 @@ export function layerLabsForEnds(
   profiles: OpticalProfile[],
   ends: number[],
   totalLayers: number,
-  layerHeightMm: number
+  layerHeightMm: number,
+  baseLayerMm: number,
+  backing: number = DEFAULT_BACKING_LINEAR
 ): Lab[] {
   const out: Lab[] = new Array(totalLayers);
   let cur: LinearRgb = { r: 0, g: 0, b: 0 };
@@ -137,7 +139,7 @@ export function layerLabsForEnds(
   for (let layer = 1; layer <= totalLayers; layer++) {
     while (s < ends.length - 1 && layer > ends[s]) s++;
     const p = profiles[s];
-    if (layer === 1) cur = { r: p.rInf[0], g: p.rInf[1], b: p.rInf[2] };
+    if (layer === 1) cur = layerOver({ r: backing, g: backing, b: backing }, p, baseLayerMm);
     else cur = layerOver(cur, p, layerHeightMm);
     out[layer - 1] = rgbToLab({ r: linearToSrgb(cur.r), g: linearToSrgb(cur.g), b: linearToSrgb(cur.b) });
   }
@@ -361,10 +363,10 @@ export function searchSlotBoundaries(params: BoundarySearchParams): BoundarySear
   const from = Math.min(minLayer, totalLayers);
   // Never ask for more bands of this thickness than fit in the stack
   const minBand = Math.max(1, Math.min(params.minBandLayers ?? 2, Math.floor(totalLayers / count)));
-  void baseLayerMm;
 
   const profiles = slots.map((s) => profileFor(s));
-  const lutLabFor = (ends: number[]): Lab[] => layerLabsForEnds(profiles, ends, totalLayers, layerHeightMm);
+  const lutLabFor = (ends: number[]): Lab[] =>
+    layerLabsForEnds(profiles, ends, totalLayers, layerHeightMm, baseLayerMm);
   const searchBuckets = pruneBuckets(buckets);
   let abortAbove = Infinity;
   const fastScore = (ends: number[]) =>
