@@ -172,16 +172,17 @@ function renderIconSize(size) {
   return encodePng(size, size, rgba);
 }
 
-const sizes = [16, 32, 48, 64, 128, 256];
+const sizes = [16, 32, 48, 64, 128, 256, 512];
 const pngBuffers = sizes.map((s) => ({ size: s, buf: renderIconSize(s) }));
 
-// Write 256x256 PNG to build/icon.png and public/icon.png
-const png256 = pngBuffers.find((p) => p.size === 256).buf;
-fs.writeFileSync(path.join(outDir, 'icon.png'), png256);
-fs.writeFileSync(path.join(publicDir, 'icon.png'), png256);
+// Write 512x512 PNG to build/icon.png (macOS requirement >= 512x512) and public/icon.png
+const png512 = pngBuffers.find((p) => p.size === 512).buf;
+fs.writeFileSync(path.join(outDir, 'icon.png'), png512);
+fs.writeFileSync(path.join(publicDir, 'icon.png'), png512);
 
-// Assemble multi-resolution Windows .ICO file
-const numImages = pngBuffers.length;
+// Assemble multi-resolution Windows .ICO file (sizes <= 256)
+const icoPngs = pngBuffers.filter((p) => p.size <= 256);
+const numImages = icoPngs.length;
 const header = Buffer.alloc(6);
 header.writeUInt16LE(0, 0); // Reserved
 header.writeUInt16LE(1, 2); // Type 1 = ICO
@@ -190,7 +191,7 @@ header.writeUInt16LE(numImages, 4);
 const dirEntries = Buffer.alloc(16 * numImages);
 let dataOffset = 6 + 16 * numImages;
 
-pngBuffers.forEach((item, idx) => {
+icoPngs.forEach((item, idx) => {
   const entryOffset = idx * 16;
   dirEntries[entryOffset] = item.size === 256 ? 0 : item.size; // width
   dirEntries[entryOffset + 1] = item.size === 256 ? 0 : item.size; // height
@@ -203,8 +204,8 @@ pngBuffers.forEach((item, idx) => {
   dataOffset += item.buf.length;
 });
 
-const icoBuffer = Buffer.concat([header, dirEntries, ...pngBuffers.map((p) => p.buf)]);
+const icoBuffer = Buffer.concat([header, dirEntries, ...icoPngs.map((p) => p.buf)]);
 fs.writeFileSync(path.join(outDir, 'icon.ico'), icoBuffer);
 fs.writeFileSync(path.join(publicDir, 'icon.ico'), icoBuffer);
 
-console.log(`Generated TailWag icons: build/icon.ico (${icoBuffer.length} bytes) & build/icon.png (${png256.length} bytes)`);
+console.log(`Generated TailWag icons: build/icon.ico (${icoBuffer.length} bytes) & build/icon.png 512x512 (${png512.length} bytes)`);
