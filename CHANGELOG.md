@@ -5,7 +5,9 @@ All notable changes to **TailWag Studio** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.2] - 2026-10-18
+
+Manual mode now keeps your swap layers and no longer re-solves the relief while you drag.
 
 ### Added
 - **Choice of relief in Manual mode (#41)**: A new "Relief in Manual mode" switch lets you pick **Match photo** (after you let go of a slider, every part of the picture re-picks the layer that best matches your photo for the stack you built) or **Fixed relief** (the relief keeps the shape from the photo's brightness and sliders only move where colours change; nothing is re-solved). Your choice is remembered.
