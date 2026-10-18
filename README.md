@@ -10,6 +10,8 @@
 > **New release, bugs possible.** TailWag Studio 1.1 is new and may contain bugs, and predicted colours are estimates until you calibrate your filaments. If you find a problem, please [open an issue](https://github.com/everyday3d/tailwag/issues).
 
 > [!NOTE]
+> **Windows shows a blue warning or blocks the file?** The installer is not code-signed yet. See [how to get past it](#installing-on-windows-and-the-blue-windows-protected-your-pc-screen).
+
 > **Independent project.** TailWag Studio is not affiliated with or endorsed by HueForge, Bambu Lab, Prusa, or any filament maker. We do not own or claim to own HueForge or any other third-party name or trademark. See [NOTICE.md](NOTICE.md).
 ---
 
@@ -109,6 +111,38 @@ Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/s
 | `tailwag_export_3mf_project` | Headlessly builds a watertight 2.5D mesh with CAD cutouts and writes `.3mf` + `_Swap_Playbook.txt`. |
 | `tailwag_calibrate_td` | Computes filament $TD$ from step-wedge opacity readings and exports the calibration wedge `.stl`. |
 
+## Installing on Windows, and the blue "Windows protected your PC" screen
+
+TailWag Studio is a new, small project and the installer is **not code-signed yet** (a code-signing certificate costs money and a new app also has no "reputation" with Microsoft). Because of that, Windows may stop you when you run it, even though the file is fine. This is normal for unsigned apps and does not mean the file is infected.
+
+### The blue screen ("Windows protected your PC", Microsoft Defender SmartScreen)
+1. Click **More info** (the small link under the message).
+2. Click **Run anyway**.
+
+The installer then runs normally. You only need to do this the first time you run each new download.
+
+### "This file is blocked" or the installer will not start
+Windows marks files downloaded from the internet. To remove that mark:
+1. Right-click the downloaded `.exe` and choose **Properties**.
+2. At the bottom of the **General** tab, tick **Unblock** and click **OK**.
+3. Run the file again.
+
+### Your browser says it is "not commonly downloaded" or "may be dangerous"
+Edge and Chrome show this for any new file without a reputation yet. Choose **Keep** (in the downloads list, open the three dots, then **Keep**, then **Keep anyway**).
+
+### Antivirus quarantined the file
+Some antivirus programs distrust new unsigned apps. If one removes the installer, restore it from quarantine and add the file or folder to the exclusion list, or use the portable build.
+
+### Check that the file is the real one
+Each file on the [releases page](https://github.com/everyday3d/tailwag/releases) shows a **SHA-256** checksum next to it. To compare it with your download, open PowerShell in the folder with the file and run:
+
+```powershell
+Get-FileHash .\TailWag-Setup-1.1.2.exe -Algorithm SHA256
+```
+
+The two values should be identical. You can also read every line of the source code in this repository.
+
+Still stuck? Please [open an issue](https://github.com/everyday3d/tailwag/issues) and say which message you see.
 ## Notices and reporting bugs
 
 TailWag Studio is a new release and can have bugs. Please report them on the [issue tracker](https://github.com/everyday3d/tailwag/issues); the bug report form asks for your version and the steps to reproduce.
