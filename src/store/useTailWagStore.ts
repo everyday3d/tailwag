@@ -10,6 +10,8 @@ import {
   addSpoolToMyLibrary,
   updateSpoolInCatalog,
   removeSpoolFromMyLibrary,
+  withTdSource,
+  SEED_LIBRARY_ID,
 } from '../utils/myLibrary';
 
 export type ViewportMode = '3d-mesh' | 'split' | 'source' | 'heightmap';
@@ -117,6 +119,7 @@ const CLEAN_BUILTIN_CATALOG: FilamentSpool[] = VERIFIED_FILAMENT_CATALOG.map((s)
   owned: false,
   libraryId: undefined,
   libraryName: undefined,
+  tdSource: 'estimate' as const,
 }));
 
 function buildSeededDefaultState(): { catalog: FilamentSpool[]; importedLibraries: ImportedLibraryMeta[] } {
@@ -124,10 +127,10 @@ function buildSeededDefaultState(): { catalog: FilamentSpool[]; importedLibrarie
     const parsedSeed = parseFilamentLibraryJson(
       JSON.stringify(userDefaultFilamentsRaw),
       'filaments.json',
-      'lib-user-filaments-json'
+      SEED_LIBRARY_ID
     );
     if (parsedSeed.spools.length > 0) {
-      const merged: FilamentSpool[] = [...parsedSeed.spools, ...CLEAN_BUILTIN_CATALOG];
+      const merged: FilamentSpool[] = [...parsedSeed.spools.map(withTdSource), ...CLEAN_BUILTIN_CATALOG];
       return {
         catalog: merged,
         importedLibraries: [
@@ -159,7 +162,7 @@ function loadInitialStoreData(): { catalog: FilamentSpool[]; importedLibraries: 
           const normalizedCat = parsedCat
             .filter((s) => !s.libraryId || activeLibIds.has(s.libraryId))
             .map((s) => ({
-              ...s,
+              ...withTdSource(s),
               owned: Boolean(s.libraryId && activeLibIds.has(s.libraryId)),
             }));
           if (normalizedCat.length > 0) {

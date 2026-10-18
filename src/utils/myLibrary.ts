@@ -93,3 +93,16 @@ export function removeSpoolFromMyLibrary(
   const next = catalog.filter((s) => !(s.id === spoolId && s.libraryId === MY_LIBRARY_ID));
   return { catalog: next, importedLibraries: syncMyLibraryMeta(next, libs) };
 }
+
+/** Library id of the bundled default library (the project owner's own TDS1-measured TDs). */
+export const SEED_LIBRARY_ID = 'lib-user-filaments-json';
+
+/**
+ * Fills in a missing tdSource for legacy data. The bundled personal library was measured with a
+ * TDS1, other imported libraries are user-supplied, and bundled catalog spools are only estimates.
+ */
+export function withTdSource(spool: FilamentSpool): FilamentSpool {
+  if (spool.tdSource) return spool;
+  const tdSource: TdSource = spool.libraryId === SEED_LIBRARY_ID ? 'measured' : spool.libraryId ? 'user' : 'estimate';
+  return { ...spool, tdSource };
+}

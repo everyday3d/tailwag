@@ -20,9 +20,9 @@ This file records where every bundled filament value comes from, and the rules f
 
 | Dataset | File | Entries | Provenance | Status |
 |---|---|---|---|---|
-| Original verified catalog | `src/data/filamentCatalog.ts` (`VERIFIED_FILAMENT_CATALOG`) | ~50 | Hand-entered earlier in the project. The origin of the individual TD values was **not recorded**. | Needs a source pass. Treat TD as `catalog` (nominal). |
+| Original catalog | `src/data/filamentCatalog.ts` (`VERIFIED_FILAMENT_CATALOG`) | ~50 | Hand-entered earlier in the project. The origin of the individual TD values was not recorded. | **Downgraded 2026-10-18:** TD source is `estimate` and confidence `approx` everywhere it is shown. Values unchanged. |
 | Manufacturer catalog | `src/data/manufacturerCatalog.ts` (`ROWS`) | ~85 | Approximate colors compiled from public manufacturer color charts. TD from the hue/lightness prior in `src/engine/tdPrior.ts`. | All entries `confidence: 'approx'`, TD `estimate`. |
-| Default personal library | `src/data/userDefaultFilaments.json` | 36 | The project owner's own HueForge `filaments.json` export, used as the default seed. | Owner's own data. Repo is currently private. Revisit before any public release. |
+| Default personal library | `src/data/userDefaultFilaments.json` | 36 | The project owner's own library. **TD values measured by the owner with a TDS1.** Loaded as TD source `measured`. | **Approved for public releases (owner decision, 2026-10-18)** provided the file contains no personally identifying information. Audited: only `Brand`, `Color`, `Name`, `Owned`, `Tags`, `Transmissivity`, `Type`, `uuid` fields; no names, paths, emails or URLs. Re-check on every change. |
 
 ## Brand source pages
 
@@ -41,6 +41,5 @@ Defined in `BRAND_SOURCES` in `src/data/manufacturerCatalog.ts`: Bambu Lab, Poly
 
 ## Open items
 
-- Record the origin of the original ~50 TD values, or downgrade them to `estimate`.
-- Decide whether `userDefaultFilaments.json` should stay in the repo if it becomes public.
 - Replace approximate colors with values checked against each manufacturer's page, brand by brand.
+- Keep the personal library file free of personally identifying information (no names, paths, emails, URLs).

@@ -195,9 +195,9 @@ function buildCatalog(): CatalogEntry[] {
       catalogId,
       line: v.material,
       hueFamily: hueFamilyOf(v.hex),
-      tdSource: 'catalog',
-      confidence: 'verified',
-      source: 'Bundled verified catalog',
+      tdSource: 'estimate',
+      confidence: 'approx',
+      source: 'Original bundled catalog; TD origin not recorded, treated as an estimate',
       sourceUrl: BRAND_SOURCES[v.brand],
     });
     seen.add(catalogId);
