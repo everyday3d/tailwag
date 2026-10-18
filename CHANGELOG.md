@@ -5,6 +5,15 @@ All notable changes to **TailWag Studio** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Choice of relief in Manual mode (#41)**: A new "Relief in Manual mode" switch lets you pick **Match photo** (after you let go of a slider, every part of the picture re-picks the layer that best matches your photo for the stack you built) or **Fixed relief** (the relief keeps the shape from the photo's brightness and sliders only move where colours change; nothing is re-solved). Your choice is remembered.
+
+### Fixed
+- **Manual mode no longer re-solves while you adjust (#41)**: Dragging a layer slider used to rebuild the whole relief on every step, changing the height of about 19% of the picture for one 3-layer move, and cost about 157 ms per step. The relief now holds still while you drag and updates once when you let go (or not at all with Fixed relief).
+- **Manual mode keeps your swap layers (#41)**: Changing a spool, reordering slots, removing or adding a slot, editing a spool in the stack, and the Base Layer Thickness slider no longer move boundaries you set by hand. They are only changed where needed to stay valid, and a new slot splits its neighbour's range. Switching from an automatic mode still re-tunes once, as before.
+- The timeline badge says "Manual: your layers stay put" in Manual mode instead of "Auto-Tune & Re-Render", and the Auto-Tune Swap Layers button now follows the Faithful/Vivid setting.
 ## [1.1.1] - 2026-10-18
 
 Patch release: legal notices, repository cleanup and wording only. No change to colour prediction, solving or export.

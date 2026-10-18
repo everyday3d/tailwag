@@ -114,6 +114,9 @@ export const App: React.FC = () => {
     setViewportMode,
     solverColorMode,
     setSolverColorMode,
+    manualRelief,
+    setManualRelief,
+    slotsAdjusting,
     setSourceImageData: setStoreSourceImageData,
     lightAzimuthDeg,
     lightElevationDeg,
@@ -167,13 +170,16 @@ export const App: React.FC = () => {
   }, [defaultImg, setStoreSourceImageData]);
 
   // Faithful mode picks each column's depth by color match against the current stack's layer colors
-  const matchLut = useMemo(
-    () =>
-      matchMode === 'faithful' && slots.length > 0
-        ? buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots).map((e) => e.rgb)
-        : null,
-    [matchMode, slots, totalLayers, baseLayerMm, layerHeightMm]
+  // In Manual mode the user can choose a fixed, brightness-based relief; otherwise the relief is re-matched.
+  const wantMatch = matchMode === 'faithful' && slots.length > 0 && !(solverColorMode === 'manual' && manualRelief === 'fixed');
+  const liveMatchLut = useMemo(
+    () => (wantMatch ? buildLayerColorLUT(totalLayers, baseLayerMm, layerHeightMm, slots).map((e) => e.rgb) : null),
+    [wantMatch, slots, totalLayers, baseLayerMm, layerHeightMm]
   );
+  // While a layer slider is being dragged the relief holds still, then re-matches once on release.
+  const heldMatchLut = useRef(liveMatchLut);
+  if (!slotsAdjusting || liveMatchLut === null || heldMatchLut.current === null) heldMatchLut.current = liveMatchLut;
+  const matchLut = heldMatchLut.current;
 
   // Compute 2.5D Heightmap Grid reactively
   const grid = useMemo(
@@ -1124,6 +1130,31 @@ export const App: React.FC = () => {
               </div>
             </div>
 
+            {solverColorMode === 'manual' && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Relief in Manual mode</span>
+                <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
+                  <button
+                    onClick={() => setManualRelief('rematch')}
+                    className={`py-1 px-1.5 rounded-md text-[10px] font-bold transition truncate ${
+                      manualRelief === 'rematch' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="After you let go of a slider, every part of the picture re-picks the layer that best matches your photo for the stack you built. The relief holds still while you drag."
+                  >
+                    Match photo
+                  </button>
+                  <button
+                    onClick={() => setManualRelief('fixed')}
+                    className={`py-1 px-1.5 rounded-md text-[10px] font-bold transition truncate ${
+                      manualRelief === 'fixed' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="The relief keeps the shape from the photo's brightness. Sliders only move where colours change; nothing is re-solved."
+                  >
+                    Fixed relief
+                  </button>
+                </div>
+              </div>
+            )}
             {solverColorMode === 'manual' ? (
               /* MANUAL LAY-DOWN PALETTE BUILDER */
               <div className="flex flex-col gap-2 min-w-0">
@@ -1305,8 +1336,9 @@ export const App: React.FC = () => {
                           totalLayers,
                           baseLayerMm,
                           layerHeightMm,
-                          baseSolidThicknessMm
-                        )
+                          baseSolidThicknessMm,
+                      matchMode
+                    )
                       )
                     }
                     className="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition shadow truncate"

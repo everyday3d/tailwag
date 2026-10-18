@@ -36,6 +36,10 @@ export interface TailWagState {
   slicePreviewMaxLayer: number;
   renderVersion: number;
   solverColorMode: 'natural' | 'cmyk' | 'manual';
+  /** Manual mode relief: re-match the photo after a slider is released, or keep the brightness-based relief fixed. */
+  manualRelief: 'rematch' | 'fixed';
+  /** True while a layer slider is being dragged; the relief holds still until it ends. */
+  slotsAdjusting: boolean;
   sourceImageData: ImageData | null;
 
   // Physical & Slicer Layer Parameters
@@ -74,6 +78,7 @@ export interface TailWagState {
   setSlicePreviewMaxLayer: (layer: number) => void;
   setSourceImageData: (imageData: ImageData | null) => void;
   setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
+  setManualRelief: (mode: 'rematch' | 'fixed') => void;
   triggerReRender: () => void;
   setDimensions: (widthMm: number, heightMm: number) => void;
   setLayerParams: (baseLayerMm: number, layerHeightMm: number, totalLayers: number) => void;
@@ -197,6 +202,67 @@ function saveStoreDataToStorage(catalog: FilamentSpool[], importedLibraries: Imp
   }
 }
 
+const MANUAL_RELIEF_KEY = 'tailwag_manual_relief';
+
+/** How the relief behaves in Manual mode: 'rematch' re-picks each depth after you let go, 'fixed' keeps the photo-brightness relief. */
+function loadManualRelief(): 'rematch' | 'fixed' {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(MANUAL_RELIEF_KEY) === 'fixed' ? 'fixed' : 'rematch';
+  } catch {
+    return 'rematch';
+  }
+}
+
+/** Once the user is in Manual mode their swap layers are theirs: nothing re-solves them. */
+const isManual = (state: { solverColorMode: string }): boolean => state.solverColorMode === 'manual';
+
+/** Keeps boundaries the user chose, changing them only where needed to stay valid. */
+function clampEnds(slots: LayerSwapSlot[], totalLayers: number): LayerSwapSlot[] {
+  const N = slots.length;
+  const out = slots.map((s) => ({ ...s }));
+  for (let i = 0; i < N - 1; i++) {
+    const min = i === 0 ? 1 : out[i - 1].upToLayer + 1;
+    const max = totalLayers - (N - 1 - i);
+    out[i].upToLayer = Math.max(min, Math.min(max, out[i].upToLayer));
+  }
+  if (N > 0) out[N - 1].upToLayer = totalLayers;
+  return out;
+}
+
+/**
+ * Makes room for a newly added slot by splitting its neighbour's range, leaving every other
+ * boundary where the user put it. Returns null when there is no room to split.
+ */
+function splitForNewSlot(prev: LayerSwapSlot[], next: LayerSwapSlot[], newIdx: number, total: number): LayerSwapSlot[] | null {
+  const N = next.length;
+  const out = next.map((s) => ({ ...s }));
+  const oldEnds = prev.map((s) => s.upToLayer);
+  if (newIdx === N - 1) {
+    const start = (N >= 3 ? oldEnds[N - 3] : 0) + 1;
+    if (total - start < 1) return null;
+    out[N - 2].upToLayer = start + Math.floor((total - start) / 2);
+    out[N - 1].upToLayer = total;
+    return out;
+  }
+  const prevEnd = newIdx === 0 ? 0 : oldEnds[newIdx - 1];
+  const nextEnd = oldEnds[newIdx];
+  if (nextEnd - prevEnd < 2) return null;
+  for (let i = 0; i < N; i++) {
+    if (i < newIdx) out[i].upToLayer = oldEnds[i];
+    else if (i > newIdx) out[i].upToLayer = oldEnds[i - 1];
+  }
+  out[newIdx].upToLayer = prevEnd + Math.max(1, Math.floor((nextEnd - prevEnd) / 2));
+  return out;
+}
+
+let adjustTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Marks a slider drag as in progress and ends it shortly after the last movement. */
+function scheduleAdjustEnd(set: (partial: { slotsAdjusting: boolean }) => void) {
+  if (adjustTimer) clearTimeout(adjustTimer);
+  adjustTimer = setTimeout(() => set({ slotsAdjusting: false }), 350);
+}
+
 const initialStoreData = loadInitialStoreData();
 
 const findOwnedOrBuiltIn = (predicate: (s: FilamentSpool) => boolean, fallbackId: string): FilamentSpool => {
@@ -225,6 +291,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   slicePreviewMaxLayer: 24,
   renderVersion: 0,
   solverColorMode: 'natural',
+  manualRelief: loadManualRelief(),
+  slotsAdjusting: false,
   sourceImageData: getInitialImageData(),
 
   setSourceImageData: (imageData) =>
@@ -233,6 +301,14 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       renderVersion: (state.renderVersion ?? 0) + 1,
     })),
   setSolverColorMode: (mode) => set({ solverColorMode: mode }),
+  setManualRelief: (manualRelief) => {
+    try {
+      if (typeof window !== 'undefined') window.localStorage.setItem(MANUAL_RELIEF_KEY, manualRelief);
+    } catch {
+      // ignore storage errors
+    }
+    set((state) => ({ manualRelief, renderVersion: (state.renderVersion ?? 0) + 1 }));
+  },
   triggerReRender: () =>
     set((state) => ({
       renderVersion: (state.renderVersion ?? 0) + 1,
@@ -350,8 +426,10 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       const N = state.slots.length;
       const nextTotalLayers = Math.max(state.totalLayers, baseLayers + Math.max(8, N * 2));
       const nextTotalDepthMm = Number((state.baseLayerMm + (nextTotalLayers - 1) * state.layerHeightMm).toFixed(2));
-      const nextSlots = state.slots.map((s) => ({ ...s }));
-      if (N > 1) {
+      const nextSlots = isManual(state) ? clampEnds(state.slots, nextTotalLayers) : state.slots.map((s) => ({ ...s }));
+      if (isManual(state)) {
+        // Manual mode: keep the boundaries the user set.
+      } else if (N > 1) {
         const baseSlotEnd = Math.max(1, Math.min(nextTotalLayers - (N - 1), baseLayers + 1));
         nextSlots[0].upToLayer = baseSlotEnd;
         for (let i = 1; i < N - 1; i++) {
@@ -382,7 +460,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       slots,
       renderVersion: (state.renderVersion ?? 0) + 1,
     })),
-  updateSlotLayer: (slotId, upToLayer) =>
+  updateSlotLayer: (slotId, upToLayer) => {
+    scheduleAdjustEnd(set);
     set((state) => {
       const idx = state.slots.findIndex((s) => s.id === slotId);
       if (idx === -1) return state;
@@ -411,15 +490,19 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       next[N - 1].upToLayer = state.totalLayers;
       return {
         slots: next,
+        slotsAdjusting: true,
         solverColorMode: 'manual',
         renderVersion: (state.renderVersion ?? 0) + 1,
       };
-    }),
+    });
+  },
   updateSlotSpool: (slotId, spool) =>
     set((state) => {
       const nextSlots = state.slots.map((s) => (s.id === slotId ? { ...s, spool } : s));
       let tuned = nextSlots;
-      if (state.sourceImageData) {
+      if (isManual(state)) {
+        tuned = clampEnds(nextSlots, state.totalLayers);
+      } else if (state.sourceImageData) {
         tuned = optimizeManualSlotBoundaries(
           state.sourceImageData,
           nextSlots,
@@ -450,8 +533,14 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       ];
       const count = nextSlots.length;
       const nextTotalLayers = Math.max(state.totalLayers, count * 2);
+      const manualAdd =
+        isManual(state) && nextTotalLayers === state.totalLayers
+          ? splitForNewSlot(state.slots, nextSlots, nextSlots.length - 1, state.totalLayers)
+          : null;
       let tuned = nextSlots;
-      if (state.sourceImageData) {
+      if (manualAdd) {
+        tuned = manualAdd;
+      } else if (state.sourceImageData) {
         tuned = optimizeManualSlotBoundaries(
           state.sourceImageData,
           nextSlots,
@@ -502,8 +591,14 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       });
       const count = nextSlots.length;
       const nextTotalLayers = Math.max(state.totalLayers, count * 2);
+      const manualAdd =
+        isManual(state) && nextTotalLayers === state.totalLayers
+          ? splitForNewSlot(state.slots, nextSlots, insertIdx, state.totalLayers)
+          : null;
       let tuned = nextSlots;
-      if (state.sourceImageData) {
+      if (manualAdd) {
+        tuned = manualAdd;
+      } else if (state.sourceImageData) {
         tuned = optimizeManualSlotBoundaries(
           state.sourceImageData,
           nextSlots,
@@ -556,7 +651,10 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       reordered.splice(toIndex, 0, moved);
 
       let tuned = reordered;
-      if (state.sourceImageData) {
+      if (isManual(state)) {
+        // Boundaries are positions the user chose: they stay put and the filaments move between them.
+        tuned = reordered.map((slot, idx) => ({ ...slot, upToLayer: state.slots[idx].upToLayer }));
+      } else if (state.sourceImageData) {
         tuned = optimizeManualSlotBoundaries(
           state.sourceImageData,
           reordered,
@@ -624,7 +722,9 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       if (state.slots.length <= 1) return state;
       const filtered = state.slots.filter((s) => s.id !== slotId);
       let tuned = filtered;
-      if (state.sourceImageData) {
+      if (isManual(state)) {
+        tuned = clampEnds(filtered, state.totalLayers);
+      } else if (state.sourceImageData) {
         tuned = optimizeManualSlotBoundaries(
           state.sourceImageData,
           filtered,
@@ -683,7 +783,7 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
       let slots = state.slots;
       if (edited && usedInStack) {
         slots = state.slots.map((s) => (s.spool.id === spoolId ? { ...s, spool: edited } : s));
-        if (state.sourceImageData && (patch.hex !== undefined || patch.td !== undefined || patch.calibration !== undefined)) {
+        if (!isManual(state) && state.sourceImageData && (patch.hex !== undefined || patch.td !== undefined || patch.calibration !== undefined)) {
           slots = optimizeManualSlotBoundaries(
             state.sourceImageData,
             slots,

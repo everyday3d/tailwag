@@ -6,6 +6,7 @@ import { buildLayerColorLUT } from '../engine/opticalTdEngine';
 export const LayerTimeline: React.FC = () => {
   const {
     slots,
+    solverColorMode,
     catalog,
     totalLayers,
     baseLayerMm,
@@ -102,7 +103,7 @@ export const LayerTimeline: React.FC = () => {
           </span>
           <span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 hidden md:inline-flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Auto-Tune &amp; Re-Render
+            {solverColorMode === 'manual' ? 'Manual: your layers stay put' : 'Auto-Tune & Re-Render'}
           </span>
           <span className="text-[10px] font-normal text-slate-400 hidden lg:inline">
             • Changing filaments or order re-renders stack immediately
