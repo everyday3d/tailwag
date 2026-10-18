@@ -9,6 +9,7 @@ import {
   serializePlanSummary,
   shortPlanHash,
 } from './printPlan';
+import { buildPrintMetadata, serializePrintMetadata } from './printMetadata';
 import bambuProjectTemplate from '../data/bambuProjectTemplate.json';
 
 export interface SwapInstructionItem {
@@ -526,6 +527,8 @@ export function generateNoAmsStlPackageZip(params: {
   slots: LayerSwapSlot[];
   /** The plan the preview was built from. Built here when omitted. */
   plan?: PrintPlan;
+  /** Optional target-vs-predicted comparison image to include in the package. */
+  previewPng?: Uint8Array;
 }): Uint8Array {
   const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
   const fresh = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
@@ -535,7 +538,7 @@ export function generateNoAmsStlPackageZip(params: {
       `Stale PrintPlan (${shortPlanHash(plan)}) does not match the model being exported (${shortPlanHash(fresh)}). Rebuild the plan and export again.`
     );
   }
-  const stlBuffer = generateBinaryStlFromGrid(grid);
+  const stlBuffer = generateBinaryStlFromGrid(grid, `Plan ${plan.hash}`);
   const htmlGuide = generateSingleExtruderHtmlGuide(
     projectName,
     grid,
@@ -561,6 +564,10 @@ export function generateNoAmsStlPackageZip(params: {
         `${txtPlaybook}\n\nPrint Plan ID: ${shortPlanHash(plan)} (full hash ${plan.hash})\n`
       ),
       [`${projectName}_TailWag_PrintPlan.json`]: strToU8(serializePlanSummary(plan, projectName)),
+      [`${projectName}_TailWag_PrintMetadata.json`]: strToU8(
+        serializePrintMetadata(buildPrintMetadata(plan, slots, projectName))
+      ),
+      ...(params.previewPng ? { [`${projectName}_TailWag_Preview.png`]: params.previewPng } : {}),
     },
     { level: 6 }
   );
@@ -702,6 +709,8 @@ export function generateNative3mfPackage(params: {
   slots: LayerSwapSlot[];
   /** The plan the preview was built from. Built here when omitted. */
   plan?: PrintPlan;
+  /** Optional target-vs-predicted comparison image to include in the package. */
+  previewPng?: Uint8Array;
 }): Uint8Array {
   const { projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots } = params;
   const fresh = buildPrintPlan({ grid, slots, baseLayerMm, layerHeightMm, totalLayers });
@@ -948,6 +957,10 @@ export function generateNative3mfPackage(params: {
     'Metadata/filament_sequence.json': strToU8(filamentSeqJson),
     'Metadata/TailWag_Swap_Playbook.txt': strToU8(playbookText),
     'Metadata/TailWag_PrintPlan.json': strToU8(serializePlanSummary(plan, projectName)),
+    'Metadata/TailWag_PrintMetadata.json': strToU8(
+      serializePrintMetadata(buildPrintMetadata(plan, slots, projectName))
+    ),
+    ...(params.previewPng ? { 'Metadata/TailWag_Preview.png': params.previewPng } : {}),
   };
 
   return zipSync(archiveFiles, { level: 6 });

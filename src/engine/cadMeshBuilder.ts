@@ -1084,7 +1084,7 @@ export function buildHeightmapGrid(params: {
 /**
  * Generates a watertight Binary STL buffer from the HeightmapGrid (top relief + bottom face + perimeter/hole walls).
  */
-export function generateBinaryStlFromGrid(grid: HeightmapGrid): ArrayBuffer {
+export function generateBinaryStlFromGrid(grid: HeightmapGrid, headerNote?: string): ArrayBuffer {
   const { cols, rows, widthMm, heightMm, topZ, bottomZ } = grid;
   const triangles: number[] = []; // flat array of [x1,y1,z1, x2,y2,z2, x3,y3,z3]
 
@@ -1161,7 +1161,10 @@ export function generateBinaryStlFromGrid(grid: HeightmapGrid): ArrayBuffer {
   const view = new DataView(buffer);
 
   // 80-byte header
-  const headerText = 'TailWag Studio Binary STL - BoxerDawg 3D Filament Painting Engine';
+  // 80-byte STL header: an optional note (for example the Print Plan ID) ties the file to its plan.
+  const headerText = headerNote
+    ? `TailWag Studio STL | ${headerNote}`.slice(0, 80)
+    : 'TailWag Studio Binary STL - BoxerDawg 3D Filament Painting Engine';
   for (let i = 0; i < Math.min(80, headerText.length); i++) {
     view.setUint8(i, headerText.charCodeAt(i));
   }

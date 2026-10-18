@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive, Image as ImageIcon, Braces } from 'lucide-react';
 import { useTailWagStore } from '../store/useTailWagStore';
 import { HeightmapGrid, generateBinaryStlFromGrid } from '../engine/cadMeshBuilder';
 import { PrintPlan, shortPlanHash } from '../engine/printPlan';
+import { buildPrintMetadata, serializePrintMetadata } from '../engine/printMetadata';
+import { renderPlanComparisonPng } from '../engine/planPreview';
 import {
   buildSwapPlaybook,
   generatePlaybookText,
@@ -20,7 +22,7 @@ interface ExportModalProps {
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid, plan }) => {
-  const { projectName, baseLayerMm, layerHeightMm, totalLayers, slots } = useTailWagStore();
+  const { projectName, baseLayerMm, layerHeightMm, totalLayers, slots, sourceImageData } = useTailWagStore();
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -44,6 +46,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
         `<p style="font:12px monospace;color:#888;text-align:center">Print Plan ID: ${shortPlanHash(plan)}</p></body>`
       ),
     [projectName, grid, baseLayerMm, layerHeightMm, totalLayers, slots, plan]
+  );
+
+  // Target vs predicted comparison, rendered from the plan (only while the dialog is open)
+  const previewPng = useMemo(
+    () => (isOpen && sourceImageData ? renderPlanComparisonPng(plan, sourceImageData) : null),
+    [isOpen, plan, sourceImageData]
+  );
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!previewPng) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([previewPng as unknown as BlobPart], { type: 'image/png' }));
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [previewPng]);
+
+  const metadataJson = useMemo(
+    () => (isOpen ? serializePrintMetadata(buildPrintMetadata(plan, slots, projectName)) : ''),
+    [isOpen, plan, slots, projectName]
   );
 
   if (!isOpen) return null;
@@ -82,15 +105,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     setExportError(null);
     let pkg: Uint8Array;
     try {
-    pkg = generateNative3mfPackage({
-      projectName,
-      grid,
-      baseLayerMm,
-      layerHeightMm,
-      totalLayers,
-      slots,
-      plan,
-    });
+      pkg = generateNative3mfPackage({
+        projectName,
+        grid,
+        baseLayerMm,
+        layerHeightMm,
+        totalLayers,
+        slots,
+        plan,
+        previewPng: previewPng ?? undefined,
+      });
     } catch (e) {
       setExportError(e instanceof Error ? e.message : String(e));
       return;
@@ -102,15 +126,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     setExportError(null);
     let zipBytes: Uint8Array;
     try {
-    zipBytes = generateNoAmsStlPackageZip({
-      projectName,
-      grid,
-      baseLayerMm,
-      layerHeightMm,
-      totalLayers,
-      slots,
-      plan,
-    });
+      zipBytes = generateNoAmsStlPackageZip({
+        projectName,
+        grid,
+        baseLayerMm,
+        layerHeightMm,
+        totalLayers,
+        slots,
+        plan,
+        previewPng: previewPng ?? undefined,
+      });
     } catch (e) {
       setExportError(e instanceof Error ? e.message : String(e));
       return;
@@ -119,8 +144,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
   };
 
   const handleExportBinaryStl = () => {
-    const stl = generateBinaryStlFromGrid(grid);
-    saveUint8OrBuffer(stl, `${projectName}_TailWag_rev1.stl`, 'stl');
+    // The Print Plan ID in the STL header ties a loose STL back to the plan that produced it.
+    const stl = generateBinaryStlFromGrid(grid, `Plan ${plan.hash}`);
+    saveUint8OrBuffer(stl, `${projectName}_TailWag_${shortPlanHash(plan)}_rev1.stl`, 'stl');
+  };
+
+  const handleExportMetadata = () => {
+    saveUint8OrBuffer(
+      new TextEncoder().encode(metadataJson),
+      `${projectName}_TailWag_PrintMetadata.json`,
+      'json'
+    );
+  };
+
+  const handleExportPreview = () => {
+    if (previewPng) saveUint8OrBuffer(previewPng, `${projectName}_TailWag_Preview_${shortPlanHash(plan)}.png`, 'png');
   };
 
   const handleExportHtmlGuide = () => {
@@ -153,7 +191,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
                 Export .3MF (Multi-Color AMS) or .STL + Layer-Pause Guide (Single-Head / No-AMS)
               </h2>
               <p className="text-xs text-slate-400">
-                Initial Layer: {baseLayerMm.toFixed(2)}mm • Layer Height: {layerHeightMm.toFixed(2)}mm • 100% Rectilinear Infill • Total: {totalLayers} Layers � Print Plan {shortPlanHash(plan)}
+                Initial Layer: {baseLayerMm.toFixed(2)}mm • Layer Height: {layerHeightMm.toFixed(2)}mm • 100% Rectilinear Infill • Total: {totalLayers} Layers | Print Plan {shortPlanHash(plan)}
               </p>
             </div>
           </div>
@@ -219,6 +257,52 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             {copied ? 'Copied!' : 'Copy Playbook'}
           </button>
+        </div>
+
+        {/* Predicted print preview (rendered from the Print Plan) and structured metadata */}
+        <div className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-orange-400">
+              Target vs. Predicted Print
+            </span>
+            <span className="text-[10px] font-mono text-slate-400">Print Plan {shortPlanHash(plan)}</span>
+          </div>
+          {previewUrl ? (
+            <div className="flex flex-col gap-1">
+              <img
+                src={previewUrl}
+                alt="Left: target image. Right: predicted print from the exact layers in the export."
+                className="w-full max-h-72 object-contain rounded bg-slate-950 border border-slate-800"
+                style={{ imageRendering: 'pixelated' }}
+              />
+              <div className="grid grid-cols-2 text-[10px] text-slate-400 text-center">
+                <span>Target image</span>
+                <span>Predicted print (exact exported layers)</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400">Load an image to see the predicted print.</div>
+          )}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={handleExportPreview}
+              disabled={exporting || !previewPng}
+              className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition disabled:opacity-40"
+              title="Download the side-by-side comparison as a PNG"
+            >
+              <ImageIcon className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+              <span>Preview PNG</span>
+            </button>
+            <button
+              onClick={handleExportMetadata}
+              disabled={exporting}
+              className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition"
+              title="Download total height, base layer, filament change heights and filament sequence as JSON"
+            >
+              <Braces className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <span>Metadata JSON</span>
+            </button>
+          </div>
         </div>
 
         {/* Primary Export Sections: Single-Extruder (No-AMS) vs Multi-Color AMS */}
