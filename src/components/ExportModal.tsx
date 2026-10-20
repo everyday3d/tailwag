@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive, Image as ImageIcon, Braces } from 'lucide-react';
+import { Package, FileCode, FileText, Copy, Check, X, Globe, FolderArchive, Image as ImageIcon, Braces, Send, FolderOpen } from 'lucide-react';
 import { useTailWagStore } from '../store/useTailWagStore';
 import { HeightmapGrid } from '../engine/cadMeshBuilder';
 import { analyzePrintCost } from '../engine/printEconomics';
@@ -23,6 +23,33 @@ import {
   generateSingleExtruderHtmlGuide,
 } from '../engine/exporter3mf';
 
+interface DetectedSlicer {
+  id: string;
+  name: string;
+  exePath: string;
+  source: 'custom' | 'registry' | 'folder';
+}
+interface SupportedSlicer {
+  id: string;
+  name: string;
+  installUrl: string;
+}
+type SlicerStatus =
+  | { kind: 'idle' }
+  | { kind: 'sending' }
+  | { kind: 'sent'; slicerName: string; filePath: string }
+  | { kind: 'saved'; filePath: string }
+  | { kind: 'failed'; error: string; filePath?: string };
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+};
+
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -38,6 +65,32 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportIssues, setExportIssues] = useState<string[]>([]);
   const [verifiedNote, setVerifiedNote] = useState<string | null>(null);
+
+  // Send to slicer (desktop only): installed slicers, the selected one, and the last result.
+  const desktop = (window as any).tailwagDesktop;
+  const canSendToSlicer = !!desktop?.sendToSlicer;
+  const [slicers, setSlicers] = useState<DetectedSlicer[] | null>(null);
+  const [supportedSlicers, setSupportedSlicers] = useState<SupportedSlicer[]>([]);
+  const [slicerId, setSlicerId] = useState<string>('');
+  const [slicerStatus, setSlicerStatus] = useState<SlicerStatus>({ kind: 'idle' });
+
+  const refreshSlicers = async (prefer?: string) => {
+    if (!desktop?.listSlicers) return;
+    const res = await desktop.listSlicers();
+    const found: DetectedSlicer[] = res?.slicers ?? [];
+    setSlicers(found);
+    setSupportedSlicers(res?.supported ?? []);
+    const pick = [prefer, res?.last].find((id) => id && found.some((s) => s.id === id)) ?? found[0]?.id ?? '';
+    setSlicerId(pick);
+  };
+
+  useEffect(() => {
+    if (isOpen && canSendToSlicer) {
+      setSlicerStatus({ kind: 'idle' });
+      refreshSlicers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, canSendToSlicer]);
 
   const playbook = useMemo(
     () => buildSwapPlaybook(slots, baseLayerMm, layerHeightMm, totalLayers),
@@ -116,15 +169,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
       const desktopBridge = (window as any).tailwagDesktop;
       if (desktopBridge?.saveFile) {
-        let binary = '';
-        const chunk = 0x8000;
-        for (let i = 0; i < bytes.length; i += chunk) {
-          binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-        }
         await desktopBridge.saveFile({
           defaultPath: filename,
           filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-          dataBase64: btoa(binary),
+          dataBase64: bytesToBase64(bytes),
         });
       } else {
         const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/octet-stream' });
@@ -145,7 +193,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
   const runVerified = <T extends Uint8Array | ArrayBuffer>(
     build: () => { data: T; report: VerificationReport },
     filename: string,
-    ext: string
+    ext: string,
+    deliver: (data: T) => void = (data) => saveUint8OrBuffer(data, filename, ext)
   ) => {
     setExportError(null);
     setExportIssues([]);
@@ -164,26 +213,56 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     }
     setExportIssues(result.report.warnings.map((w) => w.message));
     setVerifiedNote(`Verified against print plan ${shortPlanHash(plan)}: file matches what the preview shows.`);
-    saveUint8OrBuffer(result.data, filename, ext);
+    deliver(result.data);
   };
 
-  const handleExport3MF = () =>
-    runVerified(
-      () =>
-        generateVerified3mfPackage({
-          projectName,
-          grid,
-          baseLayerMm,
-          layerHeightMm,
-          totalLayers,
-          slots,
-          plan,
-          previewPng: previewPng ?? undefined,
-          fidelity: fidelitySummary,
-        }),
-      `${projectName}_TailWag_rev1.3mf`,
-      '3mf'
-    );
+  const build3mf = () =>
+    generateVerified3mfPackage({
+      projectName,
+      grid,
+      baseLayerMm,
+      layerHeightMm,
+      totalLayers,
+      slots,
+      plan,
+      previewPng: previewPng ?? undefined,
+      fidelity: fidelitySummary,
+    });
+  const threeMfName = `${projectName}_TailWag_rev1.3mf`;
+
+  const handleExport3MF = () => runVerified(build3mf, threeMfName, '3mf');
+
+  // Same verified .3mf as Export, handed straight to the slicer. A failed check blocks it
+  // before anything is written. With no slicer (targetId null) the file is only saved
+  // to the export folder and shown there.
+  const handleSendToSlicer = (targetId: string | null) => {
+    setSlicerStatus({ kind: 'idle' });
+    runVerified(build3mf, threeMfName, '3mf', async (data) => {
+      setExporting(true);
+      setSlicerStatus({ kind: 'sending' });
+      try {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        const res = await desktop.sendToSlicer({ slicerId: targetId, fileName: threeMfName, dataBase64: bytesToBase64(bytes) });
+        if (!res?.ok) {
+          setSlicerStatus({ kind: 'failed', error: res?.error || 'The slicer could not be started.', filePath: res?.filePath });
+        } else if (targetId === null) {
+          setSlicerStatus({ kind: 'saved', filePath: res.filePath });
+          desktop.showExportInFolder(res.filePath);
+        } else {
+          setSlicerStatus({ kind: 'sent', slicerName: res.slicerName, filePath: res.filePath });
+        }
+      } catch (e) {
+        setSlicerStatus({ kind: 'failed', error: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setExporting(false);
+      }
+    });
+  };
+
+  const handleLocateSlicer = async (id: string) => {
+    const res = await desktop.chooseSlicer(id);
+    if (!res?.canceled) await refreshSlicers(id);
+  };
 
   const handleExportNoAmsBundleZip = () =>
     runVerified(
@@ -521,6 +600,93 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
               <Package className="w-4 h-4" />
               Export Native .3MF Project (AMS Pre-Mapped)
             </button>
+
+            {canSendToSlicer && slicers && (
+              <div className="flex flex-col gap-1.5 border-t border-slate-800 pt-2">
+                {slicers.length > 0 ? (
+                  <>
+                    <div className="flex gap-1.5">
+                      {slicers.length > 1 && (
+                        <select
+                          value={slicerId}
+                          onChange={(e) => setSlicerId(e.target.value)}
+                          className="bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 px-1.5"
+                          aria-label="Slicer"
+                        >
+                          {slicers.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        onClick={() => handleSendToSlicer(slicerId)}
+                        disabled={exporting || !slicerId}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-orange-500/40 text-orange-200 text-[11px] font-semibold transition disabled:opacity-40"
+                        title={slicers.find((s) => s.id === slicerId)?.exePath}
+                      >
+                        <Send className="w-3.5 h-3.5 shrink-0" />
+                        Send to {slicers.find((s) => s.id === slicerId)?.name ?? 'slicer'}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 text-[10px] text-slate-400">
+                      <span>Opens the verified .3MF as a project.</span>
+                      {supportedSlicers.map((s) => (
+                        <button key={s.id} onClick={() => handleLocateSlicer(s.id)} className="underline hover:text-slate-200">
+                          {slicers.some((d) => d.id === s.id) ? `Change ${s.name} path` : `Locate ${s.name}…`}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-1.5 text-[11px] text-slate-400">
+                    <span>No Bambu Studio or OrcaSlicer found on this computer.</span>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
+                      {supportedSlicers.map((s) => (
+                        <React.Fragment key={s.id}>
+                          <button onClick={() => desktop.openExternal(s.installUrl)} className="underline hover:text-slate-200">
+                            Get {s.name}
+                          </button>
+                          <button onClick={() => handleLocateSlicer(s.id)} className="underline hover:text-slate-200">
+                            Locate {s.name}…
+                          </button>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => handleSendToSlicer(null)}
+                      disabled={exporting}
+                      className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition disabled:opacity-40"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                      Save .3MF and show in folder
+                    </button>
+                  </div>
+                )}
+
+                {slicerStatus.kind === 'sending' && <span className="text-[11px] text-slate-400">Opening…</span>}
+                {slicerStatus.kind === 'sent' && (
+                  <span className="text-[11px] text-emerald-300">
+                    Opened in {slicerStatus.slicerName}.{' '}
+                    <button onClick={() => desktop.showExportInFolder(slicerStatus.filePath)} className="underline">
+                      Show in folder
+                    </button>
+                  </span>
+                )}
+                {slicerStatus.kind === 'saved' && <span className="text-[11px] text-emerald-300">Saved to the export folder.</span>}
+                {slicerStatus.kind === 'failed' && (
+                  <span className="text-[11px] text-rose-300">
+                    {slicerStatus.error}{' '}
+                    {slicerStatus.filePath && (
+                      <button onClick={() => desktop.showExportInFolder(slicerStatus.filePath)} className="underline">
+                        Show in folder
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

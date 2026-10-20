@@ -2,6 +2,19 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { execFile, spawn } from 'child_process';
+import {
+  SLICERS,
+  UNINSTALL_KEYS,
+  EXPORT_MAX_AGE_MS,
+  detectSlicers,
+  isSlicerId,
+  launchSlicer,
+  parseRegQueryOutput,
+  safeExportFileName,
+  type SlicerId,
+  type UninstallEntry,
+} from './slicerLauncher';
 
 const logFile = path.join(os.tmpdir(), 'tailwag-startup.log');
 function logMsg(msg: string) {
@@ -17,6 +30,66 @@ process.on('uncaughtException', (err) => {
 logMsg(`Starting TailWag main.ts. isPackaged=${app?.isPackaged} __dirname=${__dirname}`);
 
 let mainWindow: BrowserWindow | null = null;
+
+// ---- Send to slicer (#50) ----
+interface SlicerPrefs {
+  customPaths: Partial<Record<SlicerId, string>>;
+  last?: SlicerId;
+}
+const slicerPrefsFile = () => path.join(app.getPath('userData'), 'slicer-prefs.json');
+function readSlicerPrefs(): SlicerPrefs {
+  try {
+    const raw = JSON.parse(fs.readFileSync(slicerPrefsFile(), 'utf8'));
+    const customPaths: SlicerPrefs['customPaths'] = {};
+    for (const s of SLICERS) if (typeof raw?.customPaths?.[s.id] === 'string') customPaths[s.id] = raw.customPaths[s.id];
+    return { customPaths, last: isSlicerId(raw?.last) ? raw.last : undefined };
+  } catch {
+    return { customPaths: {} };
+  }
+}
+function writeSlicerPrefs(prefs: SlicerPrefs) {
+  try {
+    fs.writeFileSync(slicerPrefsFile(), JSON.stringify(prefs, null, 2));
+  } catch (e) {
+    logMsg(`slicer prefs write failed: ${e}`);
+  }
+}
+function readUninstallEntries(): Promise<UninstallEntry[]> {
+  const queryKey = (key: string) =>
+    new Promise<UninstallEntry[]>((resolve) => {
+      execFile('reg', ['query', key, '/s'], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (err, stdout) =>
+        resolve(err ? [] : parseRegQueryOutput(stdout))
+      );
+    });
+  return Promise.all(UNINSTALL_KEYS.map(queryKey)).then((lists) => lists.flat());
+}
+function findSlicers() {
+  return detectSlicers({
+    platform: process.platform,
+    env: process.env,
+    fileExists: (p) => {
+      try {
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    },
+    readUninstallEntries,
+    customPaths: readSlicerPrefs().customPaths,
+  });
+}
+const exportDir = () => path.join(os.tmpdir(), 'TailWag Exports');
+async function cleanOldExports(dir: string) {
+  try {
+    const now = Date.now();
+    for (const name of await fs.promises.readdir(dir)) {
+      if (!name.toLowerCase().endsWith('.3mf')) continue;
+      const file = path.join(dir, name);
+      const stat = await fs.promises.stat(file);
+      if (stat.isFile() && now - stat.mtimeMs > EXPORT_MAX_AGE_MS) await fs.promises.unlink(file);
+    }
+  } catch {}
+}
 
 function createWindow() {
   const iconPath = fs.existsSync(path.join(__dirname, '../dist/icon.png'))
@@ -137,9 +210,89 @@ app.whenReady().then(() => {
     }
   });
 
-  // Opens release pages in the default browser. Only this project's GitHub pages are allowed.
+  // Lists installed slicers (detected or picked by hand) and the one used last.
+  ipcMain.handle('tailwag:list-slicers', async () => {
+    const slicers = await findSlicers();
+    return {
+      slicers: slicers.map(({ id, name, exePath, source }) => ({ id, name, exePath, source })),
+      last: readSlicerPrefs().last,
+      supported: SLICERS.map(({ id, name, installUrl }) => ({ id, name, installUrl })),
+    };
+  });
+
+  // The user points at a slicer by hand. The path is chosen in a main-process dialog,
+  // so the renderer can never name the program that gets started.
+  ipcMain.handle('tailwag:choose-slicer', async (_event, slicerId: unknown) => {
+    if (!mainWindow || !isSlicerId(slicerId)) return { canceled: true };
+    const def = SLICERS.find((s) => s.id === slicerId)!;
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: `Locate ${def.name}`,
+      filters: process.platform === 'win32' ? [{ name: def.name, extensions: ['exe'] }] : [],
+      properties: ['openFile'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { canceled: true };
+    const prefs = readSlicerPrefs();
+    prefs.customPaths[slicerId] = res.filePaths[0];
+    writeSlicerPrefs(prefs);
+    return { canceled: false, exePath: res.filePaths[0] };
+  });
+
+  // Writes the already-verified .3mf to the export folder and opens it in the chosen slicer
+  // (slicerId null: write only, for the "Show in folder" fallback).
+  // The bytes are written as they are; nothing here changes or re-exports the file.
+  ipcMain.handle('tailwag:send-to-slicer', async (_event, options: { slicerId: unknown; fileName: unknown; dataBase64: unknown }) => {
+    if (typeof options?.dataBase64 !== 'string' || (options.slicerId !== null && !isSlicerId(options.slicerId))) {
+      return { ok: false, error: 'Invalid request.' };
+    }
+    const slicer = options.slicerId === null ? null : (await findSlicers()).find((s) => s.id === options.slicerId);
+    if (slicer === undefined) return { ok: false, error: 'That slicer was not found on this computer.' };
+
+    const dir = exportDir();
+    let filePath: string;
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      await cleanOldExports(dir);
+      filePath = path.join(dir, safeExportFileName(options.fileName));
+      await fs.promises.writeFile(filePath, Buffer.from(options.dataBase64, 'base64'));
+    } catch (err: any) {
+      return { ok: false, error: `The file could not be written: ${err?.message || err}` };
+    }
+
+    if (!slicer) return { ok: true, filePath };
+
+    const prefs = readSlicerPrefs();
+    prefs.last = slicer.id;
+    writeSlicerPrefs(prefs);
+
+    const launched = await launchSlicer(spawn, slicer.exePath, filePath);
+    if (!launched.ok) {
+      logMsg(`send-to-slicer launch failed: ${launched.error}`);
+      return { ok: false, filePath, error: `${slicer.name} could not be started (${launched.error}). The file was kept.` };
+    }
+    return { ok: true, filePath, slicerName: slicer.name };
+  });
+
+  // Shows an exported file in Explorer/Finder. Only files in the export folder.
+  ipcMain.handle('tailwag:show-export-in-folder', async (_event, filePath: unknown) => {
+    const dir = exportDir();
+    if (typeof filePath === 'string') {
+      const resolved = path.resolve(filePath);
+      if (path.dirname(resolved) === dir && fs.existsSync(resolved)) {
+        shell.showItemInFolder(resolved);
+        return { ok: true };
+      }
+    }
+    await fs.promises.mkdir(dir, { recursive: true }).catch(() => {});
+    await shell.openPath(dir);
+    return { ok: true };
+  });
+
+  // Opens release pages in the default browser. Only this project's GitHub pages
+  // and the supported slicers' download pages are allowed.
   ipcMain.handle('tailwag:open-external', async (_event, url: string) => {
-    if (typeof url !== 'string' || !url.startsWith('https://github.com/everyday3d/')) return { ok: false };
+    const allowed =
+      typeof url === 'string' && (url.startsWith('https://github.com/everyday3d/') || SLICERS.some((s) => s.installUrl === url));
+    if (!allowed) return { ok: false };
     await shell.openExternal(url);
     return { ok: true };
   });
