@@ -52,6 +52,9 @@ import { AppHeader } from './components/AppHeader';
 import { SolverPanel } from './components/panels/SolverPanel';
 import { PrintSizePanel } from './components/panels/PrintSizePanel';
 import { ShapePanel } from './components/panels/ShapePanel';
+import { PhotoPanel } from './components/panels/PhotoPanel';
+import { PhotoAdjustPanel } from './components/panels/PhotoAdjustPanel';
+import { LibraryPanel } from './components/panels/LibraryPanel';
 import {
   DEFAULT_EDIT,
   FOCUS_SHARE,
@@ -793,375 +796,41 @@ export const App: React.FC = () => {
       )}
       {/* Main 3-Column Studio Body */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* LEFT SIDEBAR: Filament TD Catalog & Pre-Press Lab */}
-        <aside data-tour="library" className="w-80 bg-[#121722] border-r border-slate-800 flex flex-col min-h-0 shrink-0">
-          {/* Verified Filament TD Library */}
-          <div className="p-3 border-b border-slate-800 flex flex-col gap-2 flex-1 min-h-0">
-            {/* Header & .JSON Library Import / Export */}
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                Filament Library
-              </span>
-              <div className="flex items-center gap-1">
-                <input
-                  ref={jsonInputRef}
-                  type="file"
-                  accept=".json,application/json"
-                  onChange={handleFilamentJsonUpload}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => setIsLibraryModalOpen(true)}
-                  className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-300 font-semibold transition"
-                  title="Browse the manufacturer catalog or add a filament manually"
-                >
-                  <Plus className="w-3 h-3" />
-                  Add
-                </button>
-                <button
-                  onClick={() => jsonInputRef.current?.click()}
-                  className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-orange-600/20 hover:bg-orange-600/35 border border-orange-500/40 text-orange-300 font-semibold transition"
-                  title="Import your Owned Filament Library (file must be named filaments.json)"
-                >
-                  <FileJson className="w-3 h-3" />
-                  Import filaments.json
-                </button>
-                <button
-                  onClick={handleExportOwnedJson}
-                  className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-                  title="Export Owned Filaments to filaments.json"
-                >
-                  <Download className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-
-            {/* Top Tab Bar: Owned tab only exists when filaments.json is loaded */}
-            {hasOwnedLibrary ? (
-              <div className="grid grid-cols-2 gap-1 bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                <button
-                  onClick={() => setLibraryTab('owned')}
-                  className={`py-1 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    effectiveLibraryTab === 'owned'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Owned ({ownedSpools.length})
-                </button>
-                <button
-                  onClick={() => setLibraryTab('all')}
-                  className={`py-1 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    effectiveLibraryTab === 'all'
-                      ? 'bg-orange-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  All Catalog ({builtInSpools.length})
-                </button>
-              </div>
-            ) : (
-              <div className="bg-slate-900/95 p-1 rounded-lg border border-slate-800">
-                <button
-                  onClick={() => setLibraryTab('all')}
-                  className="w-full py-1 px-2 rounded-md text-xs font-bold bg-orange-600 text-white shadow flex items-center justify-center gap-1.5"
-                >
-                  All Catalog ({builtInSpools.length})
-                </button>
-              </div>
-            )}
-
-            {/* Loaded filaments.json Library with Remove option (only shown on Owned tab or when loaded) */}
-            {hasOwnedLibrary && effectiveLibraryTab === 'owned' && (
-              <div className="flex flex-col gap-1">
-                {importedLibraries.map((lib) => (
-                  <div
-                    key={lib.id}
-                    className="text-[11px] px-2 py-1 rounded-md bg-slate-900/90 border border-slate-700/80 text-slate-200 flex items-center justify-between gap-1.5"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <FileJson className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate font-medium">{lib.name}</span>
-                      <span className="text-[10px] text-emerald-400 font-mono shrink-0">
-                        ({lib.count})
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        removeImportedLibrary(lib.id);
-                        setLibraryTab('all');
-                        setSolverPoolMode('shown');
-                        setJsonImportBanner(`Removed "${lib.name}" — Owned tab closed`);
-                      }}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-[10px] font-semibold transition shrink-0"
-                      title={`Remove ${lib.name} and close Owned tab`}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {jsonImportBanner && (
-              <div
-                className={`text-[10px] px-2 py-1 rounded flex items-center justify-between gap-1 ${
-                  jsonImportBanner.startsWith('Rejected:')
-                    ? 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
-                    : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                }`}
-              >
-                <span className="truncate">{jsonImportBanner}</span>
-                <button
-                  onClick={() => setJsonImportBanner(null)}
-                  className="hover:text-white font-bold px-1"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={
-                  effectiveLibraryTab === 'owned'
-                    ? 'Search your filaments.json spools...'
-                    : 'Search Bambu, Polymaker, Sunlu, TD...'
-                }
-                className="w-full bg-slate-900 border border-slate-700/80 rounded-lg pl-8 pr-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-orange-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5">
-              <select
-                value={amsFilter}
-                onChange={(e) => setAmsFilter(e.target.value)}
-                className="bg-slate-900 border border-slate-700/80 rounded-lg px-1.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-orange-500"
-                aria-label="Filter by AMS slot"
-                title="Filter by AMS slot"
-              >
-                <option value="all">All slots</option>
-                <option value="loaded">Loaded in AMS</option>
-                <option value="none">Not in AMS</option>
-                {amsSlotOptions.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={stockFilter}
-                onChange={(e) => setStockFilter(e.target.value as StockFilter)}
-                className="bg-slate-900 border border-slate-700/80 rounded-lg px-1.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-orange-500"
-                aria-label="Filter by stock"
-                title="Filter by stock"
-              >
-                <option value="all">Any stock</option>
-                <option value="available">Available</option>
-                <option value="ok">In stock</option>
-                <option value="low">Low</option>
-                <option value="out">Out</option>
-              </select>
-              <select
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as SortMode)}
-                className="bg-slate-900 border border-slate-700/80 rounded-lg px-1.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-orange-500"
-                aria-label="Sort filaments"
-                title="Sort filaments"
-              >
-                <option value="default">Default order</option>
-                <option value="td-asc">TD low → high</option>
-                <option value="td-desc">TD high → low</option>
-                <option value="lightness">Dark → light</option>
-                <option value="name">Name</option>
-                <option value="brand">Brand</option>
-              </select>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-              {filteredCatalog.length === 0 ? (
-                <div className="text-center py-6 px-3 text-xs text-slate-400 bg-slate-900/50 rounded-lg border border-slate-800/80">
-                  <span>No filaments match "{searchQuery}".</span>
-                </div>
-              ) : (
-                filteredCatalog.map((spool) => (
-                  <div
-                    key={spool.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/x-tailwag-spool-id', spool.id);
-                      e.dataTransfer.setData('text/plain', spool.id);
-                      e.dataTransfer.effectAllowed = 'copy';
-                    }}
-                    title="Drag this filament onto the Palette or Layer Timeline, or click + Stack"
-                    className="bg-[#181f2e] hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 rounded-lg p-2 flex items-center justify-between gap-2 transition cursor-grab active:cursor-grabbing"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-slate-500 hover:text-slate-300 shrink-0">
-                        <GripVertical className="w-3.5 h-3.5" />
-                      </span>
-                      <button
-                        onClick={() => toggleSpoolOwned(spool.id)}
-                        className="relative shrink-0"
-                        title="Toggle Owned in Workshop Inventory"
-                      >
-                        <span
-                          className="block w-5 h-5 rounded-full border border-white/30 shadow"
-                          style={{ backgroundColor: spool.hex }}
-                        />
-                        {spool.owned && (
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400 bg-slate-950 rounded-full absolute -bottom-0.5 -right-0.5" />
-                        )}
-                      </button>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-slate-100 truncate">
-                          {spool.name}
-                        </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-slate-300 font-medium">{spool.brand}</span>
-                          <span>•</span>
-                          <span className="px-1 rounded bg-slate-800 text-slate-300">{spool.material}</span>
-                          <span>•</span>
-                          <span className="text-orange-400 font-mono">TD {spool.td.toFixed(1)}mm</span>
-                          <TdSourceBadge source={spool.tdSource} calibration={spool.calibration} />
-                          <button
-                            onClick={() => updateSpool(spool.id, { stock: nextStock(spool.stock) })}
-                            title="Click to cycle stock: In stock → Low → Out (Out is skipped by the auto-solver)"
-                            className={`px-1 rounded text-[9px] font-semibold border ${
-                              stockOf(spool) === 'ok'
-                                ? 'border-slate-700 text-slate-400 hover:text-slate-200'
-                                : stockOf(spool) === 'low'
-                                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
-                                  : 'border-rose-500/50 bg-rose-500/15 text-rose-300'
-                            }`}
-                          >
-                            {STOCK_LABEL[stockOf(spool)]}
-                          </button>
-                          {spool.amsSlot && (
-                            <span className="px-1 rounded bg-sky-500/20 text-sky-300 font-mono">
-                              {spool.amsSlot}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => setEditingSpoolId(spool.id)}
-                        className="p-1 rounded bg-slate-900 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition"
-                        title="Edit this filament (name, color, TD, AMS slot)"
-                        aria-label={`Edit ${spool.name}`}
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => addSlot(spool)}
-                        disabled={slots.length >= 16}
-                        className="px-2 py-1 rounded bg-slate-900 hover:bg-orange-600 text-[11px] font-semibold text-slate-300 hover:text-white border border-slate-700 transition disabled:opacity-40"
-                      >
-                        + Stack
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Pre-Press Photo & Fur Detail Enhancement Lab */}
-          <div data-tour="prepress" className="p-3 bg-[#0f141e] flex flex-col gap-2.5 shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5" />
-                Pre-Press Photo & Fur Lab
-              </span>
-              <button
-                onClick={() =>
-                  setPrePress({ gamma: 1.0, contrast: 1.0, detailEnhance: 0.25, invertLuminance: false })
-                }
-                className="text-[10px] text-slate-400 hover:text-white"
-              >
-                Reset
-              </button>
-            </div>
-
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between text-[11px]">
-                <span className="text-slate-400">Fur & Whisker Micro-Contrast</span>
-                <span className="font-mono text-orange-400">{Math.round(detailEnhance * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={detailEnhance}
-                onInput={(e) => setPrePress({ detailEnhance: parseFloat((e.target as HTMLInputElement).value) })}
-                onChange={(e) => setPrePress({ detailEnhance: parseFloat(e.target.value) })}
-                className="w-full accent-orange-500 h-1.5 cursor-pointer"
-              />
-
-              <div className="flex justify-between text-[11px]">
-                <span className="text-slate-400">Midtone Gamma Curve</span>
-                <span className="font-mono text-orange-400">{gamma.toFixed(2)}</span>
-              </div>
-              <input
-                type="range"
-                min={0.4}
-                max={2.2}
-                step={0.04}
-                value={gamma}
-                onInput={(e) => setPrePress({ gamma: parseFloat((e.target as HTMLInputElement).value) })}
-                onChange={(e) => setPrePress({ gamma: parseFloat(e.target.value) })}
-                className="w-full accent-orange-500 h-1.5 cursor-pointer"
-              />
-
-              <div className="flex justify-between text-[11px]">
-                <span className="text-slate-400">Dynamic Range Contrast</span>
-                <span className="font-mono text-orange-400">{contrast.toFixed(2)}x</span>
-              </div>
-              <input
-                type="range"
-                min={0.6}
-                max={1.8}
-                step={0.04}
-                value={contrast}
-                onInput={(e) => setPrePress({ contrast: parseFloat((e.target as HTMLInputElement).value) })}
-                onChange={(e) => setPrePress({ contrast: parseFloat(e.target.value) })}
-                className="w-full accent-orange-500 h-1.5 cursor-pointer"
-              />
-
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={invertLuminance}
-                    onChange={(e) => setPrePress({ invertLuminance: e.target.checked })}
-                    className="accent-orange-500"
-                  />
-                  Invert Negative / Backlit Litho
-                </label>
-                <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                  <Eye className="w-3 h-3" />
-                  <input
-                    type="range"
-                    min={-80}
-                    max={80}
-                    value={lightAzimuthDeg}
-                    onInput={(e) => setLighting(parseInt((e.target as HTMLInputElement).value, 10), lightElevationDeg)}
-                    onChange={(e) => setLighting(parseInt(e.target.value, 10), lightElevationDeg)}
-                    className="w-16 accent-orange-500 h-1 cursor-pointer"
-                    title="Rotate Studio Key Light Azimuth"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* LEFT: the photo, its adjustments and the filament library */}
+        <aside className="w-80 bg-tw-panel border-r border-tw-line flex flex-col min-h-0 shrink-0 p-4 gap-5 overflow-y-auto">
+          <PhotoPanel sourceDataUrl={sourceDataUrl} onEditPhoto={() => setIsPhotoEditorOpen(true)} onLoadPhoto={() => fileInputRef.current?.click()} />
+          <div className="h-px bg-tw-line shrink-0" aria-hidden="true" />
+          <PhotoAdjustPanel />
+          <div className="h-px bg-tw-line shrink-0" aria-hidden="true" />
+          <LibraryPanel
+            spools={filteredCatalog}
+            hasOwnedLibrary={hasOwnedLibrary}
+            tab={effectiveLibraryTab}
+            onTab={setLibraryTab}
+            ownedCount={ownedSpools.length}
+            catalogCount={builtInSpools.length}
+            search={searchQuery}
+            onSearch={setSearchQuery}
+            amsFilter={amsFilter}
+            onAmsFilter={setAmsFilter}
+            amsSlotOptions={amsSlotOptions}
+            stockFilter={stockFilter}
+            onStockFilter={setStockFilter}
+            sortMode={sortMode}
+            onSortMode={setSortMode}
+            onImportJson={handleFilamentJsonUpload}
+            onExportJson={handleExportOwnedJson}
+            onOpenCatalog={() => setIsLibraryModalOpen(true)}
+            onEditSpool={setEditingSpoolId}
+            onRemoveLibrary={(id, name) => {
+              removeImportedLibrary(id);
+              setLibraryTab('all');
+              setSolverPoolMode('shown');
+              setJsonImportBanner(`Removed "${name}". Showing the catalog.`);
+            }}
+            message={jsonImportBanner}
+            onDismissMessage={() => setJsonImportBanner(null)}
+          />
         </aside>
 
         {/* CENTER: 3D Beer-Lambert Viewport + Bottom Layer Swap Timeline */}
