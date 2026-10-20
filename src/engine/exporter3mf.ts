@@ -11,7 +11,7 @@ import {
 } from './printPlan';
 import { buildPrintMetadata, serializePrintMetadata } from './printMetadata';
 import { buildColorBandPartMesh } from './bandMesh';
-import { PINNED_SLICER_SETTINGS, layerSettingsFor } from './slicerSettings';
+import { PINNED_SLICER_SETTINGS, applyProcessOverrides, layerSettingsFor } from './slicerSettings';
 import bambuProjectTemplate from '../data/bambuProjectTemplate.json';
 
 export interface SwapInstructionItem {
@@ -818,7 +818,7 @@ export function generateNative3mfPackage(params: {
   if ('default_filament_colour' in ps) {
     ps.default_filament_colour = hexColors;
   }
-  Object.assign(ps, layerSettingsFor(baseLayerMm, layerHeightMm), PINNED_SLICER_SETTINGS);
+  applyProcessOverrides(ps, { ...layerSettingsFor(baseLayerMm, layerHeightMm), ...PINNED_SLICER_SETTINGS }, numFilaments);
 
   const archiveFiles: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(contentTypesXml),

@@ -1,7 +1,7 @@
 import { strFromU8, unzipSync } from 'fflate';
 import type { HeightmapGrid } from './cadMeshBuilder';
 import { PrintPlan, printedLayerForZ, shortPlanHash } from './printPlan';
-import { PINNED_SLICER_SETTINGS, layerSettingsFor } from './slicerSettings';
+import { PINNED_SLICER_SETTINGS, layerSettingsFor, listedProcessOverrides } from './slicerSettings';
 
 /**
  * Export verification: re-read what was actually written and compare it with the PrintPlan.
@@ -220,8 +220,11 @@ export function verify3mfAgainstPlan(bytes: Uint8Array, plan: PrintPlan, grid: H
         `Filament colors in the project (${colours.join(', ')}) do not match the plan's filament order (${plan.bands.map((b) => b.hex).join(', ')}).`
       );
     }
+    const overrides = listedProcessOverrides(ps);
     for (const [k, v] of Object.entries({ ...layerSettingsFor(plan.baseLayerMm, plan.layerHeightMm), ...PINNED_SLICER_SETTINGS })) {
       if (String(ps[k]) !== v) c.error('SETTING_MISMATCH', `Slicer setting ${k} is "${String(ps[k])}" but the plan requires "${v}".`);
+      // Without this the slicer resets the value to its preset when the project opens.
+      else if (!overrides.has(k)) c.error('SETTING_NOT_PINNED', `Slicer setting ${k} is not marked as a project override, so the slicer would reset it.`);
     }
   } catch {
     c.error('SETTINGS_PARSE', 'project_settings.config cannot be parsed.');

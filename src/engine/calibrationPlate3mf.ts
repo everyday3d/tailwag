@@ -8,7 +8,7 @@ import {
   buildPlateLayout,
   type PlateLayout,
 } from './calibrationPlate';
-import { PINNED_SLICER_SETTINGS, layerSettingsFor } from './slicerSettings';
+import { PINNED_SLICER_SETTINGS, applyProcessOverrides, layerSettingsFor } from './slicerSettings';
 
 /** White frame under the whole plate. 0.4 mm = initial 0.16 + 3 x 0.08, so tops sit on layer boundaries. */
 export const PLATE_BASE_MM = 0.4;
@@ -231,7 +231,7 @@ export function generateCalibrationPlate3mf(spools: CalibrationPlateSpools): Uin
   }
   ps.filament_colour = spools.hexColors;
   if ('default_filament_colour' in ps) ps.default_filament_colour = spools.hexColors;
-  Object.assign(ps, layerSettingsFor(0.16, 0.08), PINNED_SLICER_SETTINGS);
+  applyProcessOverrides(ps, { ...layerSettingsFor(0.16, 0.08), ...PINNED_SLICER_SETTINGS }, n);
   // The plate is small; park the prime tower in a corner clear of it.
   ps.wipe_tower_x = ['20'];
   ps.wipe_tower_y = ['20'];
