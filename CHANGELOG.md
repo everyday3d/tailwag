@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Copy debug info (#49)**: The About dialog (click the version badge) has a **Copy debug info** button that copies what a bug report needs: TailWag version, Windows version, match and colour mode (with the Manual relief setting), number of colours and layers, layer settings, the print plan ID and the last error shown. **Show what is copied** previews the exact text. It never includes the photo, file paths, usernames, access codes or passwords; the error text is cleaned before it is stored. The bug report form now asks for it.
 
+### Changed
+- **New loading screen**: A redrawn boxer, printed layer by layer from the bed up by a small hot-end, in fawn, black mask and white like a real 3-colour filament print with visible layer lines. When the print finishes the tail starts wagging and the dog blinks. The title, version and tips are simpler, and the separate progress bar is gone. With reduced motion turned on, the dog appears finished and wags gently.
+
 ## [1.2.1] - 2026-10-20
 
 Send exports straight to Bambu Studio or OrcaSlicer, and a fix for slicers resetting the layer height and print settings of exported projects.
