@@ -2,20 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens (see tailwind.config.js). Space-separated RGB so Tailwind can add alpha. */
+:root {
+  --twg-ground: 13 16 21; /* #0D1015 */
+  --twg-panel: 20 25 33; /* #141921 */
+  --twg-raised: 27 34 43; /* #1B222B */
+  --twg-hover: 34 42 53; /* #222A35 */
+  --twg-line: 37 45 56; /* #252D38 */
+  --twg-line-strong: 46 55 68; /* #2E3744 */
+  --twg-ink: 232 235 239; /* #E8EBEF */
+  --twg-ink-2: 166 175 187; /* #A6AFBB */
+  --twg-ink-3: 128 138 151; /* #808A97 */
+  --twg-accent: 242 137 43; /* #F2892B, Tucker's collar */
+  --twg-accent-ink: 27 16 6; /* #1B1006 */
+  --twg-accent-text: 247 176 114; /* #F7B072 */
+  --twg-ok: 67 185 127; /* #43B97F */
+  --twg-warn: 226 179 80; /* #E2B350 */
+  --twg-danger: 232 106 106; /* #E86A6A */
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0e14;
+  background: rgb(var(--twg-ground));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #252f42;
+  background: rgb(var(--twg-line-strong));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #f97316;
+  background: rgb(var(--twg-accent));
 }

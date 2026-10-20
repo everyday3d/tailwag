@@ -48,6 +48,7 @@ import { APP_VERSION } from './appVersion';
 import { UpdateModal } from './components/UpdateModal';
 import { recordError } from './engine/debugInfo';
 import { PhotoEditorModal, type PhotoEditResult } from './components/PhotoEditorModal';
+import { AppHeader } from './components/AppHeader';
 import {
   DEFAULT_EDIT,
   FOCUS_SHARE,
@@ -749,204 +750,23 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0b0e14] text-slate-100 overflow-hidden">
-      {/* Top Studio Header Bar */}
-      {/* Every header control stays on one line; below 1920 px labels shorten and tools become icons (title = full name). */}
-      <header className="h-13 bg-[#121722] border-b border-slate-800 px-3 min-[1920px]:px-4 py-2 flex items-center justify-between gap-2 shrink-0 whitespace-nowrap [&_button]:whitespace-nowrap">
-        <div className="flex items-center gap-2 min-[1920px]:gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-md shadow-orange-500/20">
-            <Dog className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-sm tracking-tight text-white whitespace-nowrap hidden min-[1360px]:inline">TAILWAG STUDIO</span>
-              <button
-                onClick={() => setIsUpdateOpen(true)}
-                title="About TailWag and check for updates"
-                className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 transition whitespace-nowrap"
-              >
-                v{APP_VERSION}<span className="hidden min-[1750px]:inline"> • TD Engine + MCP (experimental)</span>
-              </button>
-              {updateResult?.kind === 'update' && (
-                <button
-                  onClick={() => setIsUpdateOpen(true)}
-                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse"
-                >
-                  Update available: v{updateResult.info.version}
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-400 hidden min-[1750px]:block">
-              3D Filament Painting, Beer-Lambert TD Blending & Native Bambu/Orca .3MF Studio
-            </p>
-          </div>
-        </div>
-
-        {/* Center Viewport Mode Switcher */}
-        <div data-tour="view-modes" className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 p-1 rounded-lg shrink-0">
-          <button
-            onClick={() => setViewportMode('3d-mesh')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
-              viewportMode === '3d-mesh' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span className="min-[1920px]:hidden">3D</span>
-            <span className="hidden min-[1920px]:inline">3D TD Relief</span>
-          </button>
-          <button
-            onClick={() => setViewportMode('split')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
-              viewportMode === 'split' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span className="min-[1920px]:hidden">Split</span>
-            <span className="hidden min-[1920px]:inline">Split Wipe Compare</span>
-          </button>
-          <button
-            onClick={() => setViewportMode('source')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
-              viewportMode === 'source' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span className="min-[1920px]:hidden">Photo</span>
-            <span className="hidden min-[1920px]:inline">Source Photo</span>
-          </button>
-          <div className="h-4 w-px bg-slate-800 mx-1" />
-          <button
-            onClick={() => setBacklitLithoMode(!backlitLithoMode)}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
-              backlitLithoMode
-                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-            title="Toggle between Front-Lit Filament Painting and Back-Lit Lithophane Transmission"
-          >
-            <Sun className="w-3.5 h-3.5" />
-            {backlitLithoMode ? 'Backlit Litho' : 'Front-Lit TD'}
-          </button>
-          <button
-            onClick={() => setPreviewShading(previewShading === 'accuracy' ? 'beauty' : 'accuracy')}
-            disabled={backlitLithoMode}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition disabled:opacity-40 ${
-              previewShading === 'accuracy' && !backlitLithoMode
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-            title="Accuracy: unlit, shows the predicted print color of every column. Beauty: adds studio lighting and shading."
-          >
-            <Eye className="w-3.5 h-3.5" />
-            {previewShading === 'accuracy' && !backlitLithoMode ? 'Accuracy' : 'Beauty'}
-          </button>
-          <button
-            data-tour="match-mode" onClick={() => setMatchMode(matchMode === 'faithful' ? 'vivid' : 'faithful')}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
-              matchMode === 'faithful'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40'
-            }`}
-            title="Faithful: match the photo's own colors as closely as the palette allows. Vivid: boost saturation and map brightness to height (the earlier behavior)."
-          >
-            {matchMode === 'faithful' ? 'Faithful' : 'Vivid'}
-          </button>
-        </div>
-
-        {/* Right Primary Actions */}
-        <div className="flex items-center gap-1.5 min-[1920px]:gap-2 shrink-0">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => appHistory.undo()}
-            disabled={history.undoCount === 0}
-            title="Undo (Ctrl+Z)"
-            aria-label="Undo"
-            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition disabled:opacity-35 disabled:hover:bg-slate-800"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => appHistory.redo()}
-            disabled={history.redoCount === 0}
-            title="Redo (Ctrl+Y)"
-            aria-label="Redo"
-            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition disabled:opacity-35 disabled:hover:bg-slate-800"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>          <button
-            data-tour="project"
-            onClick={() => void handleOpenProject()}
-            title="Open a saved project (Ctrl+O)"
-            aria-label="Open a saved project"
-            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <FolderOpen className="w-4 h-4 text-amber-400" />
-          </button>
-          <button
-            onClick={() => void handleSaveProject()}
-            title="Save this project (Ctrl+S)"
-            aria-label="Save this project"
-            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <Save className="w-4 h-4 text-emerald-400" />
-          </button>
-          <button
-            data-tour="load-image" onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <Upload className="w-3.5 h-3.5 text-orange-400" />
-            Load Image
-          </button>
-          <button
-            onClick={() => setIsPhotoEditorOpen(true)}
-            title="Edit photo: crop, turn or straighten it, and mark the area that matters most"
-            aria-label="Edit photo"
-            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition"
-          >
-            <CropIcon className="w-4 h-4 text-orange-400" />
-          </button>
-
-          <button
-            onClick={() => setIsTdModalOpen(true)}
-            title="TD Calibrator & AMS"
-            aria-label="TD Calibrator & AMS"
-            className="flex items-center gap-1.5 px-2 min-[1920px]:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <Ruler className="w-4 h-4 min-[1920px]:w-3.5 min-[1920px]:h-3.5 text-sky-400" />
-            <span className="hidden min-[1920px]:inline">TD Calibrator & AMS</span>
-          </button>
-
-          <button
-            data-tour="calibration" onClick={() => setIsCalPlateOpen(true)}
-            title="Calibration Plate"
-            aria-label="Calibration Plate"
-            className="flex items-center gap-1.5 px-2 min-[1920px]:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <Ruler className="w-4 h-4 min-[1920px]:w-3.5 min-[1920px]:h-3.5 text-emerald-400" />
-            <span className="hidden min-[1920px]:inline">Calibration Plate</span>
-          </button>
-
-          <button
-            onClick={() => setIsTourOpen(true)}
-            title="Replay the guided tour"
-            aria-label="Replay the guided tour"
-            className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-bold text-sky-300 transition"
-          >
-            ?
-          </button>
-
-          <button
-            data-tour="export" onClick={() => setIsExportModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white shadow-md shadow-orange-600/20 transition"
-          >
-            <Package className="w-4 h-4" />
-            <span className="min-[1920px]:hidden">Export</span>
-            <span className="hidden min-[1920px]:inline">Export .3MF / .STL</span>
-          </button>
-        </div>
-      </header>
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+      <AppHeader
+        updateResult={updateResult}
+        canUndo={history.undoCount > 0}
+        canRedo={history.redoCount > 0}
+        onUndo={() => appHistory.undo()}
+        onRedo={() => appHistory.redo()}
+        onOpenProject={() => void handleOpenProject()}
+        onSaveProject={() => void handleSaveProject()}
+        onLoadPhoto={() => fileInputRef.current?.click()}
+        onEditPhoto={() => setIsPhotoEditorOpen(true)}
+        onOpenAbout={() => setIsUpdateOpen(true)}
+        onOpenTdCalibrator={() => setIsTdModalOpen(true)}
+        onOpenCalibrationPlate={() => setIsCalPlateOpen(true)}
+        onOpenTour={() => setIsTourOpen(true)}
+        onExport={() => setIsExportModalOpen(true)}
+      />
 
       {lastProject && (
         <div className="px-4 py-1.5 bg-sky-500/10 border-b border-sky-500/30 text-[11px] text-sky-200 flex items-center gap-3">

@@ -109,8 +109,8 @@ export const TOUR_STEPS: TourStep[] = [
   {
     target: 'view-modes',
     title: '5. Choose a view',
-    body: 'Switch between the painted 3D print, the original photo and other views. Accuracy shows colours without extra lighting; Beauty adds shading.',
-    tips: ['Use Source Photo to compare against your original.'],
+    body: 'Switch between the painted 3D print, a split wipe and the original photo. True colour shows colours without extra lighting; Studio light adds shading.',
+    tips: ['Use Photo to compare against your original.'],
     icon: <Eye className={ICON} />,
     placement: 'bottom',
   },
@@ -149,7 +149,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     target: 'calibration',
     title: '10. Calibrate for exact colour',
-    body: 'Print one small plate, photograph it, and TailWag measures how each of your filaments really looks. Predictions then use your real colours.',
+    body: 'Open the ruler menu and choose Calibration plate. Print one small plate, photograph it, and TailWag measures how each of your filaments really looks. Predictions then use your real colours.',
     tips: ['Optional, but it is the biggest step toward print-matches-preview.'],
     icon: <Target className={ICON} />,
     placement: 'bottom',
