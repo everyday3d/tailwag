@@ -124,9 +124,9 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     target: 'timeline',
-    title: '7. The layer timeline',
-    body: 'Each coloured block is a filament and the layers it prints. The dividers are the filament changes. Drag a divider to move where a colour change happens.',
-    tips: ['Fewer, thicker blocks mean fewer swaps.'],
+    title: '7. The filament stack',
+    body: 'The bar shows the predicted colour of every layer, from the bed on the left to the top on the right, with one band per filament. The white handles are the filament changes: drag one, or focus it and use the arrow keys, to move where a colour change happens.',
+    tips: ['Fewer, thicker bands mean fewer swaps.', 'Drop a spool from the library onto a band to replace that filament.'],
     icon: <Layers className={ICON} />,
     placement: 'top',
   },
