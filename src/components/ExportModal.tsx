@@ -60,7 +60,7 @@ interface ExportModalProps {
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid, plan }) => {
-  const { projectName, baseLayerMm, layerHeightMm, totalLayers, slots, sourceImageData } = useTailWagStore();
+  const { projectName, baseLayerMm, layerHeightMm, totalLayers, slots, sourceImageData, focusImageMask } = useTailWagStore();
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -132,8 +132,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
 
   // How close the predicted print is to the photo, in standard CIEDE2000
   const fidelity = useMemo(
-    () => (isOpen && sourceImageData ? buildFidelityReport({ plan, image: sourceImageData, slots }) : null),
-    [isOpen, plan, sourceImageData, slots]
+    () => (isOpen && sourceImageData ? buildFidelityReport({ plan, image: sourceImageData, slots, focus: focusImageMask }) : null),
+    [isOpen, plan, sourceImageData, slots, focusImageMask]
   );
   const printCost = useMemo(
     () =>
@@ -507,6 +507,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
                   <span>{Math.round(fidelity.share.noticeable * 100)}% noticeable (10 or less)</span>
                   <span>{Math.round(fidelity.share.clear * 100)}% clearly different</span>
                 </div>
+                {fidelity.focus && (
+                  <div className="text-[11px] text-orange-200 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-1">
+                    Focus area: mean {fidelity.focus.meanDeltaE00.toFixed(1)}, 95th pct {fidelity.focus.p95DeltaE00.toFixed(1)},{' '}
+                    {Math.round(fidelity.focus.imperceptibleShare * 100)}% imperceptible
+                  </div>
+                )}
                 <div className="text-[10px] text-slate-400">
                   {Math.round(fidelity.gamutLimitedShare * 100)}% of the photo is beyond this palette's reach. {fidelity.swapCount} filament change{fidelity.swapCount === 1 ? '' : 's'}.
                 </div>

@@ -6,6 +6,7 @@ import { parseFilamentLibraryJson } from '../utils/filamentJsonIO';
 import { optimizeManualSlotBoundaries } from '../engine/autoSolver';
 import { createDefaultPortraitImageData } from '../utils/defaultPortrait';
 import { projectSlots, type ProjectFile } from '../engine/projectFile';
+import { DEFAULT_EDIT, type FocusStrength, type Mask, type PhotoEdit } from '../engine/photoEdit';
 import userDefaultFilamentsRaw from '../data/userDefaultFilaments.json';
 import {
   addSpoolToMyLibrary,
@@ -43,6 +44,16 @@ export interface TailWagState {
   slotsAdjusting: boolean;
   sourceImageData: ImageData | null;
 
+  // Crop, rotate and focus (#46). sourceImageData is the edited picture; these keep how it was made.
+  /** The whole photo before cropping (up to ORIGINAL_MAX_SIDE) */
+  photoOriginal: ImageData | null;
+  photoEdit: PhotoEdit;
+  /** Focus area in the original photo's coordinates */
+  focusMask: Mask | null;
+  focusStrength: FocusStrength;
+  /** The focus area lined up with sourceImageData, for the solver and the fidelity report */
+  focusImageMask: Mask | null;
+
   // Physical & Slicer Layer Parameters
   widthMm: number;
   heightMm: number;
@@ -78,6 +89,9 @@ export interface TailWagState {
   setMatchMode: (mode: 'faithful' | 'vivid') => void;
   setSlicePreviewMaxLayer: (layer: number) => void;
   setSourceImageData: (imageData: ImageData | null) => void;
+  setPhotoState: (
+    partial: Partial<Pick<TailWagState, 'photoOriginal' | 'photoEdit' | 'focusMask' | 'focusStrength' | 'focusImageMask'>>
+  ) => void;
   setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
   setManualRelief: (mode: 'rematch' | 'fixed') => void;
   /** Replaces the whole project (picture, stack, settings) with a validated project file. */
@@ -297,7 +311,13 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   manualRelief: loadManualRelief(),
   slotsAdjusting: false,
   sourceImageData: getInitialImageData(),
+  photoOriginal: null,
+  photoEdit: DEFAULT_EDIT,
+  focusMask: null,
+  focusStrength: 'balanced',
+  focusImageMask: null,
 
+  setPhotoState: (partial) => set(partial),
   setSourceImageData: (imageData) =>
     set((state) => ({
       sourceImageData: imageData,

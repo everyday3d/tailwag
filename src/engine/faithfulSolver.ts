@@ -13,6 +13,7 @@ import {
   searchSlotBoundaries,
 } from './colorMatch';
 import type { SolverRecipe } from './autoSolver';
+import { type Mask, focusGridWeights, maskHasFocus } from './photoEdit';
 
 /**
  * Faithful palette search: chooses WHICH spools, in WHAT order, and WHERE they swap so the mean
@@ -33,6 +34,10 @@ export interface FaithfulSolveOptions {
   minBandLayers?: number;
   /** Spools to keep from a large library before searching (default 40) */
   shortlistSize?: number;
+  /** Focus region lined up with the image (#46). */
+  focus?: Mask | null;
+  /** Share of the solver's attention the focus area gets (default FOCUS_SHARE.balanced) */
+  focusShare?: number;
 }
 
 /** Small deterministic PRNG (mulberry32) so results are repeatable. */
@@ -120,7 +125,9 @@ export function solveFaithfulPalette(
   const cols = 56;
   const rows = Math.max(16, Math.round((cols * imageData.height) / Math.max(1, imageData.width)));
   const rgb = sampleGridColors(imageData, cols, rows);
-  const fullBuckets = buildTargetBuckets(rgb, cols * rows, { step: { L: 4, a: 6, b: 6 } });
+  const hasFocus = maskHasFocus(options.focus);
+  const weights = hasFocus ? focusGridWeights(options.focus!, cols, rows, options.focusShare) : null;
+  const fullBuckets = buildTargetBuckets(rgb, cols * rows, { step: { L: 4, a: 6, b: 6 }, weights });
   const searchBuckets = pruneBuckets(fullBuckets, 0.99);
   const cands = shortlist(spools, fullBuckets, options.shortlistSize ?? 40);
   const N = cands.length;
@@ -272,6 +279,23 @@ export function solveFaithfulPalette(
   }
   if (!winner) return [];
 
+  // With a focus area the search runs on a different landscape and can settle somewhere worse.
+  // Also try the unfocused answer, with its swap layers re-tuned for the focus, and keep the better.
+  if (hasFocus) {
+    const plain = solveFaithfulPalette(imageData, pool, totalLayers, baseLayerMm, layerHeightMm, colorCount, baseSolidThicknessMm, {
+      ...options,
+      focus: null,
+    })[0];
+    if (plain) {
+      const slots = [...plain.slots].sort((a, b) => a.upToLayer - b.upToLayer);
+      const res = searchSlotBoundaries({ slots, totalLayers, baseLayerMm, layerHeightMm, minLayer, buckets: fullBuckets, minBandLayers: minBand });
+      const adjusted = res.scoreDeltaE00 + BASE_SEE_THROUGH_PENALTY * baseSeeThrough(slots[0].spool, res.ends[0]);
+      if (adjusted < winner.adjusted) {
+        winner = { slots: slots.map((s, i) => ({ ...s, upToLayer: res.ends[i] })), exact: res.scoreDeltaE00, adjusted };
+      }
+    }
+  }
+
   const baseSpool = winner.slots[0].spool;
   const seeThrough = baseSeeThrough(baseSpool, winner.slots[0].upToLayer);
   const baseWarning =
@@ -284,7 +308,7 @@ export function solveFaithfulPalette(
       id: 'faithful-match',
       name: 'Faithful Match',
       badge: 'Faithful',
-      description: `Closest match to the photo's own colors: spools, order and swap layers chosen to minimize the mean color difference (ΔE00 ${winner.exact.toFixed(1)}).${baseWarning}`,
+      description: `Closest match to the photo's own colors: spools, order and swap layers chosen to minimize the mean color difference (ΔE00 ${winner.exact.toFixed(1)}${hasFocus ? ', weighted toward your focus area' : ''}).${baseWarning}`,
       scoreDeltaE: winner.exact,
       slots: winner.slots,
     },
@@ -298,11 +322,14 @@ export function faithfulScoreForSlots(
   totalLayers: number,
   baseLayerMm: number,
   layerHeightMm: number,
-  minLayer: number
+  minLayer: number,
+  focus?: Mask | null,
+  focusShare?: number
 ): number {
   const cols = 56;
   const rows = Math.max(16, Math.round((cols * imageData.height) / Math.max(1, imageData.width)));
-  const buckets = buildTargetBuckets(sampleGridColors(imageData, cols, rows), cols * rows, { step: { L: 4, a: 6, b: 6 } });
+  const weights = maskHasFocus(focus) ? focusGridWeights(focus!, cols, rows, focusShare) : null;
+  const buckets = buildTargetBuckets(sampleGridColors(imageData, cols, rows), cols * rows, { step: { L: 4, a: 6, b: 6 }, weights });
   const ends = [...slots].sort((a, b) => a.upToLayer - b.upToLayer);
   const labs = layerLabsForEnds(
     ends.map((s) => profileForSpool(s.spool)),

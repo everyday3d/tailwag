@@ -3,6 +3,7 @@ import { rgbToLab, deltaE2000 } from './colorScience';
 import { PrintPlan, planLayerRgb } from './printPlan';
 import { buildTargetBuckets, lutToLab, matchCostTable, sampleGridColors } from './colorMatch';
 import { encodePng } from '../utils/pngEncode';
+import { type Mask, focusGridCells, maskHasFocus } from './photoEdit';
 
 /**
  * Fidelity report: how close the predicted print is to the photo, in standard ΔE00, per column,
@@ -33,6 +34,8 @@ export interface FidelityReport {
   cellDeltaE: Float32Array;
   cols: number;
   rows: number;
+  /** The same figures for the focus area only, when one is painted (#46) */
+  focus?: { printedColumns: number; meanDeltaE00: number; p95DeltaE00: number; imperceptibleShare: number };
 }
 
 /** ΔE00 bands used for the shares: ≤2 imperceptible, ≤5 close, ≤10 noticeable, >10 clearly different */
@@ -44,6 +47,8 @@ export function buildFidelityReport(params: {
   plan: PrintPlan;
   image: { width: number; height: number; data: ArrayLike<number> };
   slots: LayerSwapSlot[];
+  /** Focus region lined up with the image; adds a separate score for it. */
+  focus?: Mask | null;
 }): FidelityReport {
   const { plan, image, slots } = params;
   const n = plan.cols * plan.rows;
@@ -153,7 +158,24 @@ export function buildFidelityReport(params: {
     warnings.push(`${swapCount} filament changes: each one needs a pause or a purge, which costs time and filament.`);
   }
 
+  let focus: FidelityReport['focus'];
+  if (maskHasFocus(params.focus)) {
+    const inFocus = focusGridCells(params.focus!, plan.cols, plan.rows);
+    const fv: number[] = [];
+    for (let i = 0; i < n; i++) if (inFocus[i] && cellDeltaE[i] >= 0) fv.push(cellDeltaE[i]);
+    if (fv.length > 0) {
+      const fs = Float32Array.from(fv).sort();
+      focus = {
+        printedColumns: fv.length,
+        meanDeltaE00: fv.reduce((a, b) => a + b, 0) / fv.length,
+        p95DeltaE00: percentile(fs, 0.95),
+        imperceptibleShare: fv.filter((v) => v <= FIDELITY_BANDS.imperceptible).length / fv.length,
+      };
+    }
+  }
+
   return {
+    focus,
     printedColumns: total,
     meanDeltaE00: mean,
     medianDeltaE00: percentile(sorted, 0.5),
@@ -234,6 +256,15 @@ export function summarizeFidelity(report: FidelityReport) {
     placementLoss: Number(report.placementLoss.toFixed(3)),
     estimatedTdCount: report.estimatedTdCount,
     filamentCount: report.filamentCount,
+    ...(report.focus
+      ? {
+          focus: {
+            meanDeltaE00: Number(report.focus.meanDeltaE00.toFixed(2)),
+            p95DeltaE00: Number(report.focus.p95DeltaE00.toFixed(2)),
+            imperceptibleShare: Number(report.focus.imperceptibleShare.toFixed(4)),
+          },
+        }
+      : {}),
     swapCount: report.swapCount,
     bands: '<=2 imperceptible, <=5 close, <=10 noticeable, >10 clearly different (CIEDE2000)',
     warnings: report.warnings,

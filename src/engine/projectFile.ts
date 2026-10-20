@@ -2,6 +2,7 @@ import { deflateSync, inflateSync } from 'fflate';
 import type { CadCutoutConfig } from './cadMeshBuilder';
 import type { LayerSwapSlot } from './opticalTdEngine';
 import type { FilamentSpool } from '../data/filamentCatalog';
+import { FOCUS_SHARE, type FocusStrength, type Mask, type PhotoEdit, isDefaultEdit, maskHasFocus } from './photoEdit';
 
 /** Identifies a TailWag project file and the layout of its JSON. */
 export const PROJECT_SCHEMA = 'tailwag-project';
@@ -56,12 +57,23 @@ export interface ProjectFile {
   image: ProjectImage;
   settings: ProjectSettings;
   slots: Array<{ id: string; upToLayer: number; locked?: boolean; spool: FilamentSpool }>;
+  /**
+   * Optional (#46): the whole photo before cropping, how it was cropped and turned, and the
+   * focus area. Older TailWag versions ignore these and use `image`, which is already cropped.
+   */
+  original?: ProjectImage;
+  photoEdit?: PhotoEdit;
+  focus?: { width: number; height: number; maskDeflatedBase64: string; strength: FocusStrength };
 }
 
 export interface ProjectSnapshotInput extends ProjectSettings {
   projectName: string;
   slots: LayerSwapSlot[];
   sourceImageData: { width: number; height: number; data: Uint8ClampedArray | Uint8Array };
+  photoOriginal?: { width: number; height: number; data: Uint8ClampedArray | Uint8Array } | null;
+  photoEdit?: PhotoEdit;
+  focusMask?: Mask | null;
+  focusStrength?: FocusStrength;
 }
 
 // ---------------------------------------------------------------- base64
@@ -105,9 +117,22 @@ function slimSpool(s: FilamentSpool): FilamentSpool {
 
 export function buildProject(input: ProjectSnapshotInput, appVersion: string, planHash?: string, now = new Date()): ProjectFile {
   const {
-    projectName, slots, sourceImageData, ...settings
+    projectName, slots, sourceImageData, photoOriginal, photoEdit, focusMask, focusStrength, ...settings
   } = input;
+  const edited = !!photoOriginal && !!photoEdit && !isDefaultEdit(photoEdit);
+  const focused = !!photoOriginal && maskHasFocus(focusMask);
   return {
+    ...(edited || focused ? { original: encodeImage(photoOriginal!), photoEdit: photoEdit } : {}),
+    ...(focused
+      ? {
+          focus: {
+            width: focusMask!.width,
+            height: focusMask!.height,
+            maskDeflatedBase64: bytesToBase64(deflateSync(focusMask!.data, { level: 9 })),
+            strength: focusStrength ?? 'balanced',
+          },
+        }
+      : {}),
     schema: PROJECT_SCHEMA,
     version: PROJECT_VERSION,
     appVersion,
@@ -201,7 +226,50 @@ export function parseProject(text: string): ParseResult {
   }
   if (prev !== s.totalLayers) return { ok: false, error: 'The last filament must end at the top layer.' };
 
+  // Optional crop/focus extras (#46). `image` is already the cropped picture, so a damaged
+  // extra is dropped and the project still opens.
+  if (!validOriginalAndEdit(raw.original, raw.photoEdit)) {
+    delete raw.original;
+    delete raw.photoEdit;
+    delete raw.focus;
+  } else if (raw.focus !== undefined && !decodeFocus(raw as ProjectFile)) {
+    delete raw.focus;
+  }
+
   return { ok: true, project: raw as ProjectFile };
+}
+
+function validOriginalAndEdit(original: any, edit: any): boolean {
+  if (original === undefined && edit === undefined) return true;
+  if (!original || !isInt(original.width, 1, MAX_IMAGE_SIDE) || !isInt(original.height, 1, MAX_IMAGE_SIDE)) return false;
+  if (typeof original.rgbaDeflatedBase64 !== 'string') return false;
+  try {
+    decodeImage(original);
+  } catch {
+    return false;
+  }
+  if (!edit || typeof edit !== 'object') return false;
+  if (![0, 90, 180, 270].includes(edit.rotate) || !isNum(edit.straighten, -45, 45)) return false;
+  const c = edit.crop;
+  return (
+    !!c &&
+    isNum(c.x, 0, 1) && isNum(c.y, 0, 1) && isNum(c.w, 0.01, 1) && isNum(c.h, 0.01, 1) &&
+    c.x + c.w <= 1.0001 && c.y + c.h <= 1.0001
+  );
+}
+
+/** The focus mask saved in a project, or null if there is none or it is damaged. */
+export function decodeFocus(p: ProjectFile): (Mask & { strength: FocusStrength }) | null {
+  const f = p.focus;
+  if (!f || !p.original || !isInt(f.width, 1, 4096) || !isInt(f.height, 1, 4096) || typeof f.maskDeflatedBase64 !== 'string') return null;
+  if (!oneOf(f.strength, Object.keys(FOCUS_SHARE) as FocusStrength[])) return null;
+  try {
+    const data = inflateSync(base64ToBytes(f.maskDeflatedBase64));
+    if (data.length !== f.width * f.height) return null;
+    return { width: f.width, height: f.height, data, strength: f.strength };
+  } catch {
+    return null;
+  }
 }
 
 /** Slots as the app uses them, rebuilt from a validated project. */

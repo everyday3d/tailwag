@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import {
   Dog,
   Upload,
+  Crop as CropIcon,
   Sparkles,
   Ruler,
   Package,
@@ -46,9 +47,18 @@ import { CalibrationPlateModal } from './components/CalibrationPlateModal';
 import { APP_VERSION } from './appVersion';
 import { UpdateModal } from './components/UpdateModal';
 import { recordError } from './engine/debugInfo';
+import { PhotoEditorModal, type PhotoEditResult } from './components/PhotoEditorModal';
+import {
+  DEFAULT_EDIT,
+  FOCUS_SHARE,
+  ORIGINAL_MAX_SIDE,
+  applyPhotoEdit,
+  cropPixelSize,
+  maskForOutput,
+} from './engine/photoEdit';
 import { appHistory } from './store/appHistory';
 import { useHistoryStatus } from './store/undoHistory';
-import { buildProject, decodeImage, parseProject } from './engine/projectFile';
+import { buildProject, decodeFocus, decodeImage, parseProject } from './engine/projectFile';
 import {
   canReopenLastProject,
   forgetLastProject,
@@ -100,6 +110,8 @@ export const App: React.FC = () => {
   const [isCalPlateOpen, setIsCalPlateOpen] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
+  const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState(false);
+  const { photoOriginal, photoEdit, focusMask, focusStrength, setPhotoState } = useTailWagStore();
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
   // Keep the last error for "Copy debug info" (#49): banner errors and uncaught errors.
   React.useEffect(() => {
@@ -290,7 +302,13 @@ export const App: React.FC = () => {
     const [image, pool, layers, base, lh, colors, baseSolid] = args;
     const legacy = solveOptimalPalettes(...args);
     if (matchMode !== 'faithful') return legacy;
-    const faithful = solveFaithfulPalette(image, pool, layers, base, lh, colors ?? 4, baseSolid);
+    // The focus area (#46) is lined up with the current picture, which is what the solver gets here
+    const { focusImageMask, focusStrength } = useTailWagStore.getState();
+    const focus = focusImageMask && focusImageMask.width === image.width && focusImageMask.height === image.height ? focusImageMask : null;
+    const faithful = solveFaithfulPalette(image, pool, layers, base, lh, colors ?? 4, baseSolid, {
+      focus,
+      focusShare: FOCUS_SHARE[focusStrength],
+    });
     return faithful.length > 0 ? [...faithful, ...legacy] : legacy;
   };
 
@@ -312,6 +330,22 @@ export const App: React.FC = () => {
     setSourceImageData(image);
     setSourceDataUrl(imageDataToDataUrl(image));
     useTailWagStore.getState().loadProject(project, image);
+    // Crop and focus extras (#46); projects without them start from the saved picture
+    const focus = decodeFocus(project);
+    if (project.original && project.photoEdit) {
+      const o = decodeImage(project.original);
+      const original = new ImageData(new Uint8ClampedArray(o.data), o.width, o.height);
+      const mask = focus ? { width: focus.width, height: focus.height, data: focus.data } : null;
+      setPhotoState({
+        photoOriginal: original,
+        photoEdit: project.photoEdit,
+        focusMask: mask,
+        focusStrength: focus?.strength ?? 'balanced',
+        focusImageMask: mask ? maskForOutput(mask, o.width, o.height, project.photoEdit, image.width, image.height) : null,
+      });
+    } else {
+      setPhotoState({ photoOriginal: image, photoEdit: DEFAULT_EDIT, focusMask: null, focusStrength: 'balanced', focusImageMask: null });
+    }
     appHistory.clear();
     noteOpenedProject(filePath, project.name);
     setLastProject(null);
@@ -356,6 +390,10 @@ export const App: React.FC = () => {
         splitRatio: s.splitRatio,
         slots: s.slots,
         sourceImageData,
+        photoOriginal: s.photoOriginal,
+        photoEdit: s.photoEdit,
+        focusMask: s.focusMask,
+        focusStrength: s.focusStrength,
       },
       APP_VERSION,
       planRef.current.hash
@@ -435,63 +473,91 @@ export const App: React.FC = () => {
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0, w, h);
         const newImgData = ctx.getImageData(0, 0, w, h);
-        setSourceImageData(newImgData);
-        setStoreSourceImageData(newImgData);
-        appHistory.clear(); // undo must never carry edits from the old photo onto the new one
-        setSourceDataUrl(dataUrl);
 
-        // Standardized 246x246mm build plate envelope sizing preserving exact aspect ratio
-        const { widthMm: stdW, heightMm: stdH } = computeStandardBedDimensions(
-          img.width,
-          img.height,
-          STANDARD_BUILD_PLATE_MAX_BBOX_MM
-        );
-        setDimensions(stdW, stdH);
+        // Keep a larger copy of the whole photo so it can be cropped later without losing detail (#46)
+        const oScale = Math.min(1, ORIGINAL_MAX_SIDE / Math.max(img.width, img.height));
+        const ow = Math.max(1, Math.round(img.width * oScale));
+        const oh = Math.max(1, Math.round(img.height * oScale));
+        const oCanvas = document.createElement('canvas');
+        oCanvas.width = ow;
+        oCanvas.height = oh;
+        const octx = oCanvas.getContext('2d')!;
+        octx.drawImage(img, 0, 0, ow, oh);
+        setPhotoState({
+          photoOriginal: octx.getImageData(0, 0, ow, oh),
+          photoEdit: DEFAULT_EDIT,
+          focusMask: null,
+          focusImageMask: null,
+        });
 
-        // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode & color count
-        setViewportMode('3d-mesh');
-        if (solverColorMode === 'manual') {
-          setSlots(
-            optimizeManualSlotBoundaries(
-              newImgData,
-              slots,
-              totalLayers,
-              baseLayerMm,
-              layerHeightMm,
-              baseSolidThicknessMm
-            )
-          );
-          return;
-        }
-        const targetLayers = Math.max(24, solverColorCount * 2);
-        if (targetLayers !== totalLayers) {
-          setLayerParams(baseLayerMm, layerHeightMm, targetLayers);
-        } else {
-          setSlicePreviewMaxLayer(targetLayers);
-        }
-        const pool = getCandidatePoolForMode(effectiveSolverPoolMode);
-        const recipes =
-          solverColorMode === 'cmyk'
-            ? [solveCmykPalette(newImgData, pool, targetLayers, baseLayerMm, layerHeightMm, solverColorCount)]
-            : solvePalettes(
-                newImgData,
-                pool,
-                targetLayers,
-                baseLayerMm,
-                layerHeightMm,
-                solverColorCount,
-                baseSolidThicknessMm,
-                totalDepthMm
-              );
-        setSolverRecipes(recipes);
-        if (recipes.length > 0) {
-          setSlots(recipes[0].slots);
-        }
+        adoptPhoto(newImgData, img.width, img.height, dataUrl);
+        setIsPhotoEditorOpen(true);
       };
       img.src = dataUrl;
     };
     reader.readAsDataURL(file);
     e.target.value = '';
+  };
+
+  /**
+   * Uses a new or edited picture: sizes the print to its shape and picks the filaments again,
+   * exactly as loading a photo does. pixelW/H are the photo's real size (for the aspect ratio).
+   */
+  const adoptPhoto = (newImgData: ImageData, pixelW: number, pixelH: number, dataUrl?: string, resize = true) => {
+    setSourceImageData(newImgData);
+    setStoreSourceImageData(newImgData);
+    appHistory.clear(); // undo must never carry edits from the old photo onto the new one
+    setSourceDataUrl(dataUrl ?? imageDataToDataUrl(newImgData));
+
+    if (resize) {
+      // Standardized 246x246mm build plate envelope sizing preserving exact aspect ratio
+      const { widthMm: stdW, heightMm: stdH } = computeStandardBedDimensions(pixelW, pixelH, STANDARD_BUILD_PLATE_MAX_BBOX_MM);
+      setDimensions(stdW, stdH);
+    }
+
+    // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode & color count
+    setViewportMode('3d-mesh');
+    if (solverColorMode === 'manual') {
+      setSlots(optimizeManualSlotBoundaries(newImgData, slots, totalLayers, baseLayerMm, layerHeightMm, baseSolidThicknessMm));
+      return;
+    }
+    const targetLayers = Math.max(24, solverColorCount * 2);
+    if (targetLayers !== totalLayers) {
+      setLayerParams(baseLayerMm, layerHeightMm, targetLayers);
+    } else {
+      setSlicePreviewMaxLayer(targetLayers);
+    }
+    const pool = getCandidatePoolForMode(effectiveSolverPoolMode);
+    const recipes =
+      solverColorMode === 'cmyk'
+        ? [solveCmykPalette(newImgData, pool, targetLayers, baseLayerMm, layerHeightMm, solverColorCount)]
+        : solvePalettes(newImgData, pool, targetLayers, baseLayerMm, layerHeightMm, solverColorCount, baseSolidThicknessMm, totalDepthMm);
+    setSolverRecipes(recipes);
+    if (recipes.length > 0) {
+      setSlots(recipes[0].slots);
+    }
+  };
+
+  const handleApplyPhotoEdit = ({ edit, mask, strength }: PhotoEditResult) => {
+    const s = useTailWagStore.getState();
+    const original = s.photoOriginal ?? sourceImageData;
+    const sameGeometry = JSON.stringify(edit) === JSON.stringify(s.photoEdit);
+    // Untouched geometry keeps the exact picture the app already has; only the focus changes
+    let image = sourceImageData;
+    if (!sameGeometry) {
+      const out = applyPhotoEdit(original, edit);
+      image = new ImageData(new Uint8ClampedArray(out.data), out.width, out.height);
+    }
+    setPhotoState({
+      photoOriginal: original,
+      photoEdit: edit,
+      focusMask: mask,
+      focusStrength: strength,
+      focusImageMask: mask ? maskForOutput(mask, original.width, original.height, edit, image.width, image.height) : null,
+    });
+    const px = cropPixelSize(original.width, original.height, edit);
+    adoptPhoto(image, px.width, px.height, sameGeometry ? sourceDataUrl : undefined, !sameGeometry);
+    setIsPhotoEditorOpen(false);
   };
 
   const handleRunAiSolver = (
@@ -828,6 +894,14 @@ export const App: React.FC = () => {
           >
             <Upload className="w-3.5 h-3.5 text-orange-400" />
             Load Image
+          </button>
+          <button
+            onClick={() => setIsPhotoEditorOpen(true)}
+            title="Edit photo: crop, turn or straighten it, and mark the area that matters most"
+            aria-label="Edit photo"
+            className="flex items-center px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition"
+          >
+            <CropIcon className="w-4 h-4 text-orange-400" />
           </button>
 
           <button
@@ -2051,6 +2125,16 @@ export const App: React.FC = () => {
       <UpdateModal isOpen={isUpdateOpen} onClose={() => setIsUpdateOpen(false)} result={updateResult} onResult={setUpdateResult} planHash={plan.hash} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
+      <PhotoEditorModal
+        isOpen={isPhotoEditorOpen}
+        onClose={() => setIsPhotoEditorOpen(false)}
+        onApply={handleApplyPhotoEdit}
+        original={photoOriginal ?? sourceImageData}
+        edit={photoEdit}
+        mask={focusMask}
+        strength={focusStrength}
+        focusApplies={matchMode === 'faithful' && solverColorMode === 'natural'}
+      />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} plan={plan} />
     </div>
   );
