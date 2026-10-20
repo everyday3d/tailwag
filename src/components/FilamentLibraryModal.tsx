@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { X, Search, Plus, Pipette, CheckCircle2, ExternalLink, Info } from 'lucide-react';
+import { Search, Plus, Pipette, CheckCircle2, ExternalLink, Info } from 'lucide-react';
+import { Badge, Button, Dialog, IconButton, Segmented, FOCUS_RING } from './ui';
 import { useTailWagStore } from '../store/useTailWagStore';
 import type { FilamentSpool } from '../data/filamentCatalog';
 import {
@@ -47,31 +48,31 @@ const HUE_FAMILIES: HueFamily[] = [
   'brown',
 ];
 
-const SOURCE_BADGE: Record<TdSource, string> = {
-  measured: 'bg-emerald-500/20 text-emerald-300',
-  user: 'bg-sky-500/20 text-sky-300',
-  catalog: 'bg-slate-700 text-slate-200',
-  estimate: 'bg-amber-500/20 text-amber-300',
+// How much to trust a TD value: measured is green, a guess from the colour is amber.
+const SOURCE_TONE: Record<TdSource, 'ok' | 'neutral' | 'warn'> = {
+  measured: 'ok',
+  user: 'neutral',
+  catalog: 'neutral',
+  estimate: 'warn',
 };
 
 export function TdSourceBadge({ source, calibration }: { source?: TdSource; calibration?: SpoolCalibration }) {
   const s: TdSource = source ?? 'catalog';
   if (calibration && calibration.modelId === CALIBRATION_MODEL_ID) {
     const q = calibration.meanDeltaE00;
-    const tone = q <= 3 ? SOURCE_BADGE.measured : q <= 6 ? SOURCE_BADGE.user : SOURCE_BADGE.estimate;
     return (
-      <span
-        className={`px-1 rounded text-[9px] font-semibold ${tone}`}
-        title={`Fitted from a printed calibration plate on ${calibration.date}. Mean fit error ${q.toFixed(1)} (worst ${calibration.maxDeltaE00.toFixed(1)}) on the CIEDE2000 scale; under 3 is hard to see.`}
+      <Badge
+        tone={q <= 3 ? 'ok' : q <= 6 ? 'neutral' : 'warn'}
+        title={`Measured with a calibration plate on ${calibration.date}. Average fit error ${q.toFixed(1)} ΔE (worst ${calibration.maxDeltaE00.toFixed(1)}); under 3 is hard to see.`}
       >
-        Calibrated Â±{q.toFixed(1)}
-      </span>
+        Calibrated ±{q.toFixed(1)}
+      </Badge>
     );
   }
   return (
-    <span className={`px-1 rounded text-[9px] font-semibold ${SOURCE_BADGE[s]}`} title="Where this TD value came from">
+    <Badge tone={SOURCE_TONE[s]} title="Where this TD value comes from">
       {TD_SOURCE_LABEL[s]}
-    </span>
+    </Badge>
   );
 }
 
@@ -160,7 +161,7 @@ export const FilamentLibraryModal: React.FC<Props> = ({ isOpen, onClose }) => {
       catalogId: e.catalogId,
     };
     const err = addSpoolToMyFilaments(spool);
-    setMessage(err ? { kind: 'err', text: err } : { kind: 'ok', text: `Added ${e.brand} ${e.name} to My Filaments.` });
+    setMessage(err ? { kind: 'err', text: err } : { kind: 'ok', text: `Added ${e.brand} ${e.name} to your spools.` });
   };
 
   const hexValid = HEX_RE.test(fHex);
@@ -206,233 +207,214 @@ export const FilamentLibraryModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setMessage({ kind: 'err', text: err });
       return;
     }
-    setMessage({ kind: 'ok', text: `Added ${spool.brand} ${spool.name} to My Filaments.` });
+    setMessage({ kind: 'ok', text: `Added ${spool.brand} ${spool.name} to your spools.` });
     setFName('');
     setFTd('');
   };
 
-  const inputCls =
-    'w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-orange-500';
+  const inputCls = `h-8 w-full px-2.5 rounded-control bg-tw-ground border border-tw-line text-body text-tw-ink ${FOCUS_RING}`;
+  const labelCls = 'flex flex-col gap-1 text-small text-tw-ink-2';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="bg-[#0f141e] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[88vh] flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <div>
-            <div className="text-sm font-bold text-slate-100">Filament Library</div>
-            <div className="text-[10px] text-slate-400">Catalog v{MANUFACTURER_CATALOG_VERSION} • {MANUFACTURER_CATALOG.length} filaments</div>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      title="Add a filament"
+      subtitle={`From the manufacturer catalog (${MANUFACTURER_CATALOG.length} filaments, version ${MANUFACTURER_CATALOG_VERSION}) or by hand.`}
+    >
+      <Segmented
+        label="How to add"
+        value={tab}
+        onChange={(t) => {
+          setTab(t);
+          setMessage(null);
+        }}
+        options={[
+          { value: 'browse', label: 'Browse catalog' },
+          { value: 'manual', label: 'Enter by hand' },
+        ]}
+        className="self-start"
+        fill={false}
+      />
+
+      {message && (
+        <p
+          role="status"
+          className={`m-0 px-2.5 py-1.5 rounded-control border text-small ${
+            message.kind === 'ok' ? 'bg-tw-ok/10 border-tw-ok/30 text-tw-ok' : 'bg-tw-danger/10 border-tw-danger/30 text-tw-danger'
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
+
+      {tab === 'browse' ? (
+        <div className="flex flex-col gap-2.5 min-h-0">
+          <label className={`flex items-center gap-2 h-8 px-2.5 rounded-control bg-tw-ground border border-tw-line text-tw-ink-3 focus-within:outline focus-within:outline-2 focus-within:outline-tw-accent`}>
+            <Search className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="sr-only">Search the catalog</span>
+            <input
+              type="search"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Search brand, colour, material or hex"
+              className="flex-1 min-w-0 bg-transparent border-none outline-none text-body text-tw-ink placeholder:text-tw-ink-3"
+            />
+          </label>
+          <div className="grid grid-cols-5 gap-2">
+            <select value={brand} onChange={(e) => setBrand(e.target.value)} className={inputCls} aria-label="Brand">
+              <option value="">All brands</option>
+              {brands.map((b) => (
+                <option key={b}>{b}</option>
+              ))}
+            </select>
+            <select value={material} onChange={(e) => setMaterial(e.target.value)} className={inputCls} aria-label="Material">
+              <option value="">All materials</option>
+              {materials.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+            <select value={hue} onChange={(e) => setHue(e.target.value as HueFamily | '')} className={inputCls} aria-label="Colour family">
+              <option value="">All colours</option>
+              {HUE_FAMILIES.map((h) => (
+                <option key={h}>{h}</option>
+              ))}
+            </select>
+            <input value={tdMin} onChange={(e) => setTdMin(e.target.value)} placeholder="TD from" aria-label="Lowest TD" className={`${inputCls} font-mono`} inputMode="decimal" />
+            <input value={tdMax} onChange={(e) => setTdMax(e.target.value)} placeholder="TD to" aria-label="Highest TD" className={`${inputCls} font-mono`} inputMode="decimal" />
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="flex gap-1 px-4 pt-3">
-          {(['browse', 'manual'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => {
-                setTab(t);
-                setMessage(null);
-              }}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                tab === t ? 'bg-orange-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {t === 'browse' ? 'Browse catalog' : 'Add manually'}
-            </button>
-          ))}
-        </div>
-
-        {message && (
-          <div
-            className={`mx-4 mt-2 text-[11px] px-2 py-1 rounded ${
-              message.kind === 'ok'
-                ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
-
-        {tab === 'browse' ? (
-          <div className="p-4 flex flex-col gap-2 min-h-0">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Search brand, color name, material, hex..."
-                className={`${inputCls} pl-8`}
-              />
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              <select value={brand} onChange={(e) => setBrand(e.target.value)} className={inputCls} aria-label="Brand">
-                <option value="">All brands</option>
-                {brands.map((b) => (
-                  <option key={b}>{b}</option>
-                ))}
-              </select>
-              <select value={material} onChange={(e) => setMaterial(e.target.value)} className={inputCls} aria-label="Material">
-                <option value="">All materials</option>
-                {materials.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-              <select value={hue} onChange={(e) => setHue(e.target.value as HueFamily | '')} className={inputCls} aria-label="Hue family">
-                <option value="">All hues</option>
-                {HUE_FAMILIES.map((h) => (
-                  <option key={h}>{h}</option>
-                ))}
-              </select>
-              <input value={tdMin} onChange={(e) => setTdMin(e.target.value)} placeholder="TD min" className={inputCls} inputMode="decimal" />
-              <input value={tdMax} onChange={(e) => setTdMax(e.target.value)} placeholder="TD max" className={inputCls} inputMode="decimal" />
-            </div>
-            <div className="text-[10px] text-slate-500">{results.length} match{results.length === 1 ? '' : 'es'}</div>
-            <div className="overflow-y-auto space-y-1.5 pr-1 min-h-0">
-              {results.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-400 bg-slate-900/50 rounded-lg border border-slate-800/80">
-                  No filaments match. Use "Add manually" to enter one.
-                </div>
-              ) : (
-                results.map((e) => {
-                  const added = inLibrary.has(`${e.brand}|${e.name}|${e.hex}`.toLowerCase());
-                  return (
-                    <div key={e.catalogId} className="bg-[#181f2e] border border-slate-800 rounded-lg p-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="block w-6 h-6 rounded-full border border-white/30 shrink-0" style={{ backgroundColor: e.hex }} />
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-slate-100 truncate">{e.name}</div>
-                          <div className="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                            {e.sourceUrl ? (
-                              <a
-                                href={e.sourceUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-slate-300 font-medium hover:text-orange-300 underline decoration-dotted"
-                                title={`Verify against ${e.brand}'s page`}
-                              >
-                                {e.brand}
-                              </a>
-                            ) : (
-                              <span className="text-slate-300 font-medium">{e.brand}</span>
-                            )}
-                            <span>•</span>
-                            <span className="px-1 rounded bg-slate-800 text-slate-300">{e.material}</span>
-                            <span>•</span>
-                            <span className="text-orange-400 font-mono">TD {e.td.toFixed(1)}mm</span>
-                            <TdSourceBadge source={e.tdSource} calibration={(e as FilamentSpool).calibration} />
-                            <span className="font-mono text-slate-500">{e.hex}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <a
-                          href={submitFilamentUrl(e)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-slate-500 hover:text-slate-200"
-                          title="Report a correction for this filament on GitHub"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                        <button
-                          onClick={() => addFromCatalog(e)}
-                          disabled={added}
-                          className="px-2 py-1 rounded bg-slate-900 hover:bg-orange-600 text-[11px] font-semibold text-slate-300 hover:text-white border border-slate-700 transition flex items-center gap-1 disabled:opacity-50 disabled:hover:bg-slate-900"
-                        >
-                          {added ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Plus className="w-3 h-3" />}
-                          {added ? 'In library' : 'Add'}
-                        </button>
-                      </div>
+          <span className="text-micro text-tw-ink-3" role="status">
+            {results.length} match{results.length === 1 ? '' : 'es'}
+          </span>
+          <ul className="flex flex-col gap-1 m-0 p-0 list-none max-h-[44vh] overflow-y-auto pr-1">
+            {results.length === 0 ? (
+              <li className="text-center py-6 text-small text-tw-ink-2 rounded-control border border-tw-line">No filaments match. Use "Enter by hand" to add one.</li>
+            ) : (
+              results.map((e) => {
+                const added = inLibrary.has(`${e.brand}|${e.name}|${e.hex}`.toLowerCase());
+                return (
+                  <li key={e.catalogId} className="flex items-center gap-2.5 px-2.5 py-2 rounded-control bg-tw-raised/50 border border-transparent hover:border-tw-line-strong">
+                    <span className="w-6 h-6 rounded-full shrink-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]" style={{ backgroundColor: e.hex }} aria-hidden="true" />
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-body font-medium text-tw-ink truncate">{e.name}</span>
+                        <span className="font-mono text-small text-tw-ink shrink-0">TD {e.td.toFixed(1)}</span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-small text-tw-ink-2 min-w-0">
+                        {e.sourceUrl ? (
+                          <a href={e.sourceUrl} target="_blank" rel="noreferrer" className={`underline decoration-dotted hover:text-tw-ink rounded ${FOCUS_RING}`} title={`Check against ${e.brand}'s page`}>
+                            {e.brand}
+                          </a>
+                        ) : (
+                          <span>{e.brand}</span>
+                        )}
+                        <span className="truncate">, {e.material}</span>
+                        <span className="font-mono text-tw-ink-3 shrink-0">{e.hex}</span>
+                        <TdSourceBadge source={e.tdSource} calibration={(e as FilamentSpool).calibration} />
+                      </span>
                     </div>
-                  );
-                })
+                    <a
+                      href={submitFilamentUrl(e)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`p-1 text-tw-ink-3 hover:text-tw-ink rounded ${FOCUS_RING}`}
+                      title="Report a correction for this filament on GitHub"
+                      aria-label={`Report a correction for ${e.brand} ${e.name}`}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                    </a>
+                    <Button
+                      size="sm"
+                      variant={added ? 'ghost' : 'secondary'}
+                      icon={added ? <CheckCircle2 className="w-3.5 h-3.5 text-tw-ok" aria-hidden="true" /> : <Plus className="w-3.5 h-3.5" aria-hidden="true" />}
+                      onClick={() => addFromCatalog(e)}
+                      disabled={added}
+                    >
+                      {added ? 'Added' : 'Add'}
+                    </Button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+          <p className="m-0 flex items-start gap-1.5 text-micro text-tw-ink-3">
+            <Info className="w-3 h-3 mt-0.5 shrink-0" aria-hidden="true" />
+            Colours are approximate values from public manufacturer charts. A TD marked Estimate is predicted from the colour; the calibration plate measures the real value.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <label className={labelCls}>
+            Brand (required)
+            <input value={fBrand} onChange={(e) => setFBrand(e.target.value)} className={inputCls} list="tw-brand-list" />
+            <datalist id="tw-brand-list">
+              {brands.map((b) => (
+                <option key={b} value={b} />
+              ))}
+            </datalist>
+          </label>
+          <label className={labelCls}>
+            Product line
+            <input value={fLine} onChange={(e) => setFLine(e.target.value)} className={inputCls} placeholder="For example PLA Basic" />
+          </label>
+          <label className={labelCls}>
+            Material
+            <select value={fMaterial} onChange={(e) => setFMaterial(e.target.value as FilamentSpool['material'])} className={inputCls}>
+              {MATERIALS.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          </label>
+          <label className={labelCls}>
+            Colour name (required)
+            <input value={fName} onChange={(e) => setFName(e.target.value)} className={inputCls} />
+          </label>
+          <div className={labelCls}>
+            <span id="tw-new-colour">Colour (required)</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={hexValid ? fHex : '#000000'}
+                onChange={(e) => setFHex(e.target.value.toUpperCase())}
+                className={`w-9 h-8 shrink-0 rounded-control bg-transparent cursor-pointer ${FOCUS_RING}`}
+                aria-label="Pick a colour"
+              />
+              <input value={fHex} onChange={(e) => setFHex(e.target.value)} className={`${inputCls} font-mono`} aria-labelledby="tw-new-colour" />
+              {eyedropperSupported && (
+                <IconButton label="Pick a colour from the screen, for example a photo of the spool" icon={<Pipette className="w-3.5 h-3.5" />} onClick={pickWithEyedropper} />
               )}
             </div>
-            <div className="flex items-start gap-1.5 text-[10px] text-slate-500">
-              <Info className="w-3 h-3 mt-0.5 shrink-0" />
-              <span>Colors are approximate values from public manufacturer charts. TD marked Estimate is predicted from the color; calibrate for exact values.</span>
-            </div>
           </div>
-        ) : (
-          <div className="p-4 grid grid-cols-2 gap-3 overflow-y-auto">
-            <label className="flex flex-col gap-1 text-[11px] text-slate-400">
-              Brand *
-              <input value={fBrand} onChange={(e) => setFBrand(e.target.value)} className={inputCls} list="tw-brand-list" />
-              <datalist id="tw-brand-list">
-                {brands.map((b) => (
-                  <option key={b} value={b} />
-                ))}
-              </datalist>
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-slate-400">
-              Product line
-              <input value={fLine} onChange={(e) => setFLine(e.target.value)} className={inputCls} placeholder="e.g. PLA Basic" />
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-slate-400">
-              Material
-              <select value={fMaterial} onChange={(e) => setFMaterial(e.target.value as FilamentSpool['material'])} className={inputCls}>
-                {MATERIALS.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-slate-400">
-              Color name *
-              <input value={fName} onChange={(e) => setFName(e.target.value)} className={inputCls} />
-            </label>
-            <div className="flex flex-col gap-1 text-[11px] text-slate-400">
-              Color *
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={hexValid ? fHex : '#000000'}
-                  onChange={(e) => setFHex(e.target.value.toUpperCase())}
-                  className="w-8 h-7 bg-transparent border border-slate-700 rounded"
-                  aria-label="Color picker"
-                />
-                <input value={fHex} onChange={(e) => setFHex(e.target.value)} className={`${inputCls} font-mono`} />
-                {eyedropperSupported && (
-                  <button onClick={pickWithEyedropper} className="p-1.5 rounded border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800" title="Pick a color from the screen (e.g., a photo of the spool)">
-                    <Pipette className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+          <div className={labelCls}>
+            <span id="tw-new-td">TD (mm): leave empty to use the estimate</span>
+            <div className="flex items-center gap-2">
+              <input
+                value={fTd}
+                onChange={(e) => setFTd(e.target.value)}
+                className={`${inputCls} font-mono`}
+                inputMode="decimal"
+                placeholder={estimate !== null ? `Estimate: ${estimate}` : ''}
+                aria-labelledby="tw-new-td"
+              />
+              <Button size="sm" variant="ghost" onClick={() => estimate !== null && setFTd(String(estimate))} disabled={estimate === null}>
+                Use estimate
+              </Button>
             </div>
-            <div className="flex flex-col gap-1 text-[11px] text-slate-400">
-              TD (mm) — leave blank to use the estimate
-              <div className="flex items-center gap-2">
-                <input value={fTd} onChange={(e) => setFTd(e.target.value)} className={inputCls} inputMode="decimal" placeholder={estimate !== null ? `Estimate: ${estimate}` : ''} />
-                <button
-                  onClick={() => estimate !== null && setFTd(String(estimate))}
-                  disabled={estimate === null}
-                  className="px-2 py-1 rounded border border-slate-700 text-[10px] text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-40 shrink-0"
-                >
-                  Use estimate
-                </button>
-              </div>
-              {tdWarning && <span className="text-amber-300 text-[10px]">{tdWarning}</span>}
-            </div>
-            <label className="flex flex-col gap-1 text-[11px] text-slate-400">
-              AMS slot (optional)
-              <input value={fAms} onChange={(e) => setFAms(e.target.value)} className={inputCls} placeholder="AMS 1 - A1" />
-            </label>
-            <div className="col-span-2 flex items-center justify-between gap-2 pt-1">
-              <span className="text-[10px] text-slate-500">
-                TD source will be saved as {tdNum !== null ? 'User-entered' : 'Estimate'}.
-              </span>
-              <button
-                onClick={submitManual}
-                className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add to My Filaments
-              </button>
-            </div>
+            {tdWarning && <span className="text-micro text-tw-warn">{tdWarning}</span>}
           </div>
-        )}
-      </div>
-    </div>
+          <label className={labelCls}>
+            AMS slot (optional)
+            <input value={fAms} onChange={(e) => setFAms(e.target.value)} className={inputCls} placeholder="AMS 1 - A1" />
+          </label>
+          <div className="col-span-2 flex items-center justify-between gap-2 pt-1">
+            <span className="text-micro text-tw-ink-3">The TD will be saved as {tdNum !== null ? 'entered by you' : 'an estimate'}.</span>
+            <Button variant="primary" icon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={submitManual}>
+              Add to my spools
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
   );
 };

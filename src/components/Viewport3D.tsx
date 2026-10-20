@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Maximize2, Minimize2, Compass, Eye } from 'lucide-react';
+import { Maximize2, Minimize2, Compass, Eye, X } from 'lucide-react';
+import { IconButton, FOCUS_RING } from './ui';
 import { HeightmapGrid } from '../engine/cadMeshBuilder';
 import { PrintPlan, planLayerRgb } from '../engine/printPlan';
 import { srgbToLinear } from '../engine/colorScience';
@@ -344,108 +345,90 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
         className={`w-full h-full ${viewportMode === 'source' ? 'invisible' : 'visible'}`}
       />
 
-      {/* Top-Left Camera & View Quick Controls */}
+      {/* Camera presets */}
       {viewportMode === '3d-mesh' && (
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md border border-slate-800 p-1 rounded-lg z-10">
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-0.5 p-[3px] rounded-[9px] bg-tw-panel/90 backdrop-blur border border-tw-line">
           <button
+            type="button"
             onClick={() => setCameraPreset('top-down')}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-800/80 hover:bg-orange-600 text-slate-200 hover:text-white transition"
-            title="View flat from directly above like a 2D canvas"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[7px] text-small font-medium text-tw-ink-2 hover:text-tw-ink hover:bg-tw-raised transition ${FOCUS_RING}`}
+            title="Look straight down, like a flat picture"
           >
-            <Eye className="w-3.5 h-3.5 text-orange-400" />
-            <span className="min-[1600px]:hidden">Top-down</span>
-            <span className="hidden min-[1600px]:inline">Top-Down Paint View</span>
+            <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+            Top-down
           </button>
           <button
+            type="button"
             onClick={() => setCameraPreset('angled-3d')}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-800/80 hover:bg-orange-600 text-slate-200 hover:text-white transition"
-            title="Tilt camera to inspect 3D printed filament layer depth"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[7px] text-small font-medium text-tw-ink-2 hover:text-tw-ink hover:bg-tw-raised transition ${FOCUS_RING}`}
+            title="Tilt the view to see the depth of the layers"
           >
-            <Compass className="w-3.5 h-3.5 text-sky-400" />
-            <span className="min-[1600px]:hidden">Angled</span>
-            <span className="hidden min-[1600px]:inline">3D Relief Angle</span>
+            <Compass className="w-3.5 h-3.5" aria-hidden="true" />
+            Angled
           </button>
         </div>
       )}
 
-      {/* Picture-in-Picture (PiP) Original Photo Comparison Inset in Bottom-Left Corner */}
+      {/* The photo, small, for comparison */}
       {viewportMode === '3d-mesh' && !pipHidden && (
-        <div
-          className={`absolute bottom-3 left-3 z-20 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-xl shadow-2xl overflow-hidden transition-all duration-200 ${
+        <figure
+          className={`absolute bottom-3 left-3 z-20 m-0 rounded-card overflow-hidden bg-tw-panel/95 backdrop-blur border border-tw-line-strong shadow-2xl transition-all duration-200 ${
             pipExpanded ? 'w-72' : 'w-44'
           }`}
         >
-          <div className="px-2.5 py-1.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between text-[11px]">
-            <span className="font-bold text-orange-400 truncate">Original Photo</span>
-            <div className="flex items-center gap-1">
+          <figcaption className="flex items-center justify-between gap-1 px-2.5 py-1.5 border-b border-tw-line text-small">
+            <span className="font-medium text-tw-ink truncate">Your photo</span>
+            <span className="flex items-center gap-0.5">
               <button
+                type="button"
                 onClick={() => setViewportMode('split')}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
-                title="Switch to Split-Screen Wipe Comparison"
+                className={`px-1.5 py-0.5 rounded-md text-micro text-tw-ink-2 hover:text-tw-ink hover:bg-tw-raised ${FOCUS_RING}`}
+                title="Compare with a split view"
               >
                 Split
               </button>
-              <button
+              <IconButton
+                size="sm"
+                variant="ghost"
+                className="border-transparent w-6 h-6"
+                label={pipExpanded ? 'Make the photo smaller' : 'Make the photo larger'}
+                icon={pipExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                 onClick={() => setPipExpanded(!pipExpanded)}
-                className="text-slate-400 hover:text-white p-0.5"
-                title={pipExpanded ? 'Shrink Preview' : 'Enlarge Preview'}
-              >
-                {pipExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-              </button>
-              <button
-                onClick={() => setPipHidden(true)}
-                className="text-slate-500 hover:text-slate-300 px-1 text-[10px]"
-                title="Minimize Reference Card"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-          <div className="p-1.5 flex items-center justify-center bg-[#070a10]">
-            <img
-              src={sourceDataUrl}
-              alt="Original Upload Reference"
-              onClick={() => setPipExpanded(!pipExpanded)}
-              className={`w-full object-contain rounded cursor-pointer ${
-                pipExpanded ? 'max-h-64' : 'max-h-36'
-              }`}
-            />
-          </div>
-        </div>
+              />
+              <IconButton size="sm" variant="ghost" className="border-transparent w-6 h-6" label="Hide the photo" icon={<X className="w-3.5 h-3.5" />} onClick={() => setPipHidden(true)} />
+            </span>
+          </figcaption>
+          <button type="button" onClick={() => setPipExpanded(!pipExpanded)} className={`block w-full p-1.5 bg-tw-ground ${FOCUS_RING}`} title={pipExpanded ? 'Make smaller' : 'Make larger'}>
+            <img src={sourceDataUrl} alt="Your photo" className={`w-full object-contain rounded ${pipExpanded ? 'max-h-64' : 'max-h-36'}`} />
+          </button>
+        </figure>
       )}
 
-      {/* Restore PiP Button when minimized */}
       {viewportMode === '3d-mesh' && pipHidden && (
         <button
+          type="button"
           onClick={() => setPipHidden(false)}
-          className="absolute bottom-3 left-3 z-20 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-orange-400 shadow-lg transition"
+          className={`absolute bottom-3 left-3 z-20 px-2.5 py-1.5 rounded-control bg-tw-panel/90 border border-tw-line text-small font-medium text-tw-ink-2 hover:text-tw-ink shadow-lg ${FOCUS_RING}`}
         >
-          Show Original Photo Inset
+          Show your photo
         </button>
       )}
 
-      {/* Source Photo Overlay (Full or Split Wipe) */}
+      {/* The photo, full or as the left part of the split wipe */}
       {(viewportMode === 'source' || viewportMode === 'split') && (
         <div
-          className="absolute inset-0 pointer-events-none flex items-center justify-center bg-[#090d14]/90"
-          style={
-            viewportMode === 'split'
-              ? { clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` }
-              : undefined
-          }
+          className="absolute inset-0 pointer-events-none flex items-center justify-center bg-tw-ground/90"
+          style={viewportMode === 'split' ? { clipPath: `inset(0 ${(1 - splitRatio) * 100}% 0 0)` } : undefined}
         >
-          <img
-            src={sourceDataUrl}
-            alt="Source Reference"
-            className="max-w-[78%] max-h-[78%] object-contain rounded-lg shadow-2xl border border-slate-700/60"
-          />
-          <div className="absolute top-4 left-4 bg-slate-900/90 border border-slate-700 px-2.5 py-1 rounded text-xs font-medium text-orange-400">
-            Source Reference Image
-          </div>
+          <img src={sourceDataUrl} alt="Your photo" className="max-w-[78%] max-h-[78%] object-contain rounded-control shadow-2xl border border-tw-line" />
+          <span className="absolute top-4 left-4 px-2.5 py-1 rounded-control bg-tw-panel/90 border border-tw-line text-small font-medium text-tw-ink">Your photo</span>
         </div>
       )}
+      {viewportMode === 'split' && (
+        <span className="absolute top-4 right-4 z-10 px-2.5 py-1 rounded-control bg-tw-panel/90 border border-tw-line text-small font-medium text-tw-ink pointer-events-none">Predicted print</span>
+      )}
 
-      {/* Interactive Split Wipe Slider Handle */}
+      {/* Split wipe handle */}
       {viewportMode === 'split' && (
         <input
           type="range"
@@ -454,24 +437,19 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
           step={0.01}
           value={splitRatio}
           onChange={(e) => setSplitRatio(parseFloat(e.target.value))}
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 accent-orange-500 z-20 cursor-ew-resize"
-          title="Drag to compare Source Photo vs Simulated 3D TD Mesh"
+          className={`absolute bottom-6 left-1/2 -translate-x-1/2 w-72 accent-tw-accent z-20 cursor-ew-resize ${FOCUS_RING}`}
+          aria-label="Split position between your photo and the predicted print"
+          title="Drag to compare your photo with the predicted print"
         />
       )}
 
-      {/* Floating HUD Telemetry Badge */}
-      <div className="absolute top-3 right-3 flex items-center gap-2 bg-slate-900/85 backdrop-blur-md border border-slate-800 px-3 py-1.5 rounded-lg text-xs text-slate-300 pointer-events-none whitespace-nowrap">
-        <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span>
-          <span className="hidden min-[1750px]:inline">3D Filament Painted Preview • </span>
-          {grid.widthMm}×{grid.heightMm}mm • {totalLayers} Layers
-          <span className="hidden min-[1400px]:inline">
-            {' '}({(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm Max Z)
-          </span>
-        </span>
-        <span className="text-slate-500">|</span>
-        <span className="text-orange-400 font-semibold">{slots.length} Filaments</span>
-      </div>
+      {/* Size and layers */}
+      {viewportMode !== 'source' && (
+        <div className="absolute top-3 right-3 px-2.5 py-1.5 rounded-control bg-tw-panel/90 backdrop-blur border border-tw-line font-mono text-micro text-tw-ink-2 pointer-events-none whitespace-nowrap">
+          {grid.widthMm}×{grid.heightMm} mm, {totalLayers} layers
+          <span className="hidden min-[1400px]:inline">, {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)} mm tall</span>, {slots.length} filament{slots.length === 1 ? '' : 's'}
+        </div>
+      )}
     </div>
   );
 };

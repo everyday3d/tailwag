@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, RotateCcw, RotateCw, Crop, Crosshair, Eraser, Paintbrush, Trash2 } from 'lucide-react';
+import { RotateCcw, RotateCw, Crop, Eraser, Paintbrush, Trash2 } from 'lucide-react';
+import { Button, Dialog, Segmented, SliderRow } from './ui';
 import {
   DEFAULT_EDIT,
   FOCUS_SHARE,
@@ -168,13 +169,6 @@ export const PhotoEditorModal: React.FC<Props> = ({ isOpen, onClose, onApply, or
     }
   }, [isOpen, edit, maskCanvas, photoCanvas, dispW, dispH, k, srcW, srcH, tab, hover, brushPct, erasing]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   // ---- crop helpers (all in normalized edit space)
@@ -308,188 +302,132 @@ export const PhotoEditorModal: React.FC<Props> = ({ isOpen, onClose, onApply, or
   const focusOn = maskHasFocus(mask);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div
-        className="bg-[#121722] border border-slate-700 rounded-xl w-full max-w-[1040px] p-4 shadow-2xl flex flex-col gap-3 max-h-[94vh] overflow-y-auto"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Edit photo"
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Edit photo</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1" aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 flex items-center justify-center bg-slate-950 border border-slate-800 rounded-lg p-2 min-h-[300px]">
-            <canvas
-              ref={canvasRef}
-              className={`max-w-full h-auto touch-none ${tab === 'focus' ? 'cursor-none' : 'cursor-move'}`}
-              style={{ width: dispW }}
-              onPointerDown={onDown}
-              onPointerMove={onMove}
-              onPointerUp={onUp}
-              onPointerCancel={onUp}
-              onPointerLeave={() => setHover(null)}
-            />
-          </div>
-
-          <div className="lg:w-72 flex flex-col gap-3 text-xs text-slate-300">
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-900 border border-slate-800" role="tablist">
-              {([
-                ['crop', 'Crop and rotate', Crop],
-                ['focus', 'Focus area', Crosshair],
-              ] as const).map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  role="tab"
-                  aria-selected={tab === id}
-                  onClick={() => setTab(id)}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md font-semibold transition ${
-                    tab === id ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" /> {label}
-                </button>
-              ))}
-            </div>
-
-            {tab === 'crop' ? (
-              <>
-                <div className="flex gap-2">
-                  <button onClick={() => rotateBy(-90)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 font-semibold">
-                    <RotateCcw className="w-3.5 h-3.5" /> Turn left
-                  </button>
-                  <button onClick={() => rotateBy(90)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 font-semibold">
-                    <RotateCw className="w-3.5 h-3.5" /> Turn right
-                  </button>
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="flex justify-between">
-                    <span>Straighten</span>
-                    <span className="font-mono text-orange-300">{edit.straighten.toFixed(1)}°</span>
-                  </span>
-                  <input
-                    type="range"
-                    min={-STRAIGHTEN_LIMIT_DEG}
-                    max={STRAIGHTEN_LIMIT_DEG}
-                    step={0.5}
-                    value={edit.straighten}
-                    onChange={(e) => setStraighten(parseFloat(e.target.value))}
-                  />
-                </label>
-                <div className="flex flex-col gap-1">
-                  <span>Crop shape</span>
-                  <div className="grid grid-cols-5 gap-1">
-                    {ASPECTS.map((a) => (
-                      <button
-                        key={a.id}
-                        onClick={() => {
-                          setAspect(a.id);
-                          if (a.id !== 'free') setEdit((e) => ({ ...e, crop: fitAspect(a.id) }));
-                        }}
-                        className={`py-1 rounded border text-[11px] font-semibold ${
-                          aspect === a.id ? 'border-orange-500 bg-orange-500/15 text-orange-200' : 'border-slate-700 bg-slate-900 hover:bg-slate-800'
-                        }`}
-                      >
-                        {a.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Drag inside the frame to move it, or a corner to resize. The print keeps the crop's shape.
-                </p>
-                <button
-                  onClick={() => {
-                    setAspect('free');
-                    setEdit({ ...DEFAULT_EDIT });
-                  }}
-                  className="self-start text-[11px] text-slate-400 hover:text-slate-200 underline"
-                >
-                  Reset crop and rotation
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-1">
-                  <button
-                    onClick={() => setErasing(false)}
-                    className={`flex items-center justify-center gap-1.5 py-1.5 rounded border font-semibold ${!erasing ? 'border-orange-500 bg-orange-500/15 text-orange-200' : 'border-slate-700 bg-slate-900'}`}
-                  >
-                    <Paintbrush className="w-3.5 h-3.5" /> Paint
-                  </button>
-                  <button
-                    onClick={() => setErasing(true)}
-                    className={`flex items-center justify-center gap-1.5 py-1.5 rounded border font-semibold ${erasing ? 'border-orange-500 bg-orange-500/15 text-orange-200' : 'border-slate-700 bg-slate-900'}`}
-                  >
-                    <Eraser className="w-3.5 h-3.5" /> Erase
-                  </button>
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="flex justify-between">
-                    <span>Brush size</span>
-                    <span className="font-mono text-orange-300">{brushPct}%</span>
-                  </span>
-                  <input type="range" min={1} max={20} step={1} value={brushPct} onChange={(e) => setBrushPct(parseInt(e.target.value, 10))} />
-                </label>
-                <p className="text-[11px] text-slate-400">
-                  Paint over what matters most, such as a face. TailWag weighs it more when it picks filaments and swap layers.
-                  It helps most when that area's colours are rare in the rest of the photo; the Export dialog shows how close the focus area gets.
-                </p>
-                <div className="flex flex-col gap-1">
-                  <span>Focus strength</span>
-                  <div className="grid grid-cols-3 gap-1">
-                    {STRENGTHS.map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => setStrength(s.id)}
-                        className={`py-1 rounded border text-[11px] font-semibold ${
-                          strength === s.id ? 'border-orange-500 bg-orange-500/15 text-orange-200' : 'border-slate-700 bg-slate-900 hover:bg-slate-800'
-                        }`}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="text-[11px] text-slate-400">{STRENGTHS.find((s) => s.id === strength)?.hint}</span>
-                </div>
-                {!focusApplies && (
-                  <p className="text-[11px] text-amber-300">
-                    Focus only changes the result in Faithful match mode with the Natural colour solver. It is saved and used when you switch back.
-                  </p>
-                )}
-                <button
-                  onClick={() => setMask(null)}
-                  disabled={!focusOn}
-                  className="self-start flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 underline disabled:opacity-40"
-                >
-                  <Trash2 className="w-3 h-3" /> Clear focus area
-                </button>
-              </>
-            )}
-
-            <div className="mt-auto border-t border-slate-800 pt-2 text-[11px] text-slate-400">
-              Crop: {Math.round(px.width)} × {Math.round(px.height)} px{focusOn ? ', focus area painted' : ''}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
-          <span className="mr-auto text-[11px] text-slate-400">Applying picks the filaments again for the edited photo.</span>
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-slate-600 text-xs font-semibold hover:bg-slate-800">
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      size="xl"
+      icon={<Crop className="w-5 h-5" />}
+      title="Edit photo"
+      subtitle="Crop, turn or straighten the photo, and mark the area that matters most. The print keeps the crop's shape."
+      footer={
+        <>
+          <span className="mr-auto text-small text-tw-ink-2">Applying picks the filaments again for the edited photo.</span>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            onClick={() => onApply({ edit, mask: maskHasFocus(mask) ? mask : null, strength })}
-            className="px-4 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold"
-          >
+          </Button>
+          <Button variant="primary" onClick={() => onApply({ edit, mask: maskHasFocus(mask) ? mask : null, strength })}>
             Apply
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 flex items-center justify-center bg-tw-ground border border-tw-line rounded-card p-2 min-h-[300px]">
+          <canvas
+            ref={canvasRef}
+            className={`max-w-full h-auto touch-none ${tab === 'focus' ? 'cursor-none' : 'cursor-move'}`}
+            style={{ width: dispW }}
+            onPointerDown={onDown}
+            onPointerMove={onMove}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+            onPointerLeave={() => setHover(null)}
+            aria-label={tab === 'focus' ? 'Photo: paint the focus area' : 'Photo: drag the crop frame or its corners'}
+          />
+        </div>
+
+        <div className="lg:w-72 flex flex-col gap-4">
+          <Segmented
+            label="Edit mode"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'crop', label: 'Crop and rotate' },
+              { value: 'focus', label: 'Focus area' },
+            ]}
+          />
+
+          {tab === 'crop' ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Button icon={<RotateCcw className="w-4 h-4" aria-hidden="true" />} onClick={() => rotateBy(-90)}>
+                  Turn left
+                </Button>
+                <Button icon={<RotateCw className="w-4 h-4" aria-hidden="true" />} onClick={() => rotateBy(90)}>
+                  Turn right
+                </Button>
+              </div>
+              <SliderRow
+                label="Straighten"
+                valueText={`${edit.straighten.toFixed(1)}°`}
+                min={-STRAIGHTEN_LIMIT_DEG}
+                max={STRAIGHTEN_LIMIT_DEG}
+                step={0.5}
+                value={edit.straighten}
+                onChange={(e) => setStraighten(parseFloat(e.target.value))}
+              />
+              <div className="flex flex-col gap-1.5">
+                <span className="text-small text-tw-ink-2">Crop shape</span>
+                <Segmented
+                  label="Crop shape"
+                  size="sm"
+                  value={aspect}
+                  onChange={(a) => {
+                    setAspect(a);
+                    if (a !== 'free') setEdit((e) => ({ ...e, crop: fitAspect(a) }));
+                  }}
+                  options={ASPECTS.map((a) => ({ value: a.id, label: a.label }))}
+                />
+              </div>
+              <p className="m-0 text-small text-tw-ink-2">Drag inside the frame to move it, or drag a corner to resize it.</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="self-start"
+                onClick={() => {
+                  setAspect('free');
+                  setEdit({ ...DEFAULT_EDIT });
+                }}
+              >
+                Reset crop and rotation
+              </Button>
+            </>
+          ) : (
+            <>
+              <Segmented
+                label="Brush"
+                value={erasing ? 'erase' : 'paint'}
+                onChange={(v) => setErasing(v === 'erase')}
+                options={[
+                  { value: 'paint', label: <span className="inline-flex items-center gap-1.5"><Paintbrush className="w-3.5 h-3.5" aria-hidden="true" /> Paint</span> },
+                  { value: 'erase', label: <span className="inline-flex items-center gap-1.5"><Eraser className="w-3.5 h-3.5" aria-hidden="true" /> Erase</span> },
+                ]}
+              />
+              <SliderRow label="Brush size" valueText={`${brushPct}%`} min={1} max={20} step={1} value={brushPct} onChange={(e) => setBrushPct(parseInt(e.target.value, 10))} />
+              <p className="m-0 text-small text-tw-ink-2">
+                Paint over what matters most, such as a face. TailWag weighs it more when it picks filaments and swap layers. It helps most when that area's colours are rare in the rest of the photo; the Export dialog shows how close the focus area gets.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-small text-tw-ink-2">Focus strength</span>
+                <Segmented label="Focus strength" value={strength} onChange={setStrength} options={STRENGTHS.map((s) => ({ value: s.id, label: s.label }))} />
+                <span className="text-micro text-tw-ink-3">{STRENGTHS.find((s) => s.id === strength)?.hint}</span>
+              </div>
+              {!focusApplies && (
+                <p className="m-0 text-small text-tw-warn">
+                  Focus only changes the result with the Best match method in Faithful mode. It is saved and used when you switch back.
+                </p>
+              )}
+              <Button size="sm" variant="ghost" className="self-start" icon={<Trash2 className="w-3.5 h-3.5" aria-hidden="true" />} onClick={() => setMask(null)} disabled={!focusOn}>
+                Clear focus area
+              </Button>
+            </>
+          )}
+
+          <p className="m-0 mt-auto pt-2 border-t border-tw-line text-micro text-tw-ink-3">
+            Crop: {Math.round(px.width)} × {Math.round(px.height)} px{focusOn ? ', focus area painted' : ''}
+          </p>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 };

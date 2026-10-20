@@ -50,7 +50,7 @@ export function addSpoolToMyLibrary(
     return {
       catalog,
       importedLibraries: libs,
-      rejected: `"${prepared.brand} ${prepared.name}" (${prepared.hex}) is already in My Filaments.`,
+      rejected: `"${prepared.brand} ${prepared.name}" (${prepared.hex}) is already in your spools.`,
     };
   }
   const next = [prepared, ...catalog];

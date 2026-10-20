@@ -13,6 +13,7 @@ import {
 } from '../engine/fidelityReport';
 import { ExportVerificationError, type VerificationReport } from '../engine/verifyExport';
 import { recordError } from '../engine/debugInfo';
+import { Button, Dialog, DialogSection, FOCUS_RING } from './ui';
 import {
   generateVerified3mfPackage,
   generateVerifiedNoAmsBundle,
@@ -323,385 +324,290 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const shareColours = { imperceptible: '#26aa5a', close: '#8cc83c', noticeable: '#f0a028', clear: '#d22832' };
+  const selectedSlicer = slicers?.find((s) => s.id === slicerId);
+  const linkBtn = `underline text-tw-ink-2 hover:text-tw-ink rounded ${FOCUS_RING}`;
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#121722] border border-slate-700 rounded-xl max-w-4xl w-full p-5 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
-        {exportError && (
-          <div className="text-xs px-3 py-2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 flex flex-col gap-1">
-            <span className="font-bold">Export blocked: nothing was saved.</span>
-            <span>{exportError}</span>
-            {exportIssues.length > 0 && (
-              <ul className="list-disc pl-4 text-[11px] text-rose-200">
-                {exportIssues.map((m, i) => (
-                  <li key={i}>{m}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        {!exportError && verifiedNote && (
-          <div className="text-xs px-3 py-2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex flex-col gap-1">
-            <span>{verifiedNote}</span>
-            {exportIssues.length > 0 && (
-              <ul className="list-disc pl-4 text-[11px] text-amber-300">
-                {exportIssues.map((m, i) => (
-                  <li key={i}>{m}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <Package className="w-5 h-5 text-orange-400" />
-            <div>
-              <h2 className="text-base font-bold text-white">
-                Export .3MF (Multi-Color AMS) or .STL + Layer-Pause Guide (Single-Head / No-AMS)
-              </h2>
-              <p className="text-xs text-slate-400">
-                Initial Layer: {baseLayerMm.toFixed(2)}mm • Layer Height: {layerHeightMm.toFixed(2)}mm • 100% Rectilinear Infill • Total: {totalLayers} Layers | Print Plan {shortPlanHash(plan)}
-              </p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Visual Layer Pause & Color Swap Schedule Cards */}
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-bold uppercase tracking-wider text-orange-400">
-            Exact Layer Pause &amp; Color-Change Schedule ({playbook.length} Colors)
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {playbook.map((item, idx) => (
-              <div
-                key={item.slotIndex}
-                className="bg-[#181f2e] border border-slate-800 rounded-lg p-2.5 flex flex-col gap-1.5"
-              >
-                <div className="flex items-center justify-between text-[10px]">
-                  {idx === 0 ? (
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold font-mono">
-                      START PRINT (L1)
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/40 font-bold font-mono">
-                      PAUSE @ LAYER {item.startLayer}
-                    </span>
-                  )}
-                  <span className="font-mono text-slate-400">TD {item.td}mm</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-4 h-4 rounded-full border border-white/30 shrink-0 shadow"
-                    style={{ backgroundColor: item.hex }}
-                  />
-                  <span className="text-xs font-semibold text-white truncate">
-                    #{item.slotIndex} {item.spoolName}
-                  </span>
-                </div>
-                <div className="text-[11px] font-mono text-emerald-400">
-                  L{item.startLayer} → L{item.endLayer} ({item.startZMm.toFixed(2)}–{item.endZMm.toFixed(2)}mm)
-                </div>
-                <div className="text-[10px] text-slate-400 leading-tight">
-                  {idx === 0
-                    ? `Load ${item.spoolName} before starting print`
-                    : `Pause at L${item.startLayer} (${item.startZMm.toFixed(2)}mm) & swap to ${item.spoolName}`}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Printable Recipe Text Preview */}
-        <div className="relative">
-          <pre className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-48 leading-relaxed">
-            {playbookText}
-          </pre>
-          <button
-            onClick={handleCopyPlaybook}
-            className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-slate-200 transition"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? 'Copied!' : 'Copy Playbook'}
-          </button>
-        </div>
-
-        {/* Predicted print preview (rendered from the Print Plan) and structured metadata */}
-        <div className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-orange-400">
-              Target vs. Predicted Print
-            </span>
-            <span className="text-[10px] font-mono text-slate-400">Print Plan {shortPlanHash(plan)}</span>
-          </div>
-          {previewUrl ? (
-            <div className="flex flex-col gap-1">
-              <img
-                src={previewUrl}
-                alt="Left: target image. Right: predicted print from the exact layers in the export."
-                className="w-full max-h-72 object-contain rounded bg-slate-950 border border-slate-800"
-                style={{ imageRendering: 'pixelated' }}
-              />
-              <div className="grid grid-cols-2 text-[10px] text-slate-400 text-center">
-                <span>Target image</span>
-                <span>Predicted print (exact exported layers)</span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-[11px] text-slate-400">Load an image to see the predicted print.</div>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      size="xl"
+      icon={<Package className="w-5 h-5" />}
+      title="Export"
+      subtitle={`First layer ${baseLayerMm.toFixed(2)} mm, then ${layerHeightMm.toFixed(2)} mm layers, ${totalLayers} layers, 100% infill. Print plan ${shortPlanHash(plan)}.`}
+    >
+      {exportError && (
+        <div role="alert" className="flex flex-col gap-1 px-3 py-2 rounded-control bg-tw-danger/10 border border-tw-danger/30 text-small text-tw-danger">
+          <span className="font-semibold">Export blocked: nothing was saved.</span>
+          <span>{exportError}</span>
+          {exportIssues.length > 0 && (
+            <ul className="list-disc pl-4 m-0">
+              {exportIssues.map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
           )}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={handleExportPreview}
-              disabled={exporting || !previewPng}
-              className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition disabled:opacity-40"
-              title="Download the side-by-side comparison as a PNG"
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-              <span>Preview PNG</span>
-            </button>
-            <button
-              onClick={handleExportMetadata}
-              disabled={exporting}
-              className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition"
-              title="Download total height, base layer, filament change heights and filament sequence as JSON"
-            >
-              <Braces className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <span>Metadata JSON</span>
-            </button>
-          </div>
         </div>
+      )}
+      {!exportError && verifiedNote && (
+        <div role="status" className="flex flex-col gap-1 px-3 py-2 rounded-control bg-tw-ok/10 border border-tw-ok/30 text-small text-tw-ok">
+          <span>{verifiedNote}</span>
+          {exportIssues.length > 0 && (
+            <ul className="list-disc pl-4 m-0 text-tw-warn">
+              {exportIssues.map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
-        {/* Predicted fidelity: how close the print should be to the photo, and why */}
-        {fidelity && fidelity.printedColumns > 0 && (
-          <div className="bg-[#181f2e] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-orange-400">Predicted Fidelity (CIEDE2000)</span>
-              <span className="text-[10px] text-slate-400">Prediction, not a measurement</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
-              <div className="flex flex-col gap-2">
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  {[
-                    ['Mean', fidelity.meanDeltaE00],
-                    ['Median', fidelity.medianDeltaE00],
-                    ['95th pct', fidelity.p95DeltaE00],
-                    ['Worst', fidelity.maxDeltaE00],
-                  ].map(([label, v]) => (
-                    <div key={label as string} className="bg-slate-950 border border-slate-800 rounded p-1.5">
-                      <div className="text-sm font-bold text-white">{(v as number).toFixed(1)}</div>
-                      <div className="text-[10px] text-slate-400">{label as string}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex h-2.5 rounded overflow-hidden border border-slate-800" title="Share of columns by predicted color difference">
-                  <div style={{ width: fidelity.share.imperceptible * 100 + '%', background: '#26aa5a' }} />
-                  <div style={{ width: fidelity.share.close * 100 + '%', background: '#8cc83c' }} />
-                  <div style={{ width: fidelity.share.noticeable * 100 + '%', background: '#f0a028' }} />
-                  <div style={{ width: fidelity.share.clear * 100 + '%', background: '#d22832' }} />
-                </div>
-                <div className="text-[10px] text-slate-400 flex flex-wrap gap-x-3">
-                  <span>{Math.round(fidelity.share.imperceptible * 100)}% imperceptible (2 or less)</span>
-                  <span>{Math.round(fidelity.share.close * 100)}% close (5 or less)</span>
-                  <span>{Math.round(fidelity.share.noticeable * 100)}% noticeable (10 or less)</span>
-                  <span>{Math.round(fidelity.share.clear * 100)}% clearly different</span>
-                </div>
-                {fidelity.focus && (
-                  <div className="text-[11px] text-orange-200 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-1">
-                    Focus area: mean {fidelity.focus.meanDeltaE00.toFixed(1)}, 95th pct {fidelity.focus.p95DeltaE00.toFixed(1)},{' '}
-                    {Math.round(fidelity.focus.imperceptibleShare * 100)}% imperceptible
+      {/* The two ways to print, main action first */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="flex flex-col gap-2.5 p-4 rounded-card bg-tw-ground/60 border border-tw-line">
+          <div className="flex flex-col gap-1">
+            <h3 className="m-0 text-body font-semibold">Multi-colour printer with an AMS</h3>
+            <p className="m-0 text-small text-tw-ink-2">
+              A Bambu Studio or OrcaSlicer project. Each colour band is already assigned to an AMS slot, and your layer heights and 100% infill are set.
+            </p>
+          </div>
+          <Button variant="primary" size="lg" icon={<Package className="w-4 h-4" aria-hidden="true" />} onClick={handleExport3MF} disabled={exporting}>
+            Export .3MF project
+          </Button>
+
+          {canSendToSlicer && slicers && (
+            <div className="flex flex-col gap-2 pt-2.5 border-t border-tw-line">
+              {slicers.length > 0 ? (
+                <>
+                  <div className="flex gap-2">
+                    {slicers.length > 1 && (
+                      <select
+                        value={slicerId}
+                        onChange={(e) => setSlicerId(e.target.value)}
+                        aria-label="Slicer"
+                        className={`h-8 px-2 rounded-control bg-tw-ground border border-tw-line text-small text-tw-ink ${FOCUS_RING}`}
+                      >
+                        {slicers.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <Button
+                      className="flex-1"
+                      icon={<Send className="w-3.5 h-3.5" aria-hidden="true" />}
+                      onClick={() => handleSendToSlicer(slicerId)}
+                      disabled={exporting || !slicerId}
+                      title={selectedSlicer?.exePath}
+                    >
+                      Open in {selectedSlicer?.name ?? 'slicer'}
+                    </Button>
                   </div>
-                )}
-                <div className="text-[10px] text-slate-400">
-                  {Math.round(fidelity.gamutLimitedShare * 100)}% of the photo is beyond this palette's reach. {fidelity.swapCount} filament change{fidelity.swapCount === 1 ? '' : 's'}.
-                </div>
-                {(fidelity.warnings.length > 0 || printCost.warnings.length > 0) && (
-                  <ul className="list-disc pl-4 text-[11px] text-amber-300">
-                    {[...fidelity.warnings, ...printCost.warnings].map((w, i) => (
-                      <li key={i}>{w}</li>
+                  <div className="flex flex-wrap gap-x-3 text-micro text-tw-ink-3">
+                    <span>Exports the same checked .3MF and opens it as a project.</span>
+                    {supportedSlicers.map((s) => (
+                      <button key={s.id} type="button" onClick={() => handleLocateSlicer(s.id)} className={linkBtn}>
+                        {slicers.some((d) => d.id === s.id) ? `Change ${s.name} location` : `Locate ${s.name}`}
+                      </button>
                     ))}
-                  </ul>
-                )}
-              </div>
-              {heatUrl && (
-                <div className="flex flex-col items-center gap-1">
-                  <img src={heatUrl} alt="Heat map: green is accurate, red is clearly different" className="w-40 h-40 object-contain rounded border border-slate-800 bg-slate-950" style={{ imageRendering: 'pixelated' }} />
-                  <span className="text-[10px] text-slate-400">Green accurate, red different</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col gap-2 text-small text-tw-ink-2">
+                  <span>No Bambu Studio or OrcaSlicer found on this computer.</span>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-micro">
+                    {supportedSlicers.map((s) => (
+                      <React.Fragment key={s.id}>
+                        <button type="button" onClick={() => desktop.openExternal(s.installUrl)} className={linkBtn}>
+                          Get {s.name}
+                        </button>
+                        <button type="button" onClick={() => handleLocateSlicer(s.id)} className={linkBtn}>
+                          Locate {s.name}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  <Button icon={<FolderOpen className="w-3.5 h-3.5" aria-hidden="true" />} onClick={() => handleSendToSlicer(null)} disabled={exporting}>
+                    Save .3MF and show in folder
+                  </Button>
                 </div>
               )}
-            </div>
-          </div>
-        )}
 
-        {/* Primary Export Sections: Single-Extruder (No-AMS) vs Multi-Color AMS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-          {/* Option A: Single-Head Printer / No AMS */}
-          <div className="bg-[#181f2e] border border-sky-500/30 rounded-xl p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-sky-300 uppercase tracking-wider">
-                Single-Head Printer (No AMS)
-              </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono">
-                .STL + Layer Pause Guide
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Exports the watertight <code>.STL</code> model plus an easy-to-follow <code>.HTML</code> &amp; <code>.TXT</code> instruction guide showing exact pause layers and filament swaps for any slicer.
-            </p>
-            <button
-              onClick={handleExportNoAmsBundleZip}
-              disabled={exporting}
-              className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow transition"
-            >
-              <FolderArchive className="w-4 h-4" />
-              Export .STL + HTML Pause Guide (.ZIP)
-            </button>
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                onClick={handleExportBinaryStl}
-                disabled={exporting}
-                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition"
-                title="Download only the watertight binary .STL file"
-              >
-                <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span>.STL File</span>
-              </button>
-              <button
-                onClick={handleExportHtmlGuide}
-                disabled={exporting}
-                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition"
-                title="Download the interactive visual .HTML layer-pause & color-change guide"
-              >
-                <Globe className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>.HTML Guide</span>
-              </button>
-              <button
-                onClick={handleExportPlaybookTxt}
-                disabled={exporting}
-                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition"
-                title="Download the plain-text layer swap playbook (.TXT)"
-              >
-                <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>.TXT Guide</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Option B: Multi-Color AMS (.3MF) */}
-          <div className="bg-[#181f2e] border border-orange-500/30 rounded-xl p-3 flex flex-col justify-between gap-2">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-orange-300 uppercase tracking-wider">
-                  Multi-Color AMS Printer (.3MF)
-                </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 font-mono">
-                  Bambu Studio / OrcaSlicer
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Exports a native Bambu Studio / OrcaSlicer <code>.3MF</code> project with pre-sliced horizontal color bands mapped to AMS slots, <code>0.16mm</code> initial layer, <code>0.08mm</code> layer height, and <code>100%</code> rectilinear infill.
-              </p>
-            </div>
-            <button
-              onClick={handleExport3MF}
-              disabled={exporting}
-              className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-lg shadow-orange-600/20 transition"
-            >
-              <Package className="w-4 h-4" />
-              Export Native .3MF Project (AMS Pre-Mapped)
-            </button>
-
-            {canSendToSlicer && slicers && (
-              <div className="flex flex-col gap-1.5 border-t border-slate-800 pt-2">
-                {slicers.length > 0 ? (
-                  <>
-                    <div className="flex gap-1.5">
-                      {slicers.length > 1 && (
-                        <select
-                          value={slicerId}
-                          onChange={(e) => setSlicerId(e.target.value)}
-                          className="bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 px-1.5"
-                          aria-label="Slicer"
-                        >
-                          {slicers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <button
-                        onClick={() => handleSendToSlicer(slicerId)}
-                        disabled={exporting || !slicerId}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-orange-500/40 text-orange-200 text-[11px] font-semibold transition disabled:opacity-40"
-                        title={slicers.find((s) => s.id === slicerId)?.exePath}
-                      >
-                        <Send className="w-3.5 h-3.5 shrink-0" />
-                        Send to {slicers.find((s) => s.id === slicerId)?.name ?? 'slicer'}
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-x-3 text-[10px] text-slate-400">
-                      <span>Opens the verified .3MF as a project.</span>
-                      {supportedSlicers.map((s) => (
-                        <button key={s.id} onClick={() => handleLocateSlicer(s.id)} className="underline hover:text-slate-200">
-                          {slicers.some((d) => d.id === s.id) ? `Change ${s.name} path` : `Locate ${s.name}…`}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col gap-1.5 text-[11px] text-slate-400">
-                    <span>No Bambu Studio or OrcaSlicer found on this computer.</span>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
-                      {supportedSlicers.map((s) => (
-                        <React.Fragment key={s.id}>
-                          <button onClick={() => desktop.openExternal(s.installUrl)} className="underline hover:text-slate-200">
-                            Get {s.name}
-                          </button>
-                          <button onClick={() => handleLocateSlicer(s.id)} className="underline hover:text-slate-200">
-                            Locate {s.name}…
-                          </button>
-                        </React.Fragment>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => handleSendToSlicer(null)}
-                      disabled={exporting}
-                      className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-semibold transition disabled:opacity-40"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-                      Save .3MF and show in folder
-                    </button>
-                  </div>
-                )}
-
-                {slicerStatus.kind === 'sending' && <span className="text-[11px] text-slate-400">Opening…</span>}
+              <div role="status" className="text-small">
+                {slicerStatus.kind === 'sending' && <span className="text-tw-ink-2">Opening…</span>}
                 {slicerStatus.kind === 'sent' && (
-                  <span className="text-[11px] text-emerald-300">
+                  <span className="text-tw-ok">
                     Opened in {slicerStatus.slicerName}.{' '}
-                    <button onClick={() => desktop.showExportInFolder(slicerStatus.filePath)} className="underline">
+                    <button type="button" onClick={() => desktop.showExportInFolder(slicerStatus.filePath)} className={linkBtn}>
                       Show in folder
                     </button>
                   </span>
                 )}
-                {slicerStatus.kind === 'saved' && <span className="text-[11px] text-emerald-300">Saved to the export folder.</span>}
+                {slicerStatus.kind === 'saved' && <span className="text-tw-ok">Saved to the export folder.</span>}
                 {slicerStatus.kind === 'failed' && (
-                  <span className="text-[11px] text-rose-300">
+                  <span className="text-tw-danger">
                     {slicerStatus.error}{' '}
                     {slicerStatus.filePath && (
-                      <button onClick={() => desktop.showExportInFolder(slicerStatus.filePath)} className="underline">
+                      <button type="button" onClick={() => desktop.showExportInFolder(slicerStatus.filePath)} className={linkBtn}>
                         Show in folder
                       </button>
                     )}
                   </span>
                 )}
               </div>
-            )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2.5 p-4 rounded-card bg-tw-ground/60 border border-tw-line">
+          <div className="flex flex-col gap-1">
+            <h3 className="m-0 text-body font-semibold">Single-colour printer</h3>
+            <p className="m-0 text-small text-tw-ink-2">
+              The model as an STL for any slicer, plus a guide with the exact layers to pause at and which filament to load.
+            </p>
+          </div>
+          <Button size="lg" icon={<FolderArchive className="w-4 h-4" aria-hidden="true" />} onClick={handleExportNoAmsBundleZip} disabled={exporting}>
+            Export STL and pause guide (.zip)
+          </Button>
+          <div className="grid grid-cols-3 gap-2">
+            <Button size="sm" variant="ghost" icon={<FileCode className="w-3.5 h-3.5" aria-hidden="true" />} onClick={handleExportBinaryStl} disabled={exporting} title="Only the STL model">
+              STL only
+            </Button>
+            <Button size="sm" variant="ghost" icon={<Globe className="w-3.5 h-3.5" aria-hidden="true" />} onClick={handleExportHtmlGuide} disabled={exporting} title="The pause guide as a web page you can open in any browser">
+              Guide (web page)
+            </Button>
+            <Button size="sm" variant="ghost" icon={<FileText className="w-3.5 h-3.5" aria-hidden="true" />} onClick={handleExportPlaybookTxt} disabled={exporting} title="The pause guide as plain text">
+              Guide (text)
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* When to change filament */}
+      <DialogSection
+        title="Filament changes"
+        meta={`${playbook.length} filament${playbook.length === 1 ? '' : 's'}`}
+        actions={
+          <Button size="sm" variant="ghost" icon={copied ? <Check className="w-3.5 h-3.5 text-tw-ok" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />} onClick={handleCopyPlaybook}>
+            {copied ? 'Copied' : 'Copy as text'}
+          </Button>
+        }
+      >
+        <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 m-0 p-0 list-none">
+          {playbook.map((item, idx) => (
+            <li key={item.slotIndex} className="flex flex-col gap-1 p-2.5 rounded-control bg-tw-ground/60 border border-tw-line">
+              <span className={`text-small font-medium ${idx === 0 ? 'text-tw-ok' : 'text-tw-accent-text'}`}>
+                {idx === 0 ? 'Start the print' : `Pause at layer ${item.startLayer}`}
+              </span>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]" style={{ backgroundColor: item.hex }} aria-hidden="true" />
+                <span className="text-body text-tw-ink truncate">Load {item.spoolName}</span>
+              </span>
+              <span className="font-mono text-micro text-tw-ink-2">
+                Layers {item.startLayer}–{item.endLayer}, {item.startZMm.toFixed(2)}–{item.endZMm.toFixed(2)} mm, TD {item.td} mm
+              </span>
+            </li>
+          ))}
+        </ol>
+        <details className="text-small">
+          <summary className={`cursor-pointer text-tw-ink-2 hover:text-tw-ink rounded ${FOCUS_RING}`}>Show the guide as text</summary>
+          <pre className="mt-2 p-3 rounded-control bg-tw-ground border border-tw-line font-mono text-micro text-tw-ink-2 overflow-x-auto max-h-48 whitespace-pre">{playbookText}</pre>
+        </details>
+      </DialogSection>
+
+      {/* What the print should look like */}
+      <DialogSection title="Predicted result" meta="A prediction from the filament data, not a measurement">
+        {previewUrl ? (
+          <figure className="m-0 flex flex-col gap-1">
+            <img
+              src={previewUrl}
+              alt="Left: your photo. Right: the predicted print from the exact layers in the export."
+              className="w-full max-h-72 object-contain rounded-control bg-tw-ground border border-tw-line"
+              style={{ imageRendering: 'pixelated' }}
+            />
+            <figcaption className="grid grid-cols-2 text-micro text-tw-ink-2 text-center">
+              <span>Your photo</span>
+              <span>Predicted print</span>
+            </figcaption>
+          </figure>
+        ) : (
+          <p className="m-0 text-small text-tw-ink-2">Load a photo to see the predicted print.</p>
+        )}
+
+        {fidelity && fidelity.printedColumns > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4">
+            <div className="flex flex-col gap-2.5">
+              <div className="grid grid-cols-4 gap-2">
+                {([
+                  ['Average', fidelity.meanDeltaE00],
+                  ['Median', fidelity.medianDeltaE00],
+                  ['Worst 5%', fidelity.p95DeltaE00],
+                  ['Worst', fidelity.maxDeltaE00],
+                ] as const).map(([label, v]) => (
+                  <div key={label} className="flex flex-col gap-0.5 p-2 rounded-control bg-tw-ground/60 border border-tw-line">
+                    <span className="font-mono text-title text-tw-ink">{v.toFixed(1)}</span>
+                    <span className="text-micro text-tw-ink-2">{label} ΔE</span>
+                  </div>
+                ))}
+              </div>
+              <p className="m-0 text-micro text-tw-ink-3">ΔE is the colour difference: under 2 is too small to see, over 10 is clearly different.</p>
+              <div className="flex h-2.5 rounded overflow-hidden border border-tw-line" title="Share of the print by predicted colour difference">
+                {(Object.keys(shareColours) as Array<keyof typeof shareColours>).map((k) => (
+                  <div key={k} style={{ width: fidelity.share[k] * 100 + '%', background: shareColours[k] }} />
+                ))}
+              </div>
+              <ul className="flex flex-wrap gap-x-4 gap-y-1 m-0 p-0 list-none text-micro text-tw-ink-2">
+                {([
+                  ['imperceptible', 'look identical'],
+                  ['close', 'very close'],
+                  ['noticeable', 'noticeable'],
+                  ['clear', 'clearly different'],
+                ] as const).map(([k, label]) => (
+                  <li key={k} className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: shareColours[k] }} aria-hidden="true" />
+                    {Math.round(fidelity.share[k] * 100)}% {label}
+                  </li>
+                ))}
+              </ul>
+              {fidelity.focus && (
+                <p className="m-0 px-2.5 py-1.5 rounded-control bg-tw-accent/10 border border-tw-accent/30 text-small text-tw-accent-text">
+                  Focus area: average ΔE {fidelity.focus.meanDeltaE00.toFixed(1)}, worst 5% {fidelity.focus.p95DeltaE00.toFixed(1)},{' '}
+                  {Math.round(fidelity.focus.imperceptibleShare * 100)}% look identical.
+                </p>
+              )}
+              <p className="m-0 text-small text-tw-ink-2">
+                {Math.round(fidelity.gamutLimitedShare * 100)}% of the photo is beyond what these filaments can reach. {fidelity.swapCount} filament change
+                {fidelity.swapCount === 1 ? '' : 's'}.
+              </p>
+              {(fidelity.warnings.length > 0 || printCost.warnings.length > 0) && (
+                <ul className="list-disc pl-4 m-0 text-small text-tw-warn">
+                  {[...fidelity.warnings, ...printCost.warnings].map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {heatUrl && (
+              <figure className="m-0 flex flex-col items-center gap-1">
+                <img src={heatUrl} alt="Colour difference map: green matches the photo, red is clearly different" className="w-40 h-40 object-contain rounded-control bg-tw-ground border border-tw-line" style={{ imageRendering: 'pixelated' }} />
+                <figcaption className="text-micro text-tw-ink-2">Green matches, red differs</figcaption>
+              </figure>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="ghost" icon={<ImageIcon className="w-3.5 h-3.5" aria-hidden="true" />} onClick={handleExportPreview} disabled={exporting || !previewPng} title="The side-by-side comparison as a PNG">
+            Save comparison image
+          </Button>
+          <Button size="sm" variant="ghost" icon={<Braces className="w-3.5 h-3.5" aria-hidden="true" />} onClick={handleExportMetadata} disabled={exporting} title="Total height, base layer, swap heights and filament order as JSON">
+            Save print data (JSON)
+          </Button>
+        </div>
+      </DialogSection>
+    </Dialog>
   );
 };
 

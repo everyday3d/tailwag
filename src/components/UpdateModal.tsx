@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { X, RefreshCw, Download, ExternalLink, CheckCircle2, AlertTriangle, Dog, Bug, Check } from 'lucide-react';
+import { RefreshCw, Download, ExternalLink, CheckCircle2, AlertTriangle, Dog, Bug, Check } from 'lucide-react';
+import { Button, CheckboxRow, Dialog, DialogSection, FOCUS_RING } from './ui';
 import { APP_VERSION } from '../appVersion';
 import { useTailWagStore } from '../store/useTailWagStore';
 import { buildDebugInfo, getLastError, type SystemInfo } from '../engine/debugInfo';
@@ -66,13 +67,6 @@ export const UpdateModal: React.FC<Props> = ({ isOpen, onClose, result, onResult
     }
   };
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   const run = async () => {
@@ -84,128 +78,86 @@ export const UpdateModal: React.FC<Props> = ({ isOpen, onClose, result, onResult
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-[#10151f] border border-slate-700 rounded-xl w-full max-w-md p-4 flex flex-col gap-3 text-slate-200"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="About and updates"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-white">
-              <Dog size={18} />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold leading-tight">TailWag Studio</h2>
-              <div className="text-[11px] text-slate-400">Version {APP_VERSION} · part of the BoxerDawg 3D ecosystem</div>
-            </div>
-          </div>
-          <button onClick={onClose} aria-label="Close">
-            <X size={16} />
+    <Dialog open={isOpen} onClose={onClose} size="md" icon={<Dog className="w-5 h-5" />} title="TailWag Studio" subtitle={`Version ${APP_VERSION}, part of the BoxerDawg 3D ecosystem`}>
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-3">
+          <Button icon={<RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />} onClick={run} disabled={busy}>
+            {busy ? 'Checking…' : 'Check for updates'}
+          </Button>
+          <button type="button" onClick={() => openUrl(RELEASES_PAGE_URL)} className={`flex items-center gap-1 text-small text-tw-ink-2 hover:text-tw-ink underline rounded ${FOCUS_RING}`}>
+            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /> Release page
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={run}
-            disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-xs font-bold text-white"
-          >
-            <RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> {busy ? 'Checking...' : 'Check for updates'}
-          </button>
-          <button
-            onClick={() => openUrl(RELEASES_PAGE_URL)}
-            className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 underline"
-          >
-            <ExternalLink size={11} /> Release page
-          </button>
-        </div>
-
-        {result?.kind === 'update' && (
-          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 flex flex-col gap-2">
-            <div className="flex items-center gap-1.5 text-sm font-bold text-emerald-300">
-              <Download size={14} /> Version {result.info.version} is available
-            </div>
-            <div className="text-[11px] text-slate-400">You have {result.current}.</div>
-            {result.info.notes && (
-              <pre className="text-[11px] text-slate-300 whitespace-pre-wrap max-h-40 overflow-y-auto font-sans">
-                {result.info.notes.length > 1200 ? result.info.notes.slice(0, 1200) + '...' : result.info.notes}
-              </pre>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={() => openUrl(result.info.downloadUrl ?? result.info.pageUrl)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white"
-              >
-                {result.info.downloadUrl ? 'Download installer' : 'Open release page'}
-              </button>
-              {result.info.downloadUrl && (
-                <button
-                  onClick={() => openUrl(result.info.pageUrl)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-600 text-xs font-semibold"
-                >
-                  Release notes
-                </button>
+        <div role="status">
+          {result?.kind === 'update' && (
+            <div className="flex flex-col gap-2 p-3 rounded-control border border-tw-ok/30 bg-tw-ok/10">
+              <span className="flex items-center gap-1.5 text-body font-semibold text-tw-ok">
+                <Download className="w-4 h-4" aria-hidden="true" /> Version {result.info.version} is available
+              </span>
+              <span className="text-small text-tw-ink-2">You have {result.current}.</span>
+              {result.info.notes && (
+                <pre className="m-0 text-small text-tw-ink-2 whitespace-pre-wrap max-h-40 overflow-y-auto font-sans">
+                  {result.info.notes.length > 1200 ? result.info.notes.slice(0, 1200) + '…' : result.info.notes}
+                </pre>
               )}
+              <div className="flex gap-2">
+                <Button variant="primary" onClick={() => openUrl(result.info.downloadUrl ?? result.info.pageUrl)}>
+                  {result.info.downloadUrl ? 'Download installer' : 'Open release page'}
+                </Button>
+                {result.info.downloadUrl && (
+                  <Button variant="ghost" onClick={() => openUrl(result.info.pageUrl)}>
+                    Release notes
+                  </Button>
+                )}
+              </div>
+              <span className="text-micro text-tw-ink-3">
+                Close TailWag before running the installer. Your library and calibrations are kept. On macOS, right-click the app and choose Open the first time.
+              </span>
             </div>
-            <div className="text-[10px] text-slate-500">
-              Close TailWag before running the installer. Your library and calibrations are kept. On macOS, right-click and choose Open on first launch.
-            </div>
-          </div>
-        )}
-        {result?.kind === 'up-to-date' && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-300">
-            <CheckCircle2 size={14} /> You are on the latest version ({result.latest}).
-          </div>
-        )}
-        {result?.kind === 'ahead' && (
-          <div className="flex items-center gap-1.5 text-xs text-sky-300">
-            <CheckCircle2 size={14} /> This build ({result.current}) is newer than the latest release ({result.latest}).
-          </div>
-        )}
-        {result?.kind === 'unavailable' && (
-          <div className="flex items-start gap-1.5 text-xs text-amber-300">
-            <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {result.reason}
-          </div>
-        )}
-
-        <label className="flex items-center gap-2 text-[11px] text-slate-400 border-t border-slate-800 pt-2">
-          <input
-            type="checkbox"
-            checked={auto}
-            onChange={(e) => {
-              setAuto(e.target.checked);
-              setAutoCheck(e.target.checked);
-            }}
-          />
-          Check for updates automatically when TailWag starts (once a day). Only the public release info is requested.
-        </label>
-
-        <div className="flex flex-col gap-1.5 border-t border-slate-800 pt-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={copyDebug}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-600 hover:bg-slate-800 text-xs font-semibold"
-            >
-              {copied ? <Check size={13} className="text-emerald-400" /> : <Bug size={13} />}
-              {copied ? 'Copied' : 'Copy debug info'}
-            </button>
-            <button onClick={() => setShowDebug((v) => !v)} className="text-[11px] text-slate-400 hover:text-slate-200 underline">
-              {showDebug ? 'Hide' : 'Show what is copied'}
-            </button>
-          </div>
-          <div className="text-[10px] text-slate-500">
-            Paste it into a bug report. It has no photo, file paths, usernames, access codes or passwords.
-          </div>
-          {showDebug && (
-            <pre className="text-[10px] text-slate-300 bg-slate-950 border border-slate-800 rounded p-2 whitespace-pre-wrap select-all">
-              {debugText}
-            </pre>
+          )}
+          {result?.kind === 'up-to-date' && (
+            <span className="flex items-center gap-1.5 text-small text-tw-ok">
+              <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> You have the latest version ({result.latest}).
+            </span>
+          )}
+          {result?.kind === 'ahead' && (
+            <span className="flex items-center gap-1.5 text-small text-tw-ink-2">
+              <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> This build ({result.current}) is newer than the latest release ({result.latest}).
+            </span>
+          )}
+          {result?.kind === 'unavailable' && (
+            <span className="flex items-start gap-1.5 text-small text-tw-warn">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> {result.reason}
+            </span>
           )}
         </div>
+
+        <CheckboxRow
+          label="Check for updates when TailWag starts"
+          description="At most once a day. Only the public release information is requested."
+          checked={auto}
+          onChange={(e) => {
+            setAuto(e.target.checked);
+            setAutoCheck(e.target.checked);
+          }}
+        />
       </div>
-    </div>
+
+      <DialogSection title="Report a bug">
+        <div className="flex items-center gap-3">
+          <Button icon={copied ? <Check className="w-4 h-4 text-tw-ok" aria-hidden="true" /> : <Bug className="w-4 h-4" aria-hidden="true" />} onClick={copyDebug}>
+            {copied ? 'Copied' : 'Copy debug info'}
+          </Button>
+          <button type="button" aria-expanded={showDebug} onClick={() => setShowDebug((v) => !v)} className={`text-small text-tw-ink-2 hover:text-tw-ink underline rounded ${FOCUS_RING}`}>
+            {showDebug ? 'Hide' : 'Show what is copied'}
+          </button>
+        </div>
+        <p className="m-0 text-micro text-tw-ink-3">Paste it into a bug report. It has no photo, file paths, usernames, access codes or passwords.</p>
+        {showDebug && (
+          <pre className="m-0 p-2.5 rounded-control bg-tw-ground border border-tw-line font-mono text-micro text-tw-ink-2 whitespace-pre-wrap select-all">{debugText}</pre>
+        )}
+      </DialogSection>
+    </Dialog>
   );
 };

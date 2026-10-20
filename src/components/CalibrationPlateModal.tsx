@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Download, Camera, Check } from 'lucide-react';
+import { Download, Camera, Check } from 'lucide-react';
+import { Button, Dialog, DialogSection, SelectField, FOCUS_RING } from './ui';
 import { useTailWagStore } from '../store/useTailWagStore';
 import type { FilamentSpool } from '../data/filamentCatalog';
 import { generateCalibrationPlate3mf } from '../engine/calibrationPlate3mf';
@@ -170,141 +171,131 @@ export const CalibrationPlateModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const spoolSelect = (value: string, onChange: (v: string) => void, label: string) => (
-    <label className="flex flex-col gap-1 text-[11px] text-slate-300">
-      {label}
-      <select
-        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">Choose a spool</option>
-        {owned.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.brand} {s.name} ({s.material})
-          </option>
-        ))}
-      </select>
-    </label>
+    <SelectField label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Choose a spool</option>
+      {owned.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.brand} {s.name} ({s.material})
+        </option>
+      ))}
+    </SelectField>
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-[#10151f] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-4 flex flex-col gap-3 text-slate-200">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold">Calibration plate: measure your filaments</h2>
-          <button onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
-        <p className="text-[11px] text-slate-400">
-          Print one small plate, photograph it, and TailWag fits each filament's real color and transparency. Until you do,
-          predicted colors use catalog estimates.
-        </p>
-
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      icon={<Camera className="w-5 h-5" />}
+      title="Calibration plate"
+      subtitle="Print one small plate, photograph it, and TailWag measures each filament's real colour and transparency. Until then, colours use catalog estimates."
+    >
+      <DialogSection title="1. Choose the backing spools">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {spoolSelect(whiteId, setWhiteId, '1. White backing spool (opaque white)')}
-          {spoolSelect(blackId, setBlackId, '2. Black backing spool')}
+          {spoolSelect(whiteId, setWhiteId, 'White backing (opaque white)')}
+          {spoolSelect(blackId, setBlackId, 'Black backing')}
         </div>
-        <div className="text-[11px] text-slate-300 flex flex-col gap-1">
-          3. Filaments to measure (up to 6)
-          <div className="flex flex-wrap gap-1">
-            {owned.slice(0, 60).map((s) => {
-              const on = testIds.includes(s.id);
-              return (
-                <button
-                  key={s.id}
-                  onClick={() =>
-                    setTestIds(on ? testIds.filter((x) => x !== s.id) : testIds.length < 6 ? [...testIds, s.id] : testIds)
-                  }
-                  className={`px-2 py-0.5 rounded border text-[10px] ${on ? 'bg-sky-500/20 border-sky-400 text-sky-200' : 'border-slate-700 text-slate-400'}`}
-                >
-                  <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle" style={{ background: s.hex }} />
-                  {s.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div>
-          <button
-            disabled={!ready}
-            onClick={download}
-            className="flex items-center gap-1 px-3 py-1.5 rounded bg-sky-600 disabled:opacity-40 text-xs font-bold"
-          >
-            <Download size={13} /> Download plate (.3mf)
-          </button>
-          <p className="text-[10px] text-slate-500 mt-1">
-            Load it in Bambu Studio or OrcaSlicer without changing settings. Assign the extruders as listed in the file legend
-            (1 white, 2 black, then your filaments in order).
-          </p>
-        </div>
+      </DialogSection>
 
-        <div className="border-t border-slate-800 pt-3 flex flex-col gap-2">
-          <div className="text-[11px] text-slate-300">
-            4. Photograph the finished plate flat in even daylight, then load the photo and click the four black corner marks
-            in order: top-left, top-right, bottom-right, bottom-left.
-          </div>
-          <label className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-600 text-xs w-fit cursor-pointer">
-            <Camera size={13} /> Load photo
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-          </label>
-          <canvas
-            ref={canvasRef}
-            onClick={onCanvasClick}
-            className="max-w-full rounded border border-slate-800 cursor-crosshair"
-            style={{ display: imgInfo ? 'block' : 'none' }}
-          />
-          {imgInfo && (
-            <div className="text-[11px] text-slate-400 flex items-center gap-2">
-              {corners.length < 4 ? `Click the ${CORNER_NAMES[corners.length]} mark (${corners.length}/4)` : 'All four corners set.'}
-              {corners.length > 0 && (
-                <button className="underline" onClick={() => setCorners([])}>
-                  Reset
-                </button>
-              )}
+      <DialogSection title="2. Choose the filaments to measure" meta={`${testIds.length} of 6 chosen`}>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filaments to measure">
+          {owned.slice(0, 60).map((s) => {
+            const on = testIds.includes(s.id);
+            const full = !on && testIds.length >= 6;
+            return (
               <button
-                disabled={corners.length !== 4}
-                onClick={analyze}
-                className="ml-auto px-3 py-1 rounded bg-emerald-600 disabled:opacity-40 text-xs font-bold text-white"
+                key={s.id}
+                type="button"
+                aria-pressed={on}
+                disabled={full}
+                onClick={() => setTestIds(on ? testIds.filter((x) => x !== s.id) : [...testIds, s.id])}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-control border text-small transition disabled:opacity-40 ${FOCUS_RING} ${
+                  on ? 'bg-tw-accent/15 border-tw-accent/40 text-tw-accent-text' : 'border-tw-line text-tw-ink-2 hover:text-tw-ink hover:border-tw-line-strong'
+                }`}
               >
-                Analyze
+                <span className="w-2.5 h-2.5 rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]" style={{ background: s.hex }} aria-hidden="true" />
+                {s.name}
               </button>
-            </div>
-          )}
+            );
+          })}
         </div>
+      </DialogSection>
 
-        {notes.length > 0 && (
-          <ul className="list-disc pl-4 text-[11px] text-amber-300">
-            {notes.map((n, i) => (
-              <li key={i}>{n}</li>
-            ))}
-          </ul>
-        )}
+      <DialogSection title="3. Print the plate">
+        <Button variant="primary" className="self-start" icon={<Download className="w-4 h-4" aria-hidden="true" />} disabled={!ready} onClick={download}>
+          Download plate (.3mf)
+        </Button>
+        <p className="m-0 text-small text-tw-ink-2">
+          {ready
+            ? 'Open it in Bambu Studio or OrcaSlicer without changing the settings. Load filament 1 white, 2 black, then your filaments in the order chosen.'
+            : 'Choose both backing spools and at least one filament first.'}
+        </p>
+      </DialogSection>
 
-        {fits && (
-          <div className="flex flex-col gap-1">
-            {fits.map(({ spool, fit }) => (
-              <div key={spool.id} className="flex items-center gap-2 text-[11px] bg-slate-900 rounded px-2 py-1">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: spool.hex }} />
-                <span className="font-bold">{spool.name}</span>
-                <span className="text-slate-400">
-                  TD {spool.td.toFixed(2)} to {fit.profile.tdMm.toFixed(2)} mm
-                </span>
-                <span className="text-slate-400">fit error {fit.meanDeltaE00.toFixed(1)} (worst {fit.maxDeltaE00.toFixed(1)})</span>
-                {fit.weak && <span className="text-amber-300">not enough usable patches</span>}
-                {!fit.weak && fit.meanDeltaE00 > 6 && <span className="text-amber-300">poor fit: check lighting and corners</span>}
-              </div>
-            ))}
-            <button
-              onClick={apply}
-              disabled={applied || fits.every((f) => f.fit.weak)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded bg-emerald-600 disabled:opacity-40 text-xs font-bold text-white w-fit"
-            >
-              <Check size={13} /> {applied ? 'Applied to your library' : 'Apply to my filaments'}
-            </button>
+      <DialogSection title="4. Photograph it and mark the corners">
+        <p className="m-0 text-small text-tw-ink-2">
+          Photograph the finished plate flat, in even daylight and without flash. Load the photo, then click the four black corner marks in order: top-left, top-right, bottom-right, bottom-left.
+        </p>
+        <label className={`inline-flex items-center gap-1.5 self-start h-8 px-3 rounded-control bg-tw-raised border border-tw-line-strong text-body font-medium cursor-pointer hover:bg-tw-hover focus-within:outline focus-within:outline-2 focus-within:outline-tw-accent`}>
+          <Camera className="w-4 h-4" aria-hidden="true" /> Load photo
+          <input type="file" accept="image/*" className="sr-only" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+        </label>
+        <canvas
+          ref={canvasRef}
+          onClick={onCanvasClick}
+          className="max-w-full rounded-control border border-tw-line cursor-crosshair"
+          style={{ display: imgInfo ? 'block' : 'none' }}
+          aria-label="Plate photo: click the four corner marks"
+        />
+        {imgInfo && (
+          <div className="flex items-center gap-3 text-small text-tw-ink-2">
+            <span role="status">{corners.length < 4 ? `Click the ${CORNER_NAMES[corners.length]} mark (${corners.length} of 4)` : 'All four corners set.'}</span>
+            {corners.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => setCorners([])}>
+                Start again
+              </Button>
+            )}
+            <Button variant="primary" size="sm" className="ml-auto" disabled={corners.length !== 4} onClick={analyze}>
+              Measure
+            </Button>
           </div>
         )}
-      </div>
-    </div>
+      </DialogSection>
+
+      {(notes.length > 0 || fits) && (
+        <DialogSection title="5. Results">
+          {notes.length > 0 && (
+            <ul className="list-disc pl-4 m-0 text-small text-tw-warn">
+              {notes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          )}
+          {fits && (
+            <>
+              <ul className="flex flex-col gap-1 m-0 p-0 list-none">
+                {fits.map(({ spool, fit }) => (
+                  <li key={spool.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2.5 py-1.5 rounded-control bg-tw-ground/60 border border-tw-line text-small">
+                    <span className="w-3 h-3 rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]" style={{ background: spool.hex }} aria-hidden="true" />
+                    <span className="font-medium text-tw-ink">{spool.name}</span>
+                    <span className="font-mono text-tw-ink-2">
+                      TD {spool.td.toFixed(2)} → {fit.profile.tdMm.toFixed(2)} mm
+                    </span>
+                    <span className="text-tw-ink-2">
+                      fit error {fit.meanDeltaE00.toFixed(1)} ΔE (worst {fit.maxDeltaE00.toFixed(1)})
+                    </span>
+                    {fit.weak && <span className="text-tw-warn">Not enough usable patches: this one is skipped.</span>}
+                    {!fit.weak && fit.meanDeltaE00 > 6 && <span className="text-tw-warn">Poor fit: check the lighting and the corners.</span>}
+                  </li>
+                ))}
+              </ul>
+              <Button variant="primary" className="self-start" icon={<Check className="w-4 h-4" aria-hidden="true" />} onClick={apply} disabled={applied || fits.every((f) => f.fit.weak)}>
+                {applied ? 'Saved to your filaments' : 'Save to my filaments'}
+              </Button>
+            </>
+          )}
+        </DialogSection>
+      )}
+    </Dialog>
   );
 };

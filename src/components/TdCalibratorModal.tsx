@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Ruler, Download, Check, Wifi, PlusCircle, X } from 'lucide-react';
+import { Ruler, Download, Check, Wifi, PlusCircle } from 'lucide-react';
+import { Button, Dialog, DialogSection, SliderRow, FOCUS_RING } from './ui';
 import { useTailWagStore } from '../store/useTailWagStore';
 import { generateTdCalibrationWedgeStl } from '../engine/cadMeshBuilder';
 import { FilamentSpool } from '../data/filamentCatalog';
@@ -22,7 +23,8 @@ export const TdCalibratorModal: React.FC<TdCalibratorModalProps> = ({ isOpen, on
   // Live Bambu Fleet Studio / Home Assistant AMS Sync State
   const [haUrl, setHaUrl] = useState('http://homeassistant.local:8123');
   const [haToken, setHaToken] = useState('');
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   if (!isOpen) return null;
 
@@ -56,174 +58,124 @@ export const TdCalibratorModal: React.FC<TdCalibratorModalProps> = ({ isOpen, on
     setTimeout(() => setSavedToast(false), 2500);
   };
 
+  // Reports exactly what happened: nothing is claimed as synced unless trays were read.
   const handleSyncBambuFleetAms = async () => {
-    setSyncStatus('Querying Bambu Fleet Studio AMS slots...');
     const desktopBridge = (window as any).tailwagDesktop;
-    if (desktopBridge?.fetchHaAms && haToken.trim()) {
-      const res = await desktopBridge.fetchHaAms({ haUrl, haToken });
-      if (res.ok && Array.isArray(res.states)) {
-        const trayStates = res.states.filter(
-          (s: any) => s.entity_id?.includes('tray_') || s.entity_id?.includes('ams_')
-        );
-        if (trayStates.length > 0) {
-          const synced: FilamentSpool[] = trayStates.slice(0, 8).map((st: any, idx: number) => ({
-            id: `ha-ams-${idx}-${Date.now()}`,
-            brand: 'Bambu AMS Live',
-            name: st.attributes?.friendly_name || st.state || `AMS Tray ${idx + 1}`,
-            material: 'PLA',
-            hex: st.attributes?.color ? `#${String(st.attributes.color).replace('#', '').slice(0, 6)}` : '#FF6A13',
-            td: 3.5,
-            owned: true,
-            amsSlot: `AMS Live #${idx + 1}`,
-          }));
-          syncAmsSpools(synced);
-          setSyncStatus(`Synced ${synced.length} live AMS trays from ${haUrl}`);
-          return;
-        }
-      }
+    if (!desktopBridge?.fetchHaAms) {
+      setSyncStatus({ ok: false, text: 'Reading AMS slots works in the TailWag desktop app only.' });
+      return;
     }
-
-    // Local Workshop AMS Preset fallback when token not provided
-    setSyncStatus('Synced 4 Workshop AMS Slots (A1: Basic Black, A2: Basic Brown, A3: Basic Orange, A4: Jade White).');
+    if (!haToken.trim()) {
+      setSyncStatus({ ok: false, text: 'Enter a Home Assistant access token first.' });
+      return;
+    }
+    setSyncing(true);
+    setSyncStatus(null);
+    try {
+      const res = await desktopBridge.fetchHaAms({ haUrl, haToken });
+      if (!res.ok || !Array.isArray(res.states)) {
+        setSyncStatus({ ok: false, text: `Could not reach Home Assistant at ${haUrl} (${res.error || 'no response'}). Nothing was changed.` });
+        return;
+      }
+      const trayStates = res.states.filter((s: any) => s.entity_id?.includes('tray_') || s.entity_id?.includes('ams_'));
+      if (trayStates.length === 0) {
+        setSyncStatus({ ok: false, text: 'Connected, but no AMS trays were found. Check that the Bambu Fleet Studio integration is set up.' });
+        return;
+      }
+      const synced: FilamentSpool[] = trayStates.slice(0, 8).map((st: any, idx: number) => ({
+        id: `ha-ams-${idx}-${Date.now()}`,
+        brand: 'Bambu AMS Live',
+        name: st.attributes?.friendly_name || st.state || `AMS Tray ${idx + 1}`,
+        material: 'PLA',
+        hex: st.attributes?.color ? `#${String(st.attributes.color).replace('#', '').slice(0, 6)}` : '#FF6A13',
+        td: 3.5,
+        owned: true,
+        amsSlot: `AMS Live #${idx + 1}`,
+      }));
+      syncAmsSpools(synced);
+      setSyncStatus({ ok: true, text: `Added ${synced.length} AMS tray${synced.length === 1 ? '' : 's'} from ${haUrl}. Their TD is an estimate until you measure them.` });
+    } finally {
+      setSyncing(false);
+    }
   };
 
+  const fieldCls = `h-8 w-full px-2.5 rounded-control bg-tw-ground border border-tw-line text-body text-tw-ink ${FOCUS_RING}`;
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#121722] border border-slate-700 rounded-xl max-w-2xl w-full p-5 shadow-2xl flex flex-col gap-5">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <Ruler className="w-5 h-5 text-orange-400" />
-            <h2 className="text-base font-bold text-white">
-              TailWag TD (Transmission Distance) Calibrator & Live AMS Sync
-            </h2>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      icon={<Ruler className="w-5 h-5" />}
+      title="TD calibrator and AMS"
+      subtitle="Measure how see-through a filament is, or read your AMS slots from Home Assistant."
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <DialogSection title="Measure a filament's TD">
+          <p className="m-0 text-small text-tw-ink-2">
+            Print the 16-step wedge on top of a black line. Find the first step where the black line has disappeared completely and set it below.
+          </p>
+          <Button icon={<Download className="w-4 h-4" aria-hidden="true" />} onClick={handleDownloadCalibrationStl}>
+            Download the step wedge (.stl)
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1 text-small text-tw-ink-2">
+              Brand
+              <input value={brand} onChange={(e) => setBrand(e.target.value)} className={fieldCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-small text-tw-ink-2">
+              Name
+              <input value={name} onChange={(e) => setName(e.target.value)} className={fieldCls} />
+            </label>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Left: Physical Step-Wedge Generator & TD Calculator */}
-          <div className="bg-[#181f2e] border border-slate-800 rounded-lg p-3.5 flex flex-col gap-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-orange-400">
-              1. Measure Filament TD (Step-Wedge Method)
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Print the 7-minute TailWag 16-step wedge card over a black base marker. Select the step number where the black backing line completely disappears.
-            </p>
-
-            <button
-              onClick={handleDownloadCalibrationStl}
-              className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-white transition"
-            >
-              <Download className="w-4 h-4 text-orange-400" />
-              Export 16-Step TD Calibration Wedge (.STL)
-            </button>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div>
-                <label className="text-[11px] text-slate-400">Brand</label>
-                <input
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] text-slate-400">Filament Name</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div>
-                <label className="text-[11px] text-slate-400 block">Hex Color</label>
-                <input
-                  type="color"
-                  value={hex}
-                  onChange={(e) => setHex(e.target.value)}
-                  className="w-12 h-7 bg-transparent cursor-pointer"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-[11px] text-slate-400 block">
-                  Opaque Step #{opaqueStepNumber} ({(opaqueStepNumber * stepThicknessMm).toFixed(2)}mm)
-                </label>
-                <input
-                  type="range"
-                  min={1}
-                  max={25}
-                  value={opaqueStepNumber}
-                  onChange={(e) => setOpaqueStepNumber(parseInt(e.target.value, 10))}
-                  className="w-full accent-orange-500"
-                />
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 block">Measured TD</span>
-                <span className="text-sm font-bold text-orange-400 font-mono">{calculatedTd} mm</span>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSaveCalibratedSpool}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-xs font-semibold text-white transition"
-            >
-              {savedToast ? <Check className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-              {savedToast ? 'Saved to Filament Catalog!' : 'Save Calibrated Spool to Library'}
-            </button>
-          </div>
-
-          {/* Right: Live Bambu Fleet Studio / Home Assistant AMS Sync */}
-          <div className="bg-[#181f2e] border border-slate-800 rounded-lg p-3.5 flex flex-col gap-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-              <Wifi className="w-4 h-4" />
-              2. Live Bambu Fleet Studio AMS Sync
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Pull active AMS tray colors, materials, and slot assignments directly from your local Home Assistant <code className="text-sky-300">bambu_fleet_studio</code> instance.
-            </p>
-
-            <div>
-              <label className="text-[11px] text-slate-400">Home Assistant Local URL</label>
-              <input
-                value={haUrl}
-                onChange={(e) => setHaUrl(e.target.value)}
-                placeholder="http://homeassistant.local:8123"
-                className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+          <div className="flex items-end gap-3">
+            <label className="flex flex-col gap-1 text-small text-tw-ink-2">
+              Colour
+              <input type="color" value={hex} onChange={(e) => setHex(e.target.value)} className={`w-12 h-8 rounded-control bg-transparent cursor-pointer ${FOCUS_RING}`} />
+            </label>
+            <div className="flex-1">
+              <SliderRow
+                label="Line disappears at step"
+                valueText={`${opaqueStepNumber} (${(opaqueStepNumber * stepThicknessMm).toFixed(2)} mm)`}
+                min={1}
+                max={25}
+                value={opaqueStepNumber}
+                onChange={(e) => setOpaqueStepNumber(parseInt(e.target.value, 10))}
               />
             </div>
-
-            <div>
-              <label className="text-[11px] text-slate-400">Long-Lived Access Token (Optional)</label>
-              <input
-                type="password"
-                value={haToken}
-                onChange={(e) => setHaToken(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
-              />
-            </div>
-
-            <button
-              onClick={handleSyncBambuFleetAms}
-              className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition mt-auto"
-            >
-              <Wifi className="w-4 h-4" />
-              Sync Active AMS Spools Now
-            </button>
-
-            {syncStatus && (
-              <div className="p-2 rounded bg-emerald-950/60 border border-emerald-700/50 text-[11px] text-emerald-300">
-                {syncStatus}
-              </div>
-            )}
           </div>
-        </div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-control bg-tw-ground/60 border border-tw-line">
+            <span className="text-small text-tw-ink-2">Measured TD</span>
+            <span className="font-mono text-title text-tw-ink">{calculatedTd} mm</span>
+          </div>
+          <Button variant="primary" icon={savedToast ? <Check className="w-4 h-4" aria-hidden="true" /> : <PlusCircle className="w-4 h-4" aria-hidden="true" />} onClick={handleSaveCalibratedSpool}>
+            {savedToast ? 'Added to my spools' : 'Add to my spools'}
+          </Button>
+        </DialogSection>
+
+        <DialogSection title="Read AMS slots from Home Assistant">
+          <p className="m-0 text-small text-tw-ink-2">
+            For Bambu printers connected to Home Assistant with the Bambu Fleet Studio integration. Reads each tray's colour and slot and adds them to your spools.
+          </p>
+          <label className="flex flex-col gap-1 text-small text-tw-ink-2">
+            Home Assistant address
+            <input value={haUrl} onChange={(e) => setHaUrl(e.target.value)} placeholder="http://homeassistant.local:8123" className={`${fieldCls} font-mono`} />
+          </label>
+          <label className="flex flex-col gap-1 text-small text-tw-ink-2">
+            Long-lived access token
+            <input type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} autoComplete="off" className={`${fieldCls} font-mono`} />
+            <span className="text-micro text-tw-ink-3">Create one in Home Assistant under your profile, Security tab.</span>
+          </label>
+          <Button icon={<Wifi className="w-4 h-4" aria-hidden="true" />} onClick={handleSyncBambuFleetAms} disabled={syncing}>
+            {syncing ? 'Reading…' : 'Read AMS slots'}
+          </Button>
+          {syncStatus && (
+            <p role="status" className={`m-0 px-2.5 py-1.5 rounded-control border text-small ${syncStatus.ok ? 'bg-tw-ok/10 border-tw-ok/30 text-tw-ok' : 'bg-tw-warn/10 border-tw-warn/30 text-tw-warn'}`}>
+              {syncStatus.text}
+            </p>
+          )}
+        </DialogSection>
       </div>
-    </div>
+    </Dialog>
   );
 };
