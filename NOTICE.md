@@ -24,7 +24,7 @@ The subject is found entirely on your computer. Your photo is never uploaded.
 
 ## Early release and bugs
 
-TailWag Studio 1.1 is a **new release and may contain bugs**. Colour and height predictions are estimates until you calibrate your filaments, and results can differ from a real print. Please check the preview and your slicer before printing a large or expensive job.
+TailWag Studio is a **new project and may contain bugs**. Colour and height predictions are estimates until you calibrate your filaments, and results can differ from a real print. Please check the preview and your slicer before printing a large or expensive job.
 
 If you find a bug, please report it on the issue tracker: **https://github.com/everyday3d/tailwag/issues**
 

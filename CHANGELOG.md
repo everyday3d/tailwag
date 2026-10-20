@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **README in plain language**: a short "What it does" list, a new tour with fresh screenshots of 1.3.0 (Cut to the subject, Edit photo and focus area, the filament stack, the new dialogs), simpler install steps, and the technical details moved to a short "For developers" section.
+
+### Fixed
+- **Split view**: the "Predicted print" label no longer covers the print size line in the top right.
+
 ## [1.3.0] - 2026-10-20
 
 Cut the print to your subject automatically, crop and rotate photos with a focus area, a new look for the whole app, and Tucker on the loading screen.

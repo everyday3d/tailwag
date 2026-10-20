@@ -425,7 +425,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
         </div>
       )}
       {viewportMode === 'split' && (
-        <span className="absolute top-4 right-4 z-10 px-2.5 py-1 rounded-control bg-tw-panel/90 border border-tw-line text-small font-medium text-tw-ink pointer-events-none">Predicted print</span>
+        <span className="absolute top-14 right-4 z-10 px-2.5 py-1 rounded-control bg-tw-panel/90 border border-tw-line text-small font-medium text-tw-ink pointer-events-none">Predicted print</span>
       )}
 
       {/* Split wipe handle */}

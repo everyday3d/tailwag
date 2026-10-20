@@ -1,191 +1,179 @@
-# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.3.0`)
+# 🐕 TailWag Studio (`v1.3.0`)
 
 [![Release](https://img.shields.io/badge/Version-1.3.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=apple)](https://github.com/everyday3d/tailwag/releases)
 [![Wiki Documentation](https://img.shields.io/badge/Docs-Wiki-purple?style=flat-square&logo=github)](https://github.com/everyday3d/tailwag/wiki)
-[![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-> **Next-Generation Desktop 3D Filament Painting (Front-Lit Beer-Lambert TD Blending), AI Palette & Layer-Swap Solver, 2.5D Parametric CAD Cutouts, and Native Bambu Studio / OrcaSlicer `.3MF` Exporter + Built-in MCP Server.**
+**Turn any photo into a multi-colour 3D print.** TailWag Studio picks a few filaments, works out which layer to swap each one at, and shows you what the print will look like before you print it. Thin layers of filament let the colours underneath show through, so four spools can make a picture with dozens of shades. When you are happy, export a ready-to-print project for Bambu Studio or OrcaSlicer, or an STL with a simple pause guide for any printer.
+
+**[Download for Windows or macOS](https://github.com/everyday3d/tailwag/releases/latest)**. It's free and works offline.
+
+![TailWag Studio](docs/screenshots/02-studio.png)
 
 > [!WARNING]
-> **New release, bugs possible.** TailWag Studio 1.1 is new and may contain bugs, and predicted colours are estimates until you calibrate your filaments. If you find a problem, please [open an issue](https://github.com/everyday3d/tailwag/issues).
+> **New release, bugs possible.** Predicted colours are estimates until you calibrate your filaments. If you find a problem, please [open an issue](https://github.com/everyday3d/tailwag/issues).
 
 > [!NOTE]
-> **Windows shows a blue warning or macOS blocks the app?** The releases are not code-signed yet. See [how to open on Windows](#installing-on-windows-and-the-blue-windows-protected-your-pc-screen) and [how to open on macOS](#installing-on-macos-apple-silicon--intel).
-
-> **Independent project.** TailWag Studio is not affiliated with or endorsed by HueForge, Bambu Lab, Prusa, or any filament maker. We do not own or claim to own HueForge or any other third-party name or trademark. See [NOTICE.md](NOTICE.md).
----
-
-## 🌟 Key Features
-
-1. **🔬 Real-Time Beer-Lambert + Kubelka-Munk Optical TD Viewport (`Viewport3D.tsx`)**
-   - Interactive Three.js WebGL2 3D relief preview with real-time vertex color transmission blending, studio key-light azimuth/elevation controls, **X-Ray Layer Cutaway Scrubber**, **Split-Screen Source Wipe Compare**, and **Front-Lit vs. Back-Lit Lithophane** toggle.
-2. **📦 Native Bambu Studio & OrcaSlicer `.3MF` Project Export (`exporter3mf.ts`)**
-   - Exports ready-to-slice `.3mf` project packages pre-configured with `100%` aligned rectilinear infill, base/layer height rules, filament hex palette, height-range color modifiers, and a `>4 Color Single-AMS Chaining Playbook`.
-3. **🧠 AI Palette & Layer-Swap Auto-Solver (`autoSolver.ts`)**
-   - Optimizes filament combinations and exact layer swap Z-heights in CIE LAB perceptual space ($\Delta E$) across your **Owned / Active AMS Spools** or the full multi-brand catalog.
-4. **📏 Built-in TD Calibrator & Live Bambu Fleet Studio AMS Sync (`TdCalibratorModal.tsx`)**
-   - Generates a 7-minute **16-Step TD Calibration Step-Wedge (`.STL`)**, calculates exact filament Transmission Distance ($TD$ in mm), and syncs live AMS trays from Home Assistant (`bambu_fleet_studio`).
-5. **📐 2.5D Parametric CAD Shapes, Frames, Clocks & Cutouts (`cadMeshBuilder.ts`)**
-   - Built-in silhouettes (*Rectangle*, *Rounded Plaque*, *Circle/Clock*, *Hexagon*, *Crest Shield*, *BoxerDawg Medallion*), 3D raised frames (*Beveled*, *Modern Lip*, *Stepped*), **wall clock Mode** (center quartz shaft bore, rear $56\times56\text{mm}$ movement cavity, raised top-layer stencil numerals), **Keychain Bores**, and **Rear Neodymium Magnet Pockets**.
-6. **🤖 Built-in TailWag MCP Server (experimental) (`mcp/server.ts` / `dist-electron/mcp/server.js`)**
-   - Standard JSON-RPC 2.0 stdio Model Context Protocol (MCP) server allowing AI agents to autonomously list filaments, solve optimal TD palettes, simulate layer stacks, calibrate TDs, and export `.3mf` / `.stl` projects headlessly.
+> **Windows shows a blue warning or macOS blocks the app?** The app is not code-signed yet. See [how to open on Windows](#installing-on-windows-and-the-blue-windows-protected-your-pc-screen) and [how to open on macOS](#installing-on-macos-apple-silicon--intel).
 
 ---
 
-## Spotlight: a tour of the studio
+## What it does
 
-These screenshots are taken from the app itself with the bundled sample portrait and a 4-colour recipe. Colours in the preview are predictions until you calibrate your own filaments.
+- **Picks your filaments for you.** Choose how many colours you want (4 fits one AMS) and TailWag picks the best mix from the spools you own or from a catalog of 126 real filaments.
+- **Shows the print before you print it.** A 3D preview shows the predicted colours, with a side-by-side compare against your photo.
+- **Cuts the print to your subject.** It can find your dog, a person or an object in the photo and cut the print to its outline automatically.
+- **Crop, turn and focus.** Crop and straighten the photo, and paint over what matters most, like a face, so it gets the best colours.
+- **Makes shapes and gifts.** Rectangle, rounded plaque, circle, hexagon, shield or medallion, with a raised frame. It can also add a wall clock hole and numbers, a keychain hole, or magnet pockets on the back.
+- **Exports a print you can trust.** A Bambu Studio or OrcaSlicer project with every colour already set up, or an STL with a step-by-step pause guide. Every file is checked against the plan before it is saved.
+- **Gets more accurate as you calibrate.** Print one small plate, take a photo, and TailWag measures how your own filaments really look.
 
-### Loading screen
+---
+
+## A tour of the studio
+
+These screenshots use the sample portrait that comes with the app and four filaments. Colours in the preview are predictions until you calibrate your own filaments.
+
+### Tucker says hello
 ![Loading screen](docs/screenshots/01-loading-screen.png)
 
-The app opens with a tail-wagging dog, the version number and a randomly ordered "Did you know?" tip. There are 49 tips covering TD, calibration, slicer settings and the less obvious features, and none repeats until all have been shown. The screen is part of the page itself, so it appears instantly, before the heavy 3D code has loaded.
+While the app starts, Tucker the boxer is printed layer by layer, then wags his tail. Each time you open the app you get a new "Did you know?" tip.
+
+### Cut to the subject
+![Cut to the subject](docs/screenshots/03-cut-to-subject.png)
+
+In **Shape and extras**, choose **Subject (automatic)**. TailWag finds the subject of your photo and cuts the print to its outline, with no tracing. It takes about 5 to 10 seconds, runs on your computer, and your photo is never uploaded. Use the sliders to add space around the subject and smooth the edge, so fur and whiskers print cleanly. Frames follow the outline too.
 
 ### Faithful or Vivid
 | Faithful (default) | Vivid |
 | --- | --- |
-| ![Faithful preview](docs/screenshots/02-faithful-preview.png) | ![Vivid preview](docs/screenshots/03-vivid-preview.png) |
+| ![Faithful](docs/screenshots/04-faithful.png) | ![Vivid](docs/screenshots/05-vivid.png) |
 
-The toolbar toggle changes how the photo is turned into relief. **Faithful** gives each column the stack depth whose predicted colour is closest to the photo's own colour, measured with standard CIEDE2000 and with no saturation boost. **Vivid** is the earlier brightness-based mapping with boosted saturation: bolder, but a deliberate departure from the photo. Switching modes re-tunes the filament swap layers automatically.
+**Faithful** gets as close to your photo's real colours as your filaments allow. **Vivid** makes colours bolder and adds more depth, but strays further from the photo. Switch between them with the button at the top of the window.
 
-### Accuracy or Beauty lighting
-| Accuracy (default) | Beauty |
+### True colour or Studio light
+| True colour (default) | Studio light |
 | --- | --- |
-| ![Accuracy preview](docs/screenshots/02-faithful-preview.png) | ![Beauty lighting](docs/screenshots/04-beauty-lighting.png) |
+| ![True colour](docs/screenshots/04-faithful.png) | ![Studio light](docs/screenshots/06-studio-light.png) |
 
-**Accuracy** shows each column's predicted colour with no lighting, so what you see is what the model expects the plastic to look like. **Beauty** adds studio lighting and shading for a more photographic picture of the 3D relief, but the shading shifts how colours read.
+**True colour** shows the predicted colour of the print with no lighting, so you see what the plastic should look like. **Studio light** adds light and shadow so you can see the 3D shape, but the shading changes how the colours look. The **Front-lit / Backlit** button shows how the print looks on a wall or with light shining through it.
 
-### Split wipe compare
-![Split wipe compare](docs/screenshots/06-split-wipe-compare.png)
+### Compare with your photo
+![Compare with your photo](docs/screenshots/07-split-compare.png)
 
-Drag the slider to wipe between your original photo and the predicted print. It is the quickest way to spot where the palette loses detail or shifts a colour.
+Choose **Split** at the top and drag the slider to wipe between your photo and the predicted print. It's the quickest way to spot where a colour is off or detail is lost.
 
-### Layer timeline
-![Layer timeline](docs/screenshots/07-layer-timeline.png)
+### The filament stack
+![Filament stack](docs/screenshots/08-filament-stack.png)
 
-Each coloured block is one filament and the layers it prints. The gradient bar above shows the predicted colour of every layer. Drag a block's slider to move where that filament starts and ends, swap the spool from the drop-down, reorder with the arrows, or add another colour layer. The 3D preview re-renders immediately and the first layer is 0.16 mm with 0.08 mm layers after it.
+The bar shows the colour of every layer, from the bed to the top, with one band per filament. Drag the white handles to change where one filament stops and the next starts, and the preview updates right away. Below the bar, pick a different spool, change the order or add another colour.
 
-### Filament library
-![Filament library](docs/screenshots/10-filament-library.png)
+### Crop, turn and focus area
+| Crop and rotate | Focus area |
+| --- | --- |
+| ![Edit photo](docs/screenshots/09-edit-photo.png) | ![Focus area](docs/screenshots/10-focus-area.png) |
 
-A bundled, offline catalog of manufacturer filaments you can search by brand, material, colour name, hue family and TD range. Each entry links to the manufacturer's page so you can check the data, and carries a badge showing where its TD came from. Catalog TD values are labelled **Estimate** because they are predicted from the colour, not measured. Add what you own to **My Filaments**, then filter by AMS slot or stock status and sort by TD.
+**Edit photo** opens by itself after you load a photo, or use the crop button at the top. Turn the photo, straighten it, and crop it freely or to a square, 4:3 or 3:4. On **Focus area**, paint over what matters most, such as a face. TailWag gives that area priority when it picks filaments.
 
-### Edit a filament
-![Edit filament](docs/screenshots/08-edit-filament.png)
+### Export
+| Choose how to print | Predicted result |
+| --- | --- |
+| ![Export](docs/screenshots/11-export.png) | ![Predicted result](docs/screenshots/12-export-report.png) |
 
-Every spool can be edited: name, brand, material, colour, TD, TD source and AMS slot. TD sources rank from **Estimate** and **Catalog** up through **User-entered** to **Measured**, and a weaker source never silently overwrites a stronger one. Editing a spool that is in the stack updates the stack and re-tunes the swap layers.
+- **Printer with an AMS:** export a .3MF project, or send it straight to Bambu Studio. Every colour is already assigned and the layer height and infill are set.
+- **Single-colour printer:** get an STL and a guide that tells you exactly when to pause and which filament to load.
+- **Predicted result:** shows your photo next to the predicted print, a colour-accuracy score, and a heat map: green matches, red differs. If your filaments can't reach some colours, it says so and suggests what to add.
+
+### Your filaments
+| Add from the catalog | Edit a spool |
+| --- | --- |
+| ![Add a filament](docs/screenshots/13-add-filament.png) | ![Edit filament](docs/screenshots/14-edit-filament.png) |
+
+Search 126 real filaments from Bambu Lab, Polymaker, Elegoo, eSun, Prusament and more, and add the ones you own. You can also enter a spool by hand or import a `filaments.json` library. Each spool shows its **TD** (how see-through it is). Catalog values are marked **Estimate** until you measure your own.
 
 ### Calibration plate
-![Calibration plate](docs/screenshots/11-calibration-plate.png)
+![Calibration plate](docs/screenshots/15-calibration-plate.png)
 
-Pick a white and a black backing spool and up to six filaments to measure, then download a small plate as a `.3mf` with one extruder per part. Print it, photograph it flat in even daylight, click the four corner marks, and TailWag fits each filament's real colour and transparency. Fitted spools show a **Calibrated** badge with the fit error, and every colour calculation then uses the measured values instead of the estimate.
-
-### Export with a predicted fidelity report
-| Schedule and preview | Predicted fidelity |
-| --- | --- |
-| ![Export dialog](docs/screenshots/09-export-fidelity.png) | ![Predicted fidelity report](docs/screenshots/09b-export-fidelity-report.png) |
-
-The export dialog lists the exact pause layer and heights for every colour change, a side-by-side of the target and the predicted print drawn from the exact layers that will be exported, and a predicted fidelity report: mean, median, 95th-percentile and worst colour difference, how much of the photo is imperceptible, close, noticeable or clearly different, and a heat map where green is accurate and red will differ. For this sample, 38% of the photo is outside what a 4-colour palette can reach, and the report says so and suggests adding a filament in the missing hue range. It is a prediction, not a measurement. Every file is re-read and checked against the print plan before it is written, and a mismatch blocks the export.
-
-### Shape, frame and extras
-![Shape and frame](docs/screenshots/13-shape-and-frame.png)
-
-Cut the print to a rectangle, rounded plaque, circle or clock face, hexagon tile, crest shield or medallion, and choose a beveled, raised-lip or stepped frame, or none. Optional extras cut a wall-clock shaft hole and movement pocket, a keychain hole, and rear magnet pockets.
+For the most accurate colours, choose up to six filaments and download a small test plate. Print it, take a photo in daylight, click the four corners, and TailWag measures each filament's real colour and transparency. From then on, previews use your measured values.
 
 ### About and updates
-![About and updates](docs/screenshots/12-about-updates.png)
+![About](docs/screenshots/16-about.png)
 
-Click the version badge to see the version and check for the newest release. A quiet once-a-day check on startup can be turned off in the same dialog, and only the public release information is requested.
+Click the version number at the top left to check for updates. **Copy debug info** copies what a bug report needs, without your photo or personal details.
 
-## 🤖 MCP Server (Experimental: Agentic Solving & Headless 3MF Generation)
-
-> The MCP server is experimental. It exports a built-in demo relief with a grayscale solver, not your own photos or the Faithful color matching, and its tools may change.
-
-Agents can connect to the compiled TailWag MCP server (`node dist-electron/mcp/server.js`) over `stdio`:
-
-| MCP Tool Name | Description |
-| :--- | :--- |
-| `tailwag_list_filaments` | Lists verified filament spools with brand, hex color, $TD$ (mm), and AMS/owned status. |
-| `tailwag_solve_palette` | Solves optimal filament combinations and layer swap heights for target hex colors or portraits. |
-| `tailwag_simulate_layer_stack` | Simulates Beer-Lambert TD blending for any filament stack and returns the per-layer hex LUT. |
-| `tailwag_export_3mf_project` | Headlessly builds a watertight 2.5D mesh with CAD cutouts and writes `.3mf` + `_Swap_Playbook.txt`. |
-| `tailwag_calibrate_td` | Computes filament $TD$ from step-wedge opacity readings and exports the calibration wedge `.stl`. |
+---
 
 ## Installing on Windows, and the blue "Windows protected your PC" screen
 
-TailWag Studio is a new, small project and the installer is **not code-signed yet** (a code-signing certificate costs money and a new app also has no "reputation" with Microsoft). Because of that, Windows may stop you when you run it, even though the file is fine. This is normal for unsigned apps and does not mean the file is infected.
-
-### Install via WinGet (Windows Package Manager)
-
-Install or update TailWag Studio via terminal:
+Download **TailWag-Setup-1.3.0.exe** from the [releases page](https://github.com/everyday3d/tailwag/releases) and run it. There's also a portable version that doesn't need installing. You can also install it from a terminal:
 
 ```powershell
 winget install everyday3d.TailWagStudio
 ```
 
-### The blue screen ("Windows protected your PC", Microsoft Defender SmartScreen)
+TailWag Studio is a small project and the installer is **not code-signed yet**, so Windows may warn you the first time. This is normal for new apps and does not mean the file is harmful.
+
+### The blue screen ("Windows protected your PC")
 1. Click **More info** (the small link under the message).
 2. Click **Run anyway**.
 
-The installer then runs normally. You only need to do this the first time you run each new download.
+### Your browser says the file is "not commonly downloaded"
+Choose **Keep** (in the downloads list, open the three dots, then **Keep**, then **Keep anyway**).
 
-### "This file is blocked" or the installer will not start
-Windows marks files downloaded from the internet. To remove that mark:
-1. Right-click the downloaded `.exe` and choose **Properties**.
-2. At the bottom of the **General** tab, tick **Unblock** and click **OK**.
-3. Run the file again.
+### The installer will not start
+Right-click the downloaded `.exe`, choose **Properties**, tick **Unblock** at the bottom of the **General** tab, click **OK**, and run it again.
 
-### Your browser says it is "not commonly downloaded" or "may be dangerous"
-Edge and Chrome show this for any new file without a reputation yet. Choose **Keep** (in the downloads list, open the three dots, then **Keep**, then **Keep anyway**).
-
-### Antivirus quarantined the file
-Some antivirus programs distrust new unsigned apps. If one removes the installer, restore it from quarantine and add the file or folder to the exclusion list, or use the portable build.
+### Antivirus removed the file
+Restore it from quarantine and add it to your antivirus exclusions, or use the portable version.
 
 ### Check that the file is the real one
-Each file on the [releases page](https://github.com/everyday3d/tailwag/releases) shows a **SHA-256** checksum next to it. To compare it with your download, open PowerShell in the folder with the file and run:
+The [releases page](https://github.com/everyday3d/tailwag/releases) lists a **SHA-256** checksum for each file. To compare, open PowerShell in your Downloads folder and run:
 
 ```powershell
 Get-FileHash .\TailWag-Setup-1.3.0.exe -Algorithm SHA256
 ```
 
-The two values should be identical. You can also read every line of the source code in this repository.
-
-Still stuck? Please [open an issue](https://github.com/everyday3d/tailwag/issues) and say which message you see.
+The two values should match.
 
 ## Installing on macOS (Apple Silicon & Intel)
 
-Releases are published as `.dmg` installers and `.zip` bundles on the [releases page](https://github.com/everyday3d/tailwag/releases):
-- **Apple Silicon (M1, M2, M3, M4)**: Download `TailWag-Setup-*-mac-arm64.dmg`.
-- **Intel Macs**: Download `TailWag-Setup-*-mac-x64.dmg`.
+Download the `.dmg` from the [releases page](https://github.com/everyday3d/tailwag/releases):
+- **Apple Silicon (M1, M2, M3, M4):** `TailWag-Setup-1.3.0-mac-arm64.dmg`
+- **Intel Macs:** `TailWag-Setup-1.3.0-mac-x64.dmg`
 
-Open the downloaded `.dmg` and drag **TailWag Studio.app** into your `/Applications` folder.
+Open it and drag **TailWag Studio** into your **Applications** folder.
 
 ### First launch: Right-click > Open (Unsigned App Gatekeeper)
 
-Because TailWag Studio is a free open-source project without a paid Apple Developer certificate, macOS Gatekeeper blocks opening on a normal double-click. **Unsigned macOS apps need right-click, Open on first launch**:
+The app isn't signed with a paid Apple certificate yet, so the first time:
 
-1. **Right-click (or Control-click)** `TailWag Studio.app` in `/Applications`.
-2. Select **Open** from the menu.
-3. Click **Open** in the confirmation dialog.
+1. **Right-click (or Control-click)** TailWag Studio in **Applications**.
+2. Choose **Open**, then click **Open** again.
 
-macOS remembers your permission and will open the app normally on standard double-click thereafter.
+After that it opens normally.
 
-#### If macOS says "TailWag Studio is damaged and can't be opened"
-If Gatekeeper prevents opening or flags the file:
-- **Terminal (cleanest)**: Open Terminal and run:
-  ```bash
-  xattr -cr /Applications/TailWag\ Studio.app
-  ```
-  This clears the `com.apple.quarantine` extended attribute applied to downloads.
-- **System Settings**: Open **System Settings > Privacy & Security**, scroll down to the **Security** section, and click **Open Anyway**.
-## Notices and reporting bugs
+#### If macOS says the app "is damaged and can't be opened"
+Open **Terminal** and run:
+```bash
+xattr -cr /Applications/TailWag\ Studio.app
+```
+Or open **System Settings > Privacy & Security**, scroll to **Security**, and click **Open Anyway**.
 
-TailWag Studio is a new release and can have bugs. Please report them on the [issue tracker](https://github.com/everyday3d/tailwag/issues); the bug report form asks for your version and the steps to reproduce.
+---
 
-HueForge, Bambu Lab, Bambu Studio, OrcaSlicer, PrusaSlicer and the filament brands named in this project belong to their respective owners. We do not own or claim to own them, and this project is not affiliated with or endorsed by any of them. Full details are in [NOTICE.md](NOTICE.md).
+## Help and bug reports
 
-## License
+Please report bugs on the [issue tracker](https://github.com/everyday3d/tailwag/issues). In the app, click the version number and use **Copy debug info**, then paste it into your report. The [wiki](https://github.com/everyday3d/tailwag/wiki) has more guides.
 
-TailWag Studio is released under the [MIT License](LICENSE). Filament catalog data is described in [DATA_SOURCES.md](DATA_SOURCES.md).
+## For developers
+
+TailWag Studio is an Electron, React and Three.js app. It also includes an experimental [MCP server](https://modelcontextprotocol.io) (`node dist-electron/mcp/server.js`) that lets AI agents list filaments, pick palettes and export projects. It uses a built-in demo picture, not your own photos. See the [wiki](https://github.com/everyday3d/tailwag/wiki) and [CHANGELOG.md](CHANGELOG.md) for details.
+
+To build from source: `npm install`, then `npm run electron:win` or `npm run electron:mac`. The first build downloads the 224 MB subject-finder model.
+
+## Notices and license
+
+TailWag Studio is an independent project by BoxerDawg 3D. It is not affiliated with or endorsed by HueForge, Bambu Lab, Prusa or any filament maker, and their names belong to their owners. It includes the BiRefNet model and ONNX Runtime (both MIT). Full details are in [NOTICE.md](NOTICE.md), and catalog data sources are in [DATA_SOURCES.md](DATA_SOURCES.md).
+
+Released under the [MIT License](LICENSE).
