@@ -15,6 +15,7 @@ import {
   type SlicerId,
   type UninstallEntry,
 } from './slicerLauncher';
+import { SUBJECT_INPUT_SIZE, findSubject, subjectModelAvailable } from './subjectCutout';
 
 const logFile = path.join(os.tmpdir(), 'tailwag-startup.log');
 function logMsg(msg: string) {
@@ -305,6 +306,24 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('tailwag:app-version', () => app.getVersion());
+
+  // Subject cutout: is the model installed, and run it on a 1024 x 1024 RGBA picture.
+  ipcMain.handle('tailwag:subject-available', () => subjectModelAvailable());
+  ipcMain.handle('tailwag:find-subject', async (_event, rgba: unknown) => {
+    if (!(rgba instanceof Uint8Array) || rgba.length !== SUBJECT_INPUT_SIZE * SUBJECT_INPUT_SIZE * 4) {
+      return { ok: false, error: 'Invalid picture.' };
+    }
+    if (!subjectModelAvailable()) return { ok: false, error: 'The subject model is not installed with this copy of TailWag.' };
+    try {
+      const started = Date.now();
+      const mask = await findSubject(rgba);
+      logMsg(`find-subject done in ${Date.now() - started} ms`);
+      return { ok: true, mask, size: SUBJECT_INPUT_SIZE };
+    } catch (err: any) {
+      logMsg(`find-subject failed: ${err?.stack || err}`);
+      return { ok: false, error: err?.message || 'The subject could not be found.' };
+    }
+  });
 
   // For "Copy debug info" (#49): OS and runtime only. No hostname, username or paths.
   ipcMain.handle('tailwag:system-info', () => ({

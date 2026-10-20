@@ -49,6 +49,7 @@ import { UpdateModal } from './components/UpdateModal';
 import { recordError } from './engine/debugInfo';
 import { PhotoEditorModal, type PhotoEditResult } from './components/PhotoEditorModal';
 import { AppHeader } from './components/AppHeader';
+import { findSubjectNow } from './utils/subjectFinder';
 import { SolverPanel } from './components/panels/SolverPanel';
 import { PrintSizePanel } from './components/panels/PrintSizePanel';
 import { ShapePanel } from './components/panels/ShapePanel';
@@ -65,7 +66,7 @@ import {
 } from './engine/photoEdit';
 import { appHistory } from './store/appHistory';
 import { useHistoryStatus } from './store/undoHistory';
-import { buildProject, decodeFocus, decodeImage, parseProject } from './engine/projectFile';
+import { buildProject, decodeFocus, decodeImage, decodeSubject, parseProject } from './engine/projectFile';
 import {
   canReopenLastProject,
   forgetLastProject,
@@ -118,7 +119,7 @@ export const App: React.FC = () => {
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState(false);
-  const { photoOriginal, photoEdit, focusMask, focusStrength, setPhotoState } = useTailWagStore();
+  const { photoOriginal, photoEdit, focusMask, focusStrength, setPhotoState, subjectMask } = useTailWagStore();
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
   // Keep the last error for "Copy debug info" (#49): banner errors and uncaught errors.
   React.useEffect(() => {
@@ -249,6 +250,9 @@ export const App: React.FC = () => {
         invertLuminance,
         cad,
         colorMatch: matchLut ? { lutRgb: matchLut } : undefined,
+        // Only a cutout made for this exact picture is used
+        subject:
+          subjectMask && subjectMask.width === sourceImageData.width && subjectMask.height === sourceImageData.height ? subjectMask : null,
       }),
     [
       sourceImageData,
@@ -265,6 +269,7 @@ export const App: React.FC = () => {
       invertLuminance,
       cad,
       matchLut,
+      subjectMask,
     ]
   );
 
@@ -353,6 +358,7 @@ export const App: React.FC = () => {
     } else {
       setPhotoState({ photoOriginal: image, photoEdit: DEFAULT_EDIT, focusMask: null, focusStrength: 'balanced', focusImageMask: null });
     }
+    setPhotoState({ subjectMask: decodeSubject(project), subjectStatus: { kind: 'idle' } });
     appHistory.clear();
     noteOpenedProject(filePath, project.name);
     setLastProject(null);
@@ -401,6 +407,7 @@ export const App: React.FC = () => {
         photoEdit: s.photoEdit,
         focusMask: s.focusMask,
         focusStrength: s.focusStrength,
+        subjectMask: s.subjectMask,
       },
       APP_VERSION,
       planRef.current.hash
@@ -520,6 +527,9 @@ export const App: React.FC = () => {
       // Standardized 246x246mm build plate envelope sizing preserving exact aspect ratio
       const { widthMm: stdW, heightMm: stdH } = computeStandardBedDimensions(pixelW, pixelH, STANDARD_BUILD_PLATE_MAX_BBOX_MM);
       setDimensions(stdW, stdH);
+      // A different picture needs its own cutout; find it again if the print is cut to the subject
+      setPhotoState({ subjectMask: null, subjectStatus: { kind: 'idle' } });
+      if (useTailWagStore.getState().cad.shape === 'subject') void findSubjectNow();
     }
 
     // Automatically switch to 3D Filament Painted view and run AI Palette Auto-Solver using active pool mode & color count

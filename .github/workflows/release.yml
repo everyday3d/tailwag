@@ -44,6 +44,12 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Cache the subject cutout model
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: subject-model-5600024376f572a5
+
       - name: Build Windows Installer & Portable
         run: npm run electron:win
         env:
@@ -77,6 +83,12 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Cache the subject cutout model
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: subject-model-5600024376f572a5
 
       - name: Build macOS DMG & ZIP
         run: npm run electron:mac

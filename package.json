@@ -11,10 +11,11 @@
     "build": "tsc && vite build && node scripts/build-electron.mjs",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite --port 5188\" \"wait-on tcp:5188 && electron .\"",
-    "electron:pack": "npm run build && electron-builder --dir",
-    "electron:dist": "npm run build && electron-builder",
-    "electron:mac": "npm run build && electron-builder --mac",
-    "electron:win": "npm run build && electron-builder --win",
+    "fetch-model": "node scripts/fetch-model.mjs",
+    "electron:pack": "npm run fetch-model && npm run build && electron-builder --dir",
+    "electron:dist": "npm run fetch-model && npm run build && electron-builder",
+    "electron:mac": "npm run fetch-model && npm run build && electron-builder --mac",
+    "electron:win": "npm run fetch-model && npm run build && electron-builder --win",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",
+    "onnxruntime-node": "^1.30.0",
     "three": "^0.170.0",
     "zustand": "^5.0.2"
   },
@@ -57,7 +59,24 @@
       "build/icon.ico",
       "build/icon.png"
     ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**"
+    ],
+    "extraResources": [
+      {
+        "from": "models",
+        "to": "models",
+        "filter": [
+          "*.onnx"
+        ]
+      }
+    ],
     "mac": {
+      "files": [
+        "dist/**/*",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
+      ],
       "icon": "build/icon.png",
       "category": "public.app-category.graphics-design",
       "artifactName": "TailWag-${version}-mac-${arch}.${ext}",
@@ -85,6 +104,12 @@
       "artifactName": "TailWag-Setup-${version}-mac-${arch}.${ext}"
     },
     "win": {
+      "files": [
+        "dist/**/*",
+        "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+      ],
       "icon": "build/icon.ico",
       "target": [
         "nsis",

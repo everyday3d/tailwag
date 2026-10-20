@@ -1,5 +1,8 @@
 import { sampleGridColors, buildTargetBuckets, assignLayersByColorMatch, lutToLab } from './colorMatch';
-export type MeshShapeMode = 'rect' | 'rounded' | 'circle' | 'hexagon' | 'paw' | 'shield';
+import { buildSubjectShape, SUBJECT_DEFAULTS } from './subjectCut';
+import type { Mask } from './photoEdit';
+/** 'subject' cuts to the outline found by the cutout model; without a cutout it prints as 'rect'. */
+export type MeshShapeMode = 'rect' | 'rounded' | 'circle' | 'hexagon' | 'paw' | 'shield' | 'subject';
 export type FrameStyle = 'none' | 'beveled' | 'modern-lip' | 'stepped';
 export type ClockStencilStyle = 'none' | 'modern-arabic' | 'roman' | 'paw-markers';
 
@@ -19,6 +22,9 @@ export interface CadCutoutConfig {
   /** Rear Neodymium Magnet Cavities */
   magnetPockets: boolean;
   magnetDiameterMm: number; // default 8.2mm
+  /** Subject outline: space kept around the subject, and how much fur and whiskers are smoothed */
+  subjectMarginMm?: number;
+  subjectSmoothMm?: number;
 }
 
 export interface HeightmapGrid {
@@ -754,6 +760,8 @@ export function buildHeightmapGrid(params: {
    * (index = layer - 1) instead of mapping luminance to depth.
    */
   colorMatch?: { lutRgb: Array<{ r: number; g: number; b: number }> };
+  /** Subject mask lined up with imageData, used when cad.shape is 'subject' */
+  subject?: Mask | null;
 }): HeightmapGrid {
   const {
     imageData,
@@ -981,6 +989,20 @@ export function buildHeightmapGrid(params: {
   // but STRICTLY PRESERVES pixels on high-contrast edges and fine structural lines (branches, silhouettes)
   const cleanedLayers = applyMorphologicalRegionMerge(rawDiscreteLayers, cols, rows, 4, isEdgeZone);
 
+  // Subject outline (cutout model): replaces the geometric silhouette when available
+  const subjectShape =
+    cad.shape === 'subject' && params.subject
+      ? buildSubjectShape(
+          params.subject,
+          cols,
+          rows,
+          widthMm,
+          heightMm,
+          cad.subjectMarginMm ?? SUBJECT_DEFAULTS.marginMm,
+          cad.subjectSmoothMm ?? SUBJECT_DEFAULTS.smoothMm
+        )
+      : null;
+
   for (let r = 0; r < rows; r++) {
     const ny = (r / Math.max(1, rows - 1)) * 2.0 - 1.0; // -1 (top) to +1 (bottom)
     const yMm = -ny * halfH;
@@ -989,7 +1011,9 @@ export function buildHeightmapGrid(params: {
       const xMm = nx * halfW;
       const idx = r * cols + c;
 
-      const maskEval = evaluateShapeMask(nx, ny, cad.shape);
+      const maskEval = subjectShape
+        ? { inside: subjectShape.inside[idx] === 1, edgeDist: subjectShape.edgeDist[idx] }
+        : evaluateShapeMask(nx, ny, cad.shape);
       if (!maskEval.inside) {
         topZ[idx] = -1;
         bottomZ[idx] = 0;

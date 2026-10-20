@@ -64,6 +64,8 @@ export interface ProjectFile {
   original?: ProjectImage;
   photoEdit?: PhotoEdit;
   focus?: { width: number; height: number; maskDeflatedBase64: string; strength: FocusStrength };
+  /** Optional: the subject cutout, lined up with `image` (so reopening does not re-run the model). */
+  subject?: { width: number; height: number; maskDeflatedBase64: string };
 }
 
 export interface ProjectSnapshotInput extends ProjectSettings {
@@ -74,6 +76,7 @@ export interface ProjectSnapshotInput extends ProjectSettings {
   photoEdit?: PhotoEdit;
   focusMask?: Mask | null;
   focusStrength?: FocusStrength;
+  subjectMask?: Mask | null;
 }
 
 // ---------------------------------------------------------------- base64
@@ -117,11 +120,15 @@ function slimSpool(s: FilamentSpool): FilamentSpool {
 
 export function buildProject(input: ProjectSnapshotInput, appVersion: string, planHash?: string, now = new Date()): ProjectFile {
   const {
-    projectName, slots, sourceImageData, photoOriginal, photoEdit, focusMask, focusStrength, ...settings
+    projectName, slots, sourceImageData, photoOriginal, photoEdit, focusMask, focusStrength, subjectMask, ...settings
   } = input;
+  const subjectFits = !!subjectMask && subjectMask.width === sourceImageData.width && subjectMask.height === sourceImageData.height;
   const edited = !!photoOriginal && !!photoEdit && !isDefaultEdit(photoEdit);
   const focused = !!photoOriginal && maskHasFocus(focusMask);
   return {
+    ...(subjectFits
+      ? { subject: { width: subjectMask!.width, height: subjectMask!.height, maskDeflatedBase64: bytesToBase64(deflateSync(subjectMask!.data, { level: 9 })) } }
+      : {}),
     ...(edited || focused ? { original: encodeImage(photoOriginal!), photoEdit: photoEdit } : {}),
     ...(focused
       ? {
@@ -235,6 +242,7 @@ export function parseProject(text: string): ParseResult {
   } else if (raw.focus !== undefined && !decodeFocus(raw as ProjectFile)) {
     delete raw.focus;
   }
+  if (raw.subject !== undefined && !decodeSubject(raw as ProjectFile)) delete raw.subject;
 
   return { ok: true, project: raw as ProjectFile };
 }
@@ -256,6 +264,18 @@ function validOriginalAndEdit(original: any, edit: any): boolean {
     isNum(c.x, 0, 1) && isNum(c.y, 0, 1) && isNum(c.w, 0.01, 1) && isNum(c.h, 0.01, 1) &&
     c.x + c.w <= 1.0001 && c.y + c.h <= 1.0001
   );
+}
+
+/** The subject cutout saved in a project, or null if there is none, it is damaged or does not fit the picture. */
+export function decodeSubject(p: ProjectFile): Mask | null {
+  const s = p.subject;
+  if (!s || s.width !== p.image?.width || s.height !== p.image?.height || typeof s.maskDeflatedBase64 !== 'string') return null;
+  try {
+    const data = inflateSync(base64ToBytes(s.maskDeflatedBase64));
+    return data.length === s.width * s.height ? { width: s.width, height: s.height, data } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The focus mask saved in a project, or null if there is none or it is damaged. */

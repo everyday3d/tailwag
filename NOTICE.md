@@ -15,6 +15,13 @@ All other product names, logos and brands are the property of their respective o
 
 Filament colours in the bundled catalog are approximate values taken from public manufacturer charts, and TD values labelled **Estimate** are predicted, not measured. See [DATA_SOURCES.md](DATA_SOURCES.md) for where each kind of data comes from and the policy for third-party lists, which are import-only.
 
+## Bundled third-party components
+
+- **BiRefNet** (lite, ONNX export by onnx-community) is the model that finds the subject for the "Subject (automatic)" shape. It is © ZhengPeng7 and contributors, released under the MIT License: https://github.com/ZhengPeng7/BiRefNet
+- **ONNX Runtime** runs that model on your computer. It is © Microsoft Corporation, released under the MIT License: https://github.com/microsoft/onnxruntime
+
+The subject is found entirely on your computer. Your photo is never uploaded.
+
 ## Early release and bugs
 
 TailWag Studio 1.1 is a **new release and may contain bugs**. Colour and height predictions are estimates until you calibrate your filaments, and results can differ from a real print. Please check the preview and your slicer before printing a large or expensive job.

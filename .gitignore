@@ -18,3 +18,6 @@ tests/
 
 # Personal convenience script (updates a local Desktop shortcut)
 scripts/update-desktop-shortcut.ps1
+
+# Subject-cutout model (224 MB, too big for git): fetched by scripts/fetch-model.mjs
+models/

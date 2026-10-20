@@ -53,6 +53,9 @@ export interface TailWagState {
   focusStrength: FocusStrength;
   /** The focus area lined up with sourceImageData, for the solver and the fidelity report */
   focusImageMask: Mask | null;
+  /** Subject found by the cutout model, lined up with sourceImageData (0..255) */
+  subjectMask: Mask | null;
+  subjectStatus: { kind: 'idle' | 'busy' | 'error'; message?: string };
 
   // Physical & Slicer Layer Parameters
   widthMm: number;
@@ -90,7 +93,9 @@ export interface TailWagState {
   setSlicePreviewMaxLayer: (layer: number) => void;
   setSourceImageData: (imageData: ImageData | null) => void;
   setPhotoState: (
-    partial: Partial<Pick<TailWagState, 'photoOriginal' | 'photoEdit' | 'focusMask' | 'focusStrength' | 'focusImageMask'>>
+    partial: Partial<
+      Pick<TailWagState, 'photoOriginal' | 'photoEdit' | 'focusMask' | 'focusStrength' | 'focusImageMask' | 'subjectMask' | 'subjectStatus'>
+    >
   ) => void;
   setSolverColorMode: (mode: 'natural' | 'cmyk' | 'manual') => void;
   setManualRelief: (mode: 'rematch' | 'fixed') => void;
@@ -317,6 +322,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
   focusMask: null,
   focusStrength: 'balanced',
   focusImageMask: null,
+  subjectMask: null,
+  subjectStatus: { kind: 'idle' },
 
   setPhotoState: (partial) => set(partial),
   setSourceImageData: (imageData) =>
@@ -376,6 +383,8 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
     keychainHoleDiameterMm: 4.5,
     magnetPockets: false,
     magnetDiameterMm: 8.2,
+    subjectMarginMm: 3,
+    subjectSmoothMm: 2,
   },
 
   catalog: initialStoreData.catalog,

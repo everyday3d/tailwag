@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('tailwagDesktop', {
   openExternal: (url: string) => ipcRenderer.invoke('tailwag:open-external', url),
   appVersion: () => ipcRenderer.invoke('tailwag:app-version'),
   systemInfo: () => ipcRenderer.invoke('tailwag:system-info'),
+  subjectAvailable: () => ipcRenderer.invoke('tailwag:subject-available'),
+  findSubject: (rgba: Uint8Array) => ipcRenderer.invoke('tailwag:find-subject', rgba),
   openProject: (path?: string) => ipcRenderer.invoke('tailwag:open-project', path),
   listSlicers: () => ipcRenderer.invoke('tailwag:list-slicers'),
   chooseSlicer: (slicerId: string) => ipcRenderer.invoke('tailwag:choose-slicer', slicerId),
