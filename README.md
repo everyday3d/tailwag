@@ -1,6 +1,6 @@
-# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.2.1`)
+# 🐕 TailWag Studio — 3D Filament Painting & TD Lithophane Engine (`v1.3.0`)
 
-[![Release](https://img.shields.io/badge/Version-1.2.1-orange?style=flat-square&logo=windows)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Version-1.3.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=apple)](https://github.com/everyday3d/tailwag/releases)
 [![Wiki Documentation](https://img.shields.io/badge/Docs-Wiki-purple?style=flat-square&logo=github)](https://github.com/everyday3d/tailwag/wiki)
 [![MCP Server](https://img.shields.io/badge/MCP%20Server-Experimental-orange?style=flat-square)](#mcp-server-agentic-solving--headless-3mf-generation)
@@ -147,7 +147,7 @@ Some antivirus programs distrust new unsigned apps. If one removes the installer
 Each file on the [releases page](https://github.com/everyday3d/tailwag/releases) shows a **SHA-256** checksum next to it. To compare it with your download, open PowerShell in the folder with the file and run:
 
 ```powershell
-Get-FileHash .\TailWag-Setup-1.2.1.exe -Algorithm SHA256
+Get-FileHash .\TailWag-Setup-1.3.0.exe -Algorithm SHA256
 ```
 
 The two values should be identical. You can also read every line of the source code in this repository.

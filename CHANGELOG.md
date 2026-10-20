@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-20
+
+Cut the print to your subject automatically, crop and rotate photos with a focus area, a new look for the whole app, and Tucker on the loading screen.
+
 ### Added
 - **Cut to the subject, automatically**: a new shape, **Subject (automatic)**, at the top of Shape and extras. TailWag finds the subject of the photo (your dog, a person, an object) and cuts the print to its outline, with no tracing. It runs on your computer in about 5 to 10 seconds, and the photo is never uploaded. Two sliders set the space around the subject and how much the outline is smoothed (fur and whiskers are rounded off so the edge prints cleanly), and frames follow the outline. It runs again by itself when you load or re-crop a photo, and projects save the outline. Desktop app only; it uses the BiRefNet model (MIT), bundled with the installers so it works offline.
 - **Copy debug info (#49)**: The About dialog (click the version badge) has a **Copy debug info** button that copies what a bug report needs: TailWag version, Windows version, match and colour mode (with the Manual relief setting), number of colours and layers, layer settings, the print plan ID and the last error shown. **Show what is copied** previews the exact text. It never includes the photo, file paths, usernames, access codes or passwords; the error text is cleaned before it is stored. The bug report form now asks for it.
