@@ -45,6 +45,7 @@ import { TdCalibratorModal } from './components/TdCalibratorModal';
 import { CalibrationPlateModal } from './components/CalibrationPlateModal';
 import { APP_VERSION } from './appVersion';
 import { UpdateModal } from './components/UpdateModal';
+import { recordError } from './engine/debugInfo';
 import { appHistory } from './store/appHistory';
 import { useHistoryStatus } from './store/undoHistory';
 import { buildProject, decodeImage, parseProject } from './engine/projectFile';
@@ -100,6 +101,20 @@ export const App: React.FC = () => {
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
+  // Keep the last error for "Copy debug info" (#49): banner errors and uncaught errors.
+  React.useEffect(() => {
+    if (jsonImportBanner && /^(Rejected|Error|JSON Parse Error)/.test(jsonImportBanner)) recordError('Project/library', jsonImportBanner);
+  }, [jsonImportBanner]);
+  React.useEffect(() => {
+    const onError = (e: ErrorEvent) => recordError('App', e.error ?? e.message);
+    const onRejection = (e: PromiseRejectionEvent) => recordError('App', e.reason);
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
   React.useEffect(() => {
     // Quiet startup check (at most once a day, can be turned off in the About dialog).
     if (!shouldAutoCheckNow()) return;
@@ -2033,7 +2048,7 @@ export const App: React.FC = () => {
       <TdCalibratorModal isOpen={isTdModalOpen} onClose={() => setIsTdModalOpen(false)} />
       <CalibrationPlateModal isOpen={isCalPlateOpen} onClose={() => setIsCalPlateOpen(false)} />
       <OnboardingTour isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
-      <UpdateModal isOpen={isUpdateOpen} onClose={() => setIsUpdateOpen(false)} result={updateResult} onResult={setUpdateResult} />
+      <UpdateModal isOpen={isUpdateOpen} onClose={() => setIsUpdateOpen(false)} result={updateResult} onResult={setUpdateResult} planHash={plan.hash} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} grid={grid} plan={plan} />

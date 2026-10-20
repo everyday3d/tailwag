@@ -12,6 +12,7 @@ import {
   summarizeFidelity,
 } from '../engine/fidelityReport';
 import { ExportVerificationError, type VerificationReport } from '../engine/verifyExport';
+import { recordError } from '../engine/debugInfo';
 import {
   generateVerified3mfPackage,
   generateVerifiedNoAmsBundle,
@@ -206,8 +207,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
       if (e instanceof ExportVerificationError) {
         setExportError(e.message);
         setExportIssues(e.report.errors.map((x) => x.message));
+        recordError('Export blocked', [e.message, ...e.report.errors.map((x) => x.message)].join(' | '));
       } else {
         setExportError(e instanceof Error ? e.message : String(e));
+        recordError('Export', e);
       }
       return;
     }
@@ -245,6 +248,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
         const res = await desktop.sendToSlicer({ slicerId: targetId, fileName: threeMfName, dataBase64: bytesToBase64(bytes) });
         if (!res?.ok) {
           setSlicerStatus({ kind: 'failed', error: res?.error || 'The slicer could not be started.', filePath: res?.filePath });
+          recordError('Send to slicer', res?.error || 'The slicer could not be started.');
         } else if (targetId === null) {
           setSlicerStatus({ kind: 'saved', filePath: res.filePath });
           desktop.showExportInFolder(res.filePath);
@@ -253,6 +257,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
         }
       } catch (e) {
         setSlicerStatus({ kind: 'failed', error: e instanceof Error ? e.message : String(e) });
+        recordError('Send to slicer', e);
       } finally {
         setExporting(false);
       }

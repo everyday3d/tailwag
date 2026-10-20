@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { X, RefreshCw, Download, ExternalLink, CheckCircle2, AlertTriangle, Dog } from 'lucide-react';
+import { X, RefreshCw, Download, ExternalLink, CheckCircle2, AlertTriangle, Dog, Bug, Check } from 'lucide-react';
 import { APP_VERSION } from '../appVersion';
+import { useTailWagStore } from '../store/useTailWagStore';
+import { buildDebugInfo, getLastError, type SystemInfo } from '../engine/debugInfo';
 import {
   RELEASES_PAGE_URL,
   autoCheckEnabled,
@@ -16,6 +18,8 @@ interface Props {
   /** Latest result known to the app (from the startup check), so the dialog opens with it. */
   result: UpdateResult | null;
   onResult: (r: UpdateResult) => void;
+  /** Hash of the print plan the preview shows, for the debug info. */
+  planHash?: string;
 }
 
 function openUrl(url: string) {
@@ -24,9 +28,43 @@ function openUrl(url: string) {
   else window.open(url, '_blank', 'noopener');
 }
 
-export const UpdateModal: React.FC<Props> = ({ isOpen, onClose, result, onResult }) => {
+export const UpdateModal: React.FC<Props> = ({ isOpen, onClose, result, onResult, planHash }) => {
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState(autoCheckEnabled());
+  const { matchMode, solverColorMode, manualRelief, slots, totalLayers, baseLayerMm, layerHeightMm } = useTailWagStore();
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const bridge = (window as any).tailwagDesktop;
+    if (isOpen && bridge?.systemInfo) bridge.systemInfo().then(setSystem).catch(() => setSystem(null));
+  }, [isOpen]);
+
+  const debugText = buildDebugInfo({
+    appVersion: APP_VERSION,
+    system,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+    matchMode,
+    solverColorMode,
+    manualRelief,
+    colourCount: slots.length,
+    totalLayers,
+    baseLayerMm,
+    layerHeightMm,
+    planHash,
+    lastError: getLastError(),
+  });
+
+  const copyDebug = async () => {
+    try {
+      await navigator.clipboard.writeText(debugText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setShowDebug(true);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -144,6 +182,29 @@ export const UpdateModal: React.FC<Props> = ({ isOpen, onClose, result, onResult
           />
           Check for updates automatically when TailWag starts (once a day). Only the public release info is requested.
         </label>
+
+        <div className="flex flex-col gap-1.5 border-t border-slate-800 pt-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyDebug}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-600 hover:bg-slate-800 text-xs font-semibold"
+            >
+              {copied ? <Check size={13} className="text-emerald-400" /> : <Bug size={13} />}
+              {copied ? 'Copied' : 'Copy debug info'}
+            </button>
+            <button onClick={() => setShowDebug((v) => !v)} className="text-[11px] text-slate-400 hover:text-slate-200 underline">
+              {showDebug ? 'Hide' : 'Show what is copied'}
+            </button>
+          </div>
+          <div className="text-[10px] text-slate-500">
+            Paste it into a bug report. It has no photo, file paths, usernames, access codes or passwords.
+          </div>
+          {showDebug && (
+            <pre className="text-[10px] text-slate-300 bg-slate-950 border border-slate-800 rounded p-2 whitespace-pre-wrap select-all">
+              {debugText}
+            </pre>
+          )}
+        </div>
       </div>
     </div>
   );

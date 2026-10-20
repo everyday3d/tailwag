@@ -299,6 +299,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle('tailwag:app-version', () => app.getVersion());
 
+  // For "Copy debug info" (#49): OS and runtime only. No hostname, username or paths.
+  ipcMain.handle('tailwag:system-info', () => ({
+    platform: process.platform,
+    release: os.release(),
+    arch: process.arch,
+    electron: process.versions.electron,
+  }));
+
   // Opens a TailWag project: a file dialog, or a known path (only .tailwag files are read).
   ipcMain.handle('tailwag:open-project', async (_event, knownPath?: string) => {
     try {

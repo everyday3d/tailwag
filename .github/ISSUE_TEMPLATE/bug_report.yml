@@ -22,6 +22,12 @@ body:
       label: Windows version and slicer
       placeholder: "Windows 11, Bambu Studio 2.x"
   - type: textarea
+    id: debug
+    attributes:
+      label: Debug info
+      description: In TailWag, click the version badge at the top left, then **Copy debug info**, and paste it here. It has no photo, file paths, usernames, access codes or passwords.
+      render: text
+  - type: textarea
     id: what
     attributes:
       label: What happened
