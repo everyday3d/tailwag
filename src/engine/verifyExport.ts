@@ -80,14 +80,21 @@ function expectedNodes(grid: HeightmapGrid): Uint8Array {
   return out;
 }
 
+/**
+ * XY distance (mm) within which a written vertex counts as a grid node. Vertices are written with
+ * 4 decimals (error <= 5e-5 mm); a point where a slope crosses a band plane can sit a few microns
+ * from a node, and must not be mistaken for the node's own top.
+ */
+const NODE_XY_TOL = 1e-4;
+
 function nodeIndexAt(grid: HeightmapGrid, x: number, y: number): number {
   const { cols, rows, widthMm, heightMm } = grid;
-  const cf = ((x + widthMm / 2) / widthMm) * (cols - 1);
-  const rf = ((heightMm / 2 - y) / heightMm) * (rows - 1);
-  const c = Math.round(cf);
-  const r = Math.round(rf);
-  if (Math.abs(cf - c) > 2e-3 || Math.abs(rf - r) > 2e-3) return -1; // intersection point inside an edge
+  const c = Math.round(((x + widthMm / 2) / widthMm) * (cols - 1));
+  const r = Math.round(((heightMm / 2 - y) / heightMm) * (rows - 1));
   if (c < 0 || c >= cols || r < 0 || r >= rows) return -1;
+  const nodeX = (c / (cols - 1)) * widthMm - widthMm / 2;
+  const nodeY = heightMm / 2 - (r / (rows - 1)) * heightMm;
+  if (Math.abs(x - nodeX) > NODE_XY_TOL || Math.abs(y - nodeY) > NODE_XY_TOL) return -1; // intersection point inside an edge
   return r * cols + c;
 }
 
