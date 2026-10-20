@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-20
+
+Send exports straight to Bambu Studio or OrcaSlicer, and a fix for slicers resetting the layer height and print settings of exported projects.
+
 ### Added
 - **Send to slicer (#50)**: The Export dialog has a Send to Bambu Studio / OrcaSlicer button under the .3MF export. It builds the same verified .3MF (a failed check still blocks it), writes it to a `TailWag Exports` folder in the system temp folder, and opens it in the slicer as a project, unchanged. Slicers are found on Windows from the uninstall registry and the usual install folders; you can also locate one by hand, and the choice and the last slicer used are remembered. With no slicer found, the dialog shows download links, Locate buttons and a "Save .3MF and show in folder" fallback; if the slicer cannot start, the file is kept and can be shown in its folder. The slicer is started directly with the file as its only argument (never through a shell), and exports older than a week are cleaned from that folder.
 
 ### Fixed
-- **Bambu Studio and OrcaSlicer reset the pinned print settings when opening an exported .3MF**: The project file set layer height 0.08 mm, first layer 0.16 mm, 100% infill and the other pinned settings, but did not mark them as changes from the "0.20mm Standard" preset, so the slicer put them back to the preset (0.20 mm layers, 15% infill) and the colour bands printed in far fewer, thicker layers. All pinned settings are now marked as project overrides, the override list is sized to the number of filaments, and export verification blocks a file in which any pinned setting is not marked. The calibration plate export had the same problem and is fixed too.
+- **Bambu Studio and OrcaSlicer reset the pinned print settings when opening an exported .3MF (#52)**: The project file set layer height 0.08 mm, first layer 0.16 mm, 100% infill and the other pinned settings, but did not mark them as changes from the "0.20mm Standard" preset, so the slicer put them back to the preset (0.20 mm layers, 15% infill) and the colour bands printed in far fewer, thicker layers. All pinned settings are now marked as project overrides, the override list is sized to the number of filaments, and export verification blocks a file in which any pinned setting is not marked. The calibration plate export had the same problem and is fixed too.
 - **Bambu Studio could not reach the cloud when opened by Send to slicer (#51)**: The slicer inherited TailWag's whole environment, including variables that only belong to TailWag's runtime or change how secure connections work (such as an `SSLKEYLOGFILE` set by antivirus software). The slicer is now started from its own install folder with those variables removed, the same way Windows starts it.
 
 ## [1.2.0] - 2026-10-18
