@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -97,11 +97,17 @@ function createWindow() {
     : path.join(__dirname, '../public/icon.png');
   logMsg(`createWindow() called. iconPath=${iconPath} exists=${fs.existsSync(iconPath)}`);
 
+  // Fit the screen: at 150% scaling a 1080p display is only 1280 x 720 for apps, smaller than
+  // the preferred size, so the window would hang off both edges. Small screens open maximized.
+  const work = screen.getPrimaryDisplay().workAreaSize;
+  const PREFERRED = { width: 1640, height: 980 };
+  const fitsPreferred = work.width >= PREFERRED.width && work.height >= PREFERRED.height;
   mainWindow = new BrowserWindow({
-    width: 1640,
-    height: 980,
-    minWidth: 1200,
-    minHeight: 760,
+    width: Math.min(PREFERRED.width, work.width),
+    height: Math.min(PREFERRED.height, work.height),
+    minWidth: Math.min(1100, work.width),
+    minHeight: Math.min(640, work.height),
+    show: false,
     title: 'TailWag Studio — 3D Filament Painting & TD Lithophane Engine',
     icon: iconPath,
     backgroundColor: '#0b0e14',
@@ -128,6 +134,7 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     logMsg('ready-to-show fired');
     if (!mainWindow) return;
+    if (!fitsPreferred) mainWindow.maximize();
     mainWindow.show();
     mainWindow.focus();
     mainWindow.setAlwaysOnTop(true);

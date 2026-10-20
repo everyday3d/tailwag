@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **New loading screen**: A redrawn boxer, printed layer by layer from the bed up by a small hot-end, in fawn, black mask and white like a real 3-colour filament print with visible layer lines. When the print finishes the tail starts wagging and the dog blinks. The title, version and tips are simpler, and the separate progress bar is gone. With reduced motion turned on, the dog appears finished and wags gently.
+- **Loading screen shows Tucker**: the boxer now has a docked tail like Tucker and a "Tucker" nameplate on the print bed. The print takes 6 seconds and the screen stays up at least that long.
+- **Fits smaller and scaled screens**: the window opens sized to the screen and maximized when the screen is smaller than its preferred size (for example a 1080p display at 150% scaling, which is 1280 × 720 for apps), instead of hanging off both edges. Below 1920 px wide the header keeps every control on one line with shorter labels ("3D", "Split", "Photo", "Export") and the two calibration tools as icons (hover for their names), and the 3D view's camera buttons and info strip no longer overlap.
 
 ## [1.2.1] - 2026-10-20
 

@@ -24,11 +24,11 @@
       /* The boxer is "printed" layer by layer (script below), then comes alive. */
       #tw-splash .tw-nozzle { transition: opacity .4s ease; }
       #tw-splash.tw-done .tw-nozzle { opacity: 0; }
-      @keyframes tw-wag { 0% { transform: rotate(-16deg); } 100% { transform: rotate(24deg); } }
+      @keyframes tw-wag { 0% { transform: rotate(-22deg); } 100% { transform: rotate(22deg); } }
       @keyframes tw-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
       @keyframes tw-ear { 0%, 88%, 100% { transform: rotate(0); } 92% { transform: rotate(-9deg); } 96% { transform: rotate(3deg); } }
       @keyframes tw-breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.012); } }
-      #tw-splash .tw-tail { transform-origin: 61px 76px; }
+      #tw-splash .tw-tail { transform-origin: 62px 77px; }
       #tw-splash .tw-eye { transform-box: fill-box; transform-origin: center; }
       #tw-splash .tw-ear { transform-box: fill-box; transform-origin: 20% 15%; }
       #tw-splash .tw-dog { transform-origin: 120px 161px; }
@@ -69,12 +69,15 @@
         <!-- print bed -->
         <ellipse cx="118" cy="162" rx="86" ry="5" fill="#000" opacity=".35" />
         <rect x="24" y="161" width="192" height="2" rx="1" fill="#2a3446" />
+        <!-- nameplate on the front of the bed -->
+        <rect x="100" y="167" width="40" height="10" rx="2.5" fill="#1a2232" stroke="#2f3b50" stroke-width=".6" />
+        <text x="120" y="174.4" text-anchor="middle" font-size="6.4" font-weight="600" letter-spacing=".3" fill="#e2c49a" font-family="'Segoe UI', system-ui, sans-serif">Tucker</text>
 
         <g clip-path="url(#tw-print)">
           <g class="tw-dog">
-            <!-- natural tail, set high (behind the body) -->
+            <!-- Tucker's docked tail: a short stub set high, carried up (behind the body) -->
             <g class="tw-tail">
-              <path d="M61 76 C53 70 49 60 51 48" fill="none" stroke="#c88a4e" stroke-width="7" stroke-linecap="round" />
+              <path d="M62 77 C59 74 57.5 70.5 57.8 66.5" fill="none" stroke="#c88a4e" stroke-width="7.5" stroke-linecap="round" />
             </g>
 
             <g id="tw-body">
@@ -154,7 +157,7 @@
         var line = document.getElementById('tw-layerline');
         var head = document.getElementById('tw-head');
         if (!splash || !clip || !line || !head) return;
-        var BED = 161, TOP = 28, STEP = 3, X0 = 44, X1 = 200, DURATION = 1900;
+        var BED = 161, TOP = 28, STEP = 3, X0 = 44, X1 = 200, DURATION = 6000;
         var layers = Math.ceil((BED - TOP) / STEP);
         var finished = false;
         var done = function () {

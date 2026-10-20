@@ -353,7 +353,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
             title="View flat from directly above like a 2D canvas"
           >
             <Eye className="w-3.5 h-3.5 text-orange-400" />
-            Top-Down Paint View
+            <span className="min-[1600px]:hidden">Top-down</span>
+            <span className="hidden min-[1600px]:inline">Top-Down Paint View</span>
           </button>
           <button
             onClick={() => setCameraPreset('angled-3d')}
@@ -361,7 +362,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
             title="Tilt camera to inspect 3D printed filament layer depth"
           >
             <Compass className="w-3.5 h-3.5 text-sky-400" />
-            3D Relief Angle
+            <span className="min-[1600px]:hidden">Angled</span>
+            <span className="hidden min-[1600px]:inline">3D Relief Angle</span>
           </button>
         </div>
       )}
@@ -458,11 +460,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
       )}
 
       {/* Floating HUD Telemetry Badge */}
-      <div className="absolute top-3 right-3 flex items-center gap-2 bg-slate-900/85 backdrop-blur-md border border-slate-800 px-3 py-1.5 rounded-lg text-xs text-slate-300 pointer-events-none">
+      <div className="absolute top-3 right-3 flex items-center gap-2 bg-slate-900/85 backdrop-blur-md border border-slate-800 px-3 py-1.5 rounded-lg text-xs text-slate-300 pointer-events-none whitespace-nowrap">
         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
         <span>
-          3D Filament Painted Preview • {grid.widthMm}×{grid.heightMm}mm • {totalLayers} Layers (
-          {(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm Max Z)
+          <span className="hidden min-[1750px]:inline">3D Filament Painted Preview • </span>
+          {grid.widthMm}×{grid.heightMm}mm • {totalLayers} Layers
+          <span className="hidden min-[1400px]:inline">
+            {' '}({(baseLayerMm + (totalLayers - 1) * layerHeightMm).toFixed(2)}mm Max Z)
+          </span>
         </span>
         <span className="text-slate-500">|</span>
         <span className="text-orange-400 font-semibold">{slots.length} Filaments</span>

@@ -1,5 +1,5 @@
-/** Minimum time the loading screen stays up so the first tip can be read. */
-export const SPLASH_MIN_MS = 2800;
+/** Minimum time the loading screen stays up: as long as the dog takes to print (DURATION in index.html). */
+export const SPLASH_MIN_MS = 6000;
 
 declare global {
   interface Window {
