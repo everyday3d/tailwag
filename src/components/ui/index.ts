@@ -5,4 +5,4 @@ export type { ButtonProps, IconButtonProps } from './Button';
 export { Segmented } from './Segmented';
 export type { SegmentOption } from './Segmented';
 export { Section } from './Section';
-export { SliderRow, NumberField, Badge } from './Fields';
+export { SliderRow, NumberField, SelectField, CheckboxRow, Badge } from './Fields';

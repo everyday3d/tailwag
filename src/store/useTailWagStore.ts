@@ -99,6 +99,7 @@ export interface TailWagState {
   triggerReRender: () => void;
   setDimensions: (widthMm: number, heightMm: number) => void;
   setLayerParams: (baseLayerMm: number, layerHeightMm: number, totalLayers: number) => void;
+  setLockAspect: (lock: boolean) => void;
   setTotalDepthMm: (depthMm: number) => void;
   setBaseSolidThicknessMm: (thicknessMm: number) => void;
   setMeshResolution: (res: number) => void;
@@ -428,6 +429,7 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
         slots: updatedSlots,
       };
     }),
+  setLockAspect: (lockAspect) => set({ lockAspect }),
   setTotalDepthMm: (depthMm) =>
     set((state) => {
       const clampedMm = Math.max(0.6, Math.min(6.0, Number(depthMm) || 2.0));

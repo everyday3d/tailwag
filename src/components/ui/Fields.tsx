@@ -47,6 +47,50 @@ export const NumberField: React.FC<NumberFieldProps> = ({ label, unit, className
   );
 };
 
+interface SelectFieldProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+  label: string;
+  children: React.ReactNode;
+}
+
+/** A labelled dropdown in the same style as NumberField. */
+export const SelectField: React.FC<SelectFieldProps> = ({ label, className = '', children, ...select }) => {
+  const id = useId();
+  return (
+    <div className={`flex flex-col gap-1 min-w-0 ${className}`}>
+      <label htmlFor={id} className="text-small text-tw-ink-2">
+        {label}
+      </label>
+      <select
+        id={id}
+        className={`h-8 w-full px-2 rounded-control bg-tw-ground border border-tw-line text-tw-ink text-body ${FOCUS_RING}`}
+        {...select}
+      >
+        {children}
+      </select>
+    </div>
+  );
+};
+
+interface CheckboxRowProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
+  label: React.ReactNode;
+  description?: string;
+  icon?: React.ReactNode;
+}
+
+/** A checkbox with its label (and optional one-line description); the whole row is clickable. */
+export const CheckboxRow: React.FC<CheckboxRowProps> = ({ label, description, icon, className = '', ...input }) => (
+  <label className={`flex items-start gap-2.5 p-2.5 rounded-control bg-tw-raised/60 border border-tw-line cursor-pointer hover:border-tw-line-strong ${className}`}>
+    <input type="checkbox" className={`mt-0.5 w-4 h-4 shrink-0 accent-tw-accent ${FOCUS_RING}`} {...input} />
+    <span className="flex flex-col gap-0.5 min-w-0">
+      <span className="flex items-center gap-1.5 text-body text-tw-ink">
+        {icon}
+        {label}
+      </span>
+      {description && <span className="text-small text-tw-ink-2">{description}</span>}
+    </span>
+  </label>
+);
+
 type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger';
 const TONE: Record<Tone, string> = {
   neutral: 'bg-tw-raised text-tw-ink-2 border-tw-line',
