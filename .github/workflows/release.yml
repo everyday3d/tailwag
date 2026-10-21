@@ -67,7 +67,9 @@ jobs:
   build-mac:
     name: Build macOS (arm64 & x64)
     if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
-    runs-on: macos-latest
+    # Intel Mac runners: the Apple Silicon ones are often out of capacity. electron-builder still
+    # makes both the arm64 and x64 builds from here (nothing native is compiled).
+    runs-on: macos-15-intel
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -120,11 +122,25 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # A manual run that builds one platform adds to an existing release: keep the checksums of the
+      # files already on it, so SHA256SUMS.txt still covers every download
+      - name: Keep checksums of files already on the release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern SHA256SUMS.txt --dir existing || true
+
       - name: Generate SHA-256 Checksums
         working-directory: artifacts
         run: |
           echo "Generating SHA-256 checksums..."
-          sha256sum *.* > SHA256SUMS.txt
+          sha256sum *.* > ../new-sums.txt
+          if [ -f ../existing/SHA256SUMS.txt ]; then
+            # New files first, so a rebuilt file's new checksum wins
+            cat ../new-sums.txt ../existing/SHA256SUMS.txt | awk '!seen[$2]++' > SHA256SUMS.txt
+          else
+            cp ../new-sums.txt SHA256SUMS.txt
+          fi
           cat SHA256SUMS.txt
 
       - name: Publish to GitHub Release
