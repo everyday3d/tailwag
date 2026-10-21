@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-21
+
+Fix poor phone photos in one click, and recolour any colour in the picture.
+
+### Added
+- **Fix photo**: one button on the Photo card for dark, dull, noisy or slightly blurry phone pictures. It cleans up noise first (colour speckle firmly, brightness only between similar neighbours, so fur and eyes stay sharp), takes out a colour cast (using bright neutral areas such as a white chest, but never turning a fawn dog grey), evens out uneven lighting and lifts a dark picture, then sharpens without bringing the noise back. Click again for the original. It keeps the print size and the subject cutout, picks the filaments again for the improved colours, and is saved with the photo edit, so re-cropping and projects keep it.
+- **Recolour**: a **Recolour** button on the Photo card. Click a colour in the picture and choose what it should become, from your own spools or any colour: for example the orange dog in a logo becomes light brown. Colours are shifted rather than painted flat, so shading and fur texture survive. A **How similar** slider sets how wide a range of shades counts, and **Show the area that changes** highlights exactly what moves. Up to 12 changes; applying picks the filaments again for the new colours. Saved with the photo edit (after Fix photo), so re-cropping and projects keep it.
+
 ## [1.4.0] - 2026-10-21
 
 Name plates, wall clocks with cut-through numbers and a back plate, more fonts (including your own), magnets of any size, and one-click templates for coasters, ornaments, keychains, fridge magnets and desk stands.

@@ -65,7 +65,10 @@ import {
   applyPhotoEdit,
   cropPixelSize,
   maskForOutput,
+  type PhotoEdit,
 } from './engine/photoEdit';
+import type { RecolorRule } from './engine/recolor';
+import { RecolorModal } from './components/RecolorModal';
 import { appHistory } from './store/appHistory';
 import { useHistoryStatus } from './store/undoHistory';
 import { buildProject, decodeFocus, decodeImage, decodeSubject, parseProject } from './engine/projectFile';
@@ -121,6 +124,7 @@ export const App: React.FC = () => {
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [isPhotoEditorOpen, setIsPhotoEditorOpen] = useState(false);
+  const [isRecolorOpen, setIsRecolorOpen] = useState(false);
   const { photoOriginal, photoEdit, focusMask, focusStrength, setPhotoState, subjectMask } = useTailWagStore();
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
   // Keep the last error for "Copy debug info" (#49): banner errors and uncaught errors.
@@ -590,6 +594,26 @@ export const App: React.FC = () => {
     setIsPhotoEditorOpen(false);
   };
 
+  /** "Fix photo": the same picture, cleaned up (photoEnhance.ts). Keeps the print size and cutout; picks filaments again. */
+  const handleFixPhoto = (on: boolean) => applyPictureChange({ enhance: on });
+
+  /** Recolour: "this colour should be that colour" (recolor.ts). Same path as Fix photo. */
+  const handleApplyRecolor = (rules: RecolorRule[]) => {
+    applyPictureChange({ recolor: rules });
+    setIsRecolorOpen(false);
+  };
+
+  /** A change to the picture's colours only: keeps the print size and cutout, picks filaments again. */
+  const applyPictureChange = (patch: Partial<PhotoEdit>) => {
+    const s = useTailWagStore.getState();
+    const original = s.photoOriginal ?? sourceImageData;
+    const edit = { ...s.photoEdit, ...patch };
+    const out = applyPhotoEdit(original, edit);
+    setPhotoState({ photoOriginal: original, photoEdit: edit });
+    const px = cropPixelSize(original.width, original.height, edit);
+    adoptPhoto(new ImageData(new Uint8ClampedArray(out.data), out.width, out.height), px.width, px.height, undefined, false);
+  };
+
   /** One click to a coaster, ornament, keychain, fridge magnet or desk stand (templates.ts). */
   const handleApplyTemplate = (t: PrintTemplate) => {
     const s = useTailWagStore.getState();
@@ -838,7 +862,13 @@ export const App: React.FC = () => {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* LEFT: the photo, its adjustments and the filament library */}
         <aside className="w-80 bg-tw-panel border-r border-tw-line flex flex-col min-h-0 shrink-0 p-4 gap-5 overflow-y-auto">
-          <PhotoPanel sourceDataUrl={sourceDataUrl} onEditPhoto={() => setIsPhotoEditorOpen(true)} onLoadPhoto={() => fileInputRef.current?.click()} />
+          <PhotoPanel
+            sourceDataUrl={sourceDataUrl}
+            onEditPhoto={() => setIsPhotoEditorOpen(true)}
+            onLoadPhoto={() => fileInputRef.current?.click()}
+            onFixPhoto={handleFixPhoto}
+            onRecolor={() => setIsRecolorOpen(true)}
+          />
           <div className="h-px bg-tw-line shrink-0" aria-hidden="true" />
           <PhotoAdjustPanel />
           <div className="h-px bg-tw-line shrink-0" aria-hidden="true" />
@@ -914,6 +944,7 @@ export const App: React.FC = () => {
       <UpdateModal isOpen={isUpdateOpen} onClose={() => setIsUpdateOpen(false)} result={updateResult} onResult={setUpdateResult} planHash={plan.hash} />
       <FilamentLibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} />
       <SpoolEditModal spoolId={editingSpoolId} onClose={() => setEditingSpoolId(null)} />
+      <RecolorModal isOpen={isRecolorOpen} onClose={() => setIsRecolorOpen(false)} onApply={handleApplyRecolor} />
       <PhotoEditorModal
         isOpen={isPhotoEditorOpen}
         onClose={() => setIsPhotoEditorOpen(false)}

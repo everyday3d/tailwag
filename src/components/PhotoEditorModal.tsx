@@ -386,7 +386,7 @@ export const PhotoEditorModal: React.FC<Props> = ({ isOpen, onClose, onApply, or
                 className="self-start"
                 onClick={() => {
                   setAspect('free');
-                  setEdit({ ...DEFAULT_EDIT });
+                  setEdit({ ...DEFAULT_EDIT, enhance: edit.enhance, recolor: edit.recolor });
                 }}
               >
                 Reset crop and rotation

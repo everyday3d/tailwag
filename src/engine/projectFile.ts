@@ -243,6 +243,12 @@ export function parseProject(text: string): ParseResult {
     delete raw.focus;
   }
   if (raw.subject !== undefined && !decodeSubject(raw as ProjectFile)) delete raw.subject;
+  // Recolour rules (optional): keep only well-formed ones
+  if (raw.photoEdit && raw.photoEdit.recolor !== undefined) {
+    const hex = (v: any) => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    const rules = Array.isArray(raw.photoEdit.recolor) ? raw.photoEdit.recolor : [];
+    raw.photoEdit.recolor = rules.filter((r: any) => r && hex(r.from) && hex(r.to) && isNum(r.tolerance, 1, 100)).slice(0, 12);
+  }
 
   return { ok: true, project: raw as ProjectFile };
 }

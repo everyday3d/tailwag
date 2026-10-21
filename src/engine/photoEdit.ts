@@ -11,6 +11,9 @@
  * what was painted. Everything here is pure so it can be tested without a browser.
  */
 
+import { enhancePhoto } from './photoEnhance';
+import { applyRecolor, type RecolorRule } from './recolor';
+
 export interface ImageLike {
   width: number;
   height: number;
@@ -37,6 +40,10 @@ export interface PhotoEdit {
   /** Small straightening angle in degrees, clockwise positive */
   straighten: number;
   crop: CropRect;
+  /** "Fix photo": colour balance, even lighting, clean-up and sharpening (photoEnhance.ts) */
+  enhance?: boolean;
+  /** "Recolour": this colour becomes that colour (recolor.ts), applied after Fix photo */
+  recolor?: RecolorRule[];
 }
 
 export const ORIGINAL_MAX_SIDE = 1600;
@@ -53,7 +60,7 @@ export const FOCUS_SHARE: Record<FocusStrength, number> = { gentle: 0.35, balanc
 export const DEFAULT_EDIT: PhotoEdit = { rotate: 0, straighten: 0, crop: { x: 0, y: 0, w: 1, h: 1 } };
 
 export const isDefaultEdit = (e: PhotoEdit): boolean =>
-  e.rotate === 0 && e.straighten === 0 && e.crop.x === 0 && e.crop.y === 0 && e.crop.w === 1 && e.crop.h === 1;
+  e.rotate === 0 && e.straighten === 0 && e.crop.x === 0 && e.crop.y === 0 && e.crop.w === 1 && e.crop.h === 1 && !e.enhance && !e.recolor?.length;
 
 /** Size of edit space for a source of w × h. */
 export function editSpaceSize(w: number, h: number, rotate: PhotoEdit['rotate']): { width: number; height: number } {
@@ -170,7 +177,10 @@ export function applyPhotoEdit(
       out[i * 4 + k] = top * (1 - ay) + bot * ay;
     }
   });
-  return { width: outW, height: outH, data: out };
+  let img: { width: number; height: number; data: Uint8ClampedArray } = { width: outW, height: outH, data: out };
+  if (edit.enhance) img = enhancePhoto(img);
+  if (edit.recolor?.length) img = applyRecolor(img, edit.recolor);
+  return img;
 }
 
 // ---------------------------------------------------------------- focus mask

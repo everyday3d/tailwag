@@ -25,6 +25,8 @@
 - **Shows the print before you print it.** A 3D preview shows the predicted colours, with a side-by-side compare against your photo.
 - **Cuts the print to your subject.** It can find your dog, a person or an object in the photo and cut the print to its outline automatically.
 - **Crop, turn and focus.** Crop and straighten the photo, and paint over what matters most, like a face, so it gets the best colours.
+- **Fixes poor phone photos.** One click makes a dark, dull or blurry photo brighter, cleaner and sharper.
+- **Recolours.** Click a colour in the picture and choose what it becomes, such as an orange cartoon dog that should be light brown.
 - **Makes gifts in one click.** Templates for a coaster, ornament, keychain, fridge magnet or desk stand set the size, shape, holes and depth for you.
 - **Adds a name.** Raise a name and a date on a name plate, like a memorial plaque, in one of the bundled fonts or any font on your computer.
 - **Makes wall clocks.** Raised numbers, or numbers cut right through with a coloured back plate behind them that also holds the clock movement and hangs on the wall.
