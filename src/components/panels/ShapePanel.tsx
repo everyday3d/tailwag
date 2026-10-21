@@ -448,7 +448,7 @@ export const ShapePanel: React.FC<{ onApplyTemplate: (t: PrintTemplate) => void 
             <>
               <TextField
                 label="Second line (optional, smaller)"
-                placeholder="2019 – 2026"
+                placeholder="Good boy"
                 maxLength={CAPTION_MAX_CHARS}
                 value={cad.captionLine2 ?? ''}
                 onChange={(e) => setCadConfig({ captionLine2: e.target.value })}

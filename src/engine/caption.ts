@@ -1,5 +1,5 @@
 /**
- * Name plates and captions: raised text on the print ("Tucker", "2019 – 2026").
+ * Name plates and captions: raised text on the print ("Tucker", "Good boy").
  *
  * 'plate'  : a flat bar along the bottom (or top) edge, printed at the solid-base height in the first
  *            filament, with the letters raised to the top in the last filament, like a memorial plaque.
