@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Maximize2, Minimize2, Compass, Eye, X } from 'lucide-react';
 import { IconButton, FOCUS_RING } from './ui';
-import { HeightmapGrid } from '../engine/cadMeshBuilder';
+import { BACK_PLATE_DEFAULTS, HeightmapGrid } from '../engine/cadMeshBuilder';
+import { buildClockBackPlateGrid } from '../engine/clockBackPlate';
 import { PrintPlan, planLayerRgb } from '../engine/printPlan';
 import { srgbToLinear } from '../engine/colorScience';
 import { useTailWagStore } from '../store/useTailWagStore';
@@ -46,6 +47,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
     totalLayers,
     slots,
     renderVersion,
+    cad,
   } = useTailWagStore();
 
   const setCameraPreset = (preset: 'top-down' | 'angled-3d') => {
@@ -183,6 +185,51 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({ grid, plan, sourceDataUr
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
   }, [lightAzimuthDeg, lightElevationDeg, backlitLithoMode]);
+
+  // Clock back plate behind cut-through numerals: a flat sheet in the plate's colour under the print
+  const backPlateRef = useRef<THREE.Mesh | null>(null);
+  const showBackPlate = cad.clockMode && cad.clockNumerals === 'cut';
+  const backPlateHex = cad.backPlateHex ?? BACK_PLATE_DEFAULTS.hex;
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (backPlateRef.current) {
+      scene.remove(backPlateRef.current);
+      backPlateRef.current.geometry.dispose();
+      (backPlateRef.current.material as THREE.Material).dispose();
+      backPlateRef.current = null;
+    }
+    if (!showBackPlate) return;
+    const plate = buildClockBackPlateGrid(grid.widthMm, grid.heightMm, cad, 160);
+    const { cols, rows, topZ } = plate;
+    const positions: number[] = [];
+    const vIndex = new Int32Array(cols * rows).fill(-1);
+    let n = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        if (topZ[i] <= 0) continue;
+        vIndex[i] = n++;
+        positions.push((c / (cols - 1)) * plate.widthMm - plate.widthMm / 2, plate.heightMm / 2 - (r / (rows - 1)) * plate.heightMm, -0.04);
+      }
+    }
+    const indices: number[] = [];
+    for (let r = 0; r < rows - 1; r++) {
+      for (let c = 0; c < cols - 1; c++) {
+        const a = vIndex[r * cols + c];
+        const b = vIndex[r * cols + c + 1];
+        const d = vIndex[(r + 1) * cols + c];
+        const e = vIndex[(r + 1) * cols + c + 1];
+        if (a >= 0 && b >= 0 && d >= 0 && e >= 0) indices.push(a, d, b, b, d, e);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: backPlateHex, side: THREE.DoubleSide }));
+    scene.add(mesh);
+    backPlateRef.current = mesh;
+  }, [showBackPlate, backPlateHex, grid.widthMm, grid.heightMm, cad.shape, cad.clockShaftDiameterMm, cad.backPlateThicknessMm]);
 
   const vertexCellMapRef = useRef<Int32Array>(new Int32Array(0));
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Dog,
   Upload,
@@ -50,6 +50,8 @@ import { recordError } from './engine/debugInfo';
 import { PhotoEditorModal, type PhotoEditResult } from './components/PhotoEditorModal';
 import { AppHeader } from './components/AppHeader';
 import { findSubjectNow } from './utils/subjectFinder';
+import { loadPrintFonts } from './engine/printFonts';
+import { squareCrop, templateSize, type PrintTemplate } from './engine/templates';
 import { SolverPanel } from './components/panels/SolverPanel';
 import { PrintSizePanel } from './components/panels/PrintSizePanel';
 import { ShapePanel } from './components/panels/ShapePanel';
@@ -232,6 +234,16 @@ export const App: React.FC = () => {
   if (!slotsAdjusting || liveMatchLut === null || heldMatchLut.current === null) heldMatchLut.current = liveMatchLut;
   const matchLut = heldMatchLut.current;
 
+  // Text fonts load lazily; redraw the relief once the chosen ones are ready
+  const [fontsLoaded, setFontsLoaded] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void loadPrintFonts([cad.clockFont ?? 'modern', cad.captionFont ?? 'modern']).then(() => live && setFontsLoaded((n) => n + 1));
+    return () => {
+      live = false;
+    };
+  }, [cad.clockFont, cad.captionFont]);
+
   // Compute 2.5D Heightmap Grid reactively
   const grid = useMemo(
     () =>
@@ -270,6 +282,7 @@ export const App: React.FC = () => {
       cad,
       matchLut,
       subjectMask,
+      fontsLoaded,
     ]
   );
 
@@ -577,6 +590,23 @@ export const App: React.FC = () => {
     setIsPhotoEditorOpen(false);
   };
 
+  /** One click to a coaster, ornament, keychain, fridge magnet or desk stand (templates.ts). */
+  const handleApplyTemplate = (t: PrintTemplate) => {
+    const s = useTailWagStore.getState();
+    // A circle needs a square photo; crop to a centred square first (adjustable in Edit photo)
+    if (t.square && Math.abs(s.widthMm / s.heightMm - 1) > 0.01) {
+      const original = s.photoOriginal ?? sourceImageData;
+      handleApplyPhotoEdit({ edit: squareCrop(s.photoEdit, original.width, original.height), mask: s.focusMask, strength: s.focusStrength });
+    }
+    // Take out any magnet backing first, so the base is set from a clean state
+    setCadConfig({ magnetPockets: false });
+    setBaseSolidThicknessMm(t.solidBaseMm);
+    const now = useTailWagStore.getState();
+    const size = templateSize(t, now.widthMm / now.heightMm);
+    setDimensions(size.widthMm, size.heightMm);
+    setCadConfig({ ...t.cad, template: t.id });
+  };
+
   const handleRunAiSolver = (
     modeOverride?: 'owned' | 'shown',
     colorCountOverride?: 4 | 7 | 8 | 12 | 16,
@@ -873,7 +903,7 @@ export const App: React.FC = () => {
           <div className="h-px bg-tw-line shrink-0" aria-hidden="true" />
           <PrintSizePanel />
           <div className="h-px bg-tw-line shrink-0" aria-hidden="true" />
-          <ShapePanel />
+          <ShapePanel onApplyTemplate={handleApplyTemplate} />
         </aside>
       </div>
 

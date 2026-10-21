@@ -1,12 +1,19 @@
 import { sampleGridColors, buildTargetBuckets, assignLayersByColorMatch, lutToLab } from './colorMatch';
 import { buildSubjectShape, SUBJECT_DEFAULTS } from './subjectCut';
 import type { Mask } from './photoEdit';
+import { renderCaptionMasks, type CaptionConfig } from './caption';
+import { stencilBridges } from './stencilBridges';
+import { fontSpec, type PrintFont } from './printFonts';
+import { MAGNET_DEFAULTS, magnetCentres, magnetFit, type MagnetLayout } from './magnets';
 /** 'subject' cuts to the outline found by the cutout model; without a cutout it prints as 'rect'. */
 export type MeshShapeMode = 'rect' | 'rounded' | 'circle' | 'hexagon' | 'paw' | 'shield' | 'subject';
 export type FrameStyle = 'none' | 'beveled' | 'modern-lip' | 'stepped';
 export type ClockStencilStyle = 'none' | 'modern-arabic' | 'roman' | 'paw-markers';
+export type ClockNumeralMode = 'raised' | 'cut';
+export const BACK_PLATE_DEFAULTS = { thicknessMm: 2, hex: '#F2F2F2' };
 
-export interface CadCutoutConfig {
+/** Name plate or caption fields come from CaptionConfig (caption.ts). */
+export interface CadCutoutConfig extends CaptionConfig {
   shape: MeshShapeMode;
   frameStyle: FrameStyle;
   frameWidthMm: number;
@@ -16,12 +23,31 @@ export interface CadCutoutConfig {
   clockShaftDiameterMm: number; // default 8.2mm
   clockMovementPocket: boolean; // rear 56x56mm cavity
   clockStencil: ClockStencilStyle;
+  /** 'cut': numerals and minute marks go right through the print, with a coloured back plate behind */
+  clockNumerals?: ClockNumeralMode;
+  clockFont?: PrintFont;
+  /** The ring of minute marks around the edge (on unless turned off) */
+  clockMinuteMarks?: boolean;
+  /** Back plate for cut-through numerals */
+  backPlateThicknessMm?: number;
+  backPlateHex?: string;
   /** Top Keychain / Ornament Loop */
   keychainHole: boolean;
   keychainHoleDiameterMm: number;
   /** Rear Neodymium Magnet Cavities */
   magnetPockets: boolean;
-  magnetDiameterMm: number; // default 8.2mm
+  /** The magnet's own size; the pocket adds a press-fit clearance (magnets.ts) */
+  magnetDiameterMm: number;
+  magnetThicknessMm?: number;
+  magnetLayout?: MagnetLayout;
+  /** 'pockets' cut into the back (adding backing layers when needed); 'cups' are printed separately and glued on */
+  magnetStyle?: 'pockets' | 'cups';
+  /** Plain layers added under the picture so the magnets fit (magnetBacking.ts) */
+  magnetBackLayers?: number;
+  /** A separate stand that holds the print at a slight lean (templates.ts) */
+  deskStand?: boolean;
+  /** The template applied last, highlighted in the panel */
+  template?: string;
   /** Subject outline: space kept around the subject, and how much fur and whiskers are smoothed */
   subjectMarginMm?: number;
   subjectSmoothMm?: number;
@@ -38,6 +64,18 @@ export interface HeightmapGrid {
   bottomZ: Float32Array;
   /** Normalized luminance [0..1] for each grid cell (including frame/stencil overrides) */
   normLum: Float32Array;
+}
+
+/** How many layers the solid base takes: the relief never goes lower than the top of the last one. */
+export function solidBaseLayers(baseLayerMm: number, layerHeightMm: number, totalLayers: number, baseSolidThicknessMm?: number): number {
+  return baseSolidThicknessMm !== undefined
+    ? Math.min(Math.max(1, totalLayers - 2), Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm)))
+    : 1;
+}
+
+/** Height (mm) of the solid base's top. */
+export function solidBaseTopMm(baseLayerMm: number, layerHeightMm: number, totalLayers: number, baseSolidThicknessMm?: number): number {
+  return baseLayerMm + (solidBaseLayers(baseLayerMm, layerHeightMm, totalLayers, baseSolidThicknessMm) - 1) * layerHeightMm;
 }
 
 /**
@@ -89,7 +127,15 @@ export function evaluateShapeMask(nx: number, ny: number, shape: MeshShapeMode):
 /**
  * Generates an offscreen 2D stencil mask for Clock Numerals / Paw Markers so they raise to the top highlight layer
  */
-function renderClockStencilMask(cols: number, rows: number, style: ClockStencilStyle): Uint8Array {
+function renderClockStencilMask(
+  cols: number,
+  rows: number,
+  style: ClockStencilStyle,
+  font?: PrintFont,
+  minuteMarks = true,
+  /** Frame width in grid cells, kept clear when the numerals move out */
+  edgeInsetPx = 0
+): Uint8Array {
   const mask = new Uint8Array(cols * rows);
   if (style === 'none' || typeof document === 'undefined') return mask;
 
@@ -108,29 +154,41 @@ function renderClockStencilMask(cols: number, rows: number, style: ClockStencilS
   const cy = rows / 2;
   const radius = Math.min(cols, rows) * 0.39;
   const fontSize = Math.max(12, Math.round(Math.min(cols, rows) * 0.095));
-  ctx.font = `900 ${fontSize}px "Inter", "Segoe UI", Arial, sans-serif`;
+  ctx.font = fontSpec(font, fontSize);
 
-  const romanLabels = ['12', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+  const romanLabels = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
   const arabicLabels = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+
+  // Without the minute marks the numerals move out: each sits by its own size so its outer edge is a
+  // small, even margin from the clock's edge (or frame). Wide ones such as VIII stay inside.
+  const outerLimit = Math.min(cols, rows) * 0.475 - edgeInsetPx;
+  const capH = fontSize * 0.72;
 
   for (let h = 0; h < 12; h++) {
     const angle = (h * Math.PI) / 6 - Math.PI / 2;
-    const x = cx + Math.cos(angle) * radius;
-    const y = cy + Math.sin(angle) * radius;
+    const isDot = style === 'paw-markers' && h % 3 !== 0;
+    const label = style === 'roman' ? romanLabels[h] : arabicLabels[h];
+    let r = radius;
+    if (!minuteMarks) {
+      const halfW = isDot ? fontSize * 0.22 : ctx.measureText(label).width / 2;
+      const halfH = isDot ? fontSize * 0.22 : capH / 2;
+      r = Math.max(radius, outerLimit - (Math.abs(Math.cos(angle)) * halfW + Math.abs(Math.sin(angle)) * halfH));
+    }
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
 
-    if (style === 'paw-markers' && h % 3 !== 0) {
+    if (isDot) {
       // Draw mini paw / dot marker on non-cardinal hours
       ctx.beginPath();
       ctx.arc(x, y, fontSize * 0.22, 0, Math.PI * 2);
       ctx.fill();
     } else {
-      const label = style === 'roman' ? romanLabels[h] : arabicLabels[h];
       ctx.fillText(label, x, y);
     }
   }
 
   // Outer minute tick ring
-  for (let m = 0; m < 60; m++) {
+  for (let m = 0; m < (minuteMarks ? 60 : 0); m++) {
     const angle = (m * Math.PI) / 30 - Math.PI / 2;
     const rInner = Math.min(cols, rows) * (m % 5 === 0 ? 0.455 : 0.468);
     const rOuter = Math.min(cols, rows) * 0.482;
@@ -949,16 +1007,21 @@ export function buildHeightmapGrid(params: {
     finalColorLum.set(colorSmoothedLum);
   }
 
-  const clockStencilMask = cad.clockMode ? renderClockStencilMask(cols, rows, cad.clockStencil) : new Uint8Array(cols * rows);
+  const clockStencilMask = cad.clockMode ? renderClockStencilMask(
+        cols,
+        rows,
+        cad.clockStencil,
+        cad.clockFont,
+        cad.clockMinuteMarks !== false,
+        cad.frameStyle !== 'none' ? (cad.frameWidthMm / Math.min(widthMm, heightMm)) * Math.min(cols, rows) : 0
+      )
+    : new Uint8Array(cols * rows);
   const maxReliefZ = baseLayerMm + (totalLayers - 1) * layerHeightMm;
   const halfW = widthMm / 2;
   const halfH = heightMm / 2;
   const frameNormThreshold = (cad.frameWidthMm / Math.max(widthMm, heightMm)) * 2.0;
 
-  const minBaseLayer =
-    baseSolidThicknessMm !== undefined
-      ? Math.min(Math.max(1, totalLayers - 2), Math.max(1, 1 + Math.round(Math.max(0, baseSolidThicknessMm - baseLayerMm) / layerHeightMm)))
-      : 1;
+  const minBaseLayer = solidBaseLayers(baseLayerMm, layerHeightMm, totalLayers, baseSolidThicknessMm);
 
   const rawDiscreteLayers = new Uint16Array(cols * rows);
   const continuousLayers = new Float32Array(cols * rows);
@@ -1003,6 +1066,23 @@ export function buildHeightmapGrid(params: {
         )
       : null;
 
+  // Name plate or caption: plate at the solid-base height, letters raised above the relief.
+  // Both sit exactly on layer boundaries so every column prints as modeled.
+  const caption = renderCaptionMasks(cad, cols, rows, widthMm, heightMm, cad.frameStyle !== 'none' ? cad.frameWidthMm : 0);
+  const plateZ = baseLayerMm + (minBaseLayer - 1) * layerHeightMm;
+  const letterZ = maxReliefZ + Math.round((cad.frameHeightBonusMm * 0.5) / layerHeightMm) * layerHeightMm;
+  const mmToNorm = 2 / Math.max(widthMm, heightMm);
+
+  // Magnet pockets, sized for the person's magnets and kept inside the solid base
+  const magnetPocket = cad.magnetPockets && (cad.magnetStyle ?? 'pockets') === 'pockets'
+    ? magnetFit(cad.magnetDiameterMm, cad.magnetThicknessMm ?? MAGNET_DEFAULTS.thicknessMm, plateZ)
+    : null;
+  const magnetSpots = magnetCentres(cad.magnetLayout ?? MAGNET_DEFAULTS.layout, widthMm, heightMm, cad.clockMode);
+
+  const cutNumerals = cad.clockMode && cad.clockNumerals === 'cut';
+  const cutMask = cutNumerals ? new Uint8Array(cols * rows) : null;
+  const cutZ = cutNumerals ? new Float32Array(cols * rows) : null;
+
   for (let r = 0; r < rows; r++) {
     const ny = (r / Math.max(1, rows - 1)) * 2.0 - 1.0; // -1 (top) to +1 (bottom)
     const yMm = -ny * halfH;
@@ -1014,6 +1094,12 @@ export function buildHeightmapGrid(params: {
       const maskEval = subjectShape
         ? { inside: subjectShape.inside[idx] === 1, edgeDist: subjectShape.edgeDist[idx] }
         : evaluateShapeMask(nx, ny, cad.shape);
+      // A cut-out subject stands on its name plate: the plate joins the outline, and the frame runs around both
+      if (subjectShape && caption?.plateDist && caption.plateDist[idx] >= 0) {
+        const plateEdge = caption.plateDist[idx] * mmToNorm;
+        maskEval.edgeDist = maskEval.inside ? Math.max(maskEval.edgeDist, plateEdge) : plateEdge;
+        maskEval.inside = true;
+      }
       if (!maskEval.inside) {
         topZ[idx] = -1;
         bottomZ[idx] = 0;
@@ -1067,10 +1153,24 @@ export function buildHeightmapGrid(params: {
       }
 
       // Clock stencil numerals raised to top layer
-      if (cad.clockMode && clockStencilMask[idx] === 1) {
+      // Cut-through numerals become holes after the loop (some come back as stencil bridges)
+      const cutHere = cutNumerals && clockStencilMask[idx] === 1;
+      if (cad.clockMode && clockStencilMask[idx] === 1 && !cutNumerals) {
         cellLum = 1.0;
         discreteLayer = totalLayers;
         zMm = maxReliefZ + cad.frameHeightBonusMm * 0.5;
+      }
+
+      if (caption) {
+        if (caption.letters[idx] === 1) {
+          cellLum = 1.0;
+          discreteLayer = totalLayers;
+          zMm = letterZ;
+        } else if (caption.backing[idx] === 1) {
+          cellLum = 0;
+          discreteLayer = minBaseLayer;
+          zMm = plateZ;
+        }
       }
 
       // 3D Outer Frame
@@ -1094,30 +1194,59 @@ export function buildHeightmapGrid(params: {
 
       // Rear Negative Boolean Pockets (bottomZ > 0)
       let bZ = 0.0;
-      if (cad.clockMode && cad.clockMovementPocket) {
+      // With a back plate the movement mounts on the plate, so the face stays flat behind
+      if (cad.clockMode && cad.clockMovementPocket && !cutNumerals) {
         if (Math.abs(xMm) <= 28.0 && Math.abs(yMm) <= 28.0) {
           bZ = Math.min(baseLayerMm * 0.5, 0.4);
         }
       }
-      if (cad.magnetPockets) {
-        const magOffset = Math.min(halfW, halfH) * 0.55;
-        const magR = cad.magnetDiameterMm * 0.5;
-        const corners = [
-          [-magOffset, -magOffset],
-          [magOffset, -magOffset],
-          [-magOffset, magOffset],
-          [magOffset, magOffset],
-        ];
-        for (const [mx, my] of corners) {
-          if (Math.hypot(xMm - mx, yMm - my) <= magR) {
-            bZ = Math.min(baseLayerMm * 0.55, 0.4);
-          }
+      if (magnetPocket && magnetPocket.depthMm > 0) {
+        for (const [mx, my] of magnetSpots) {
+          if (Math.hypot(xMm - mx, yMm - my) <= magnetPocket.holeDiameterMm / 2) bZ = magnetPocket.depthMm;
         }
       }
 
+      if (cutHere) {
+        cutZ![idx] = zMm;
+        cutMask![idx] = 1;
+        topZ[idx] = -1;
+        bottomZ[idx] = 0;
+        normLum[idx] = 0;
+        continue;
+      }
       topZ[idx] = zMm;
       bottomZ[idx] = bZ;
       normLum[idx] = cellLum;
+    }
+  }
+
+  // Stencil bridges hold the middles of 0, 4, 6, 8 and 9 in place. Material only exists where all four
+  // corners of a grid square are solid, so islands and bridges are worked out on squares, not cells.
+  if (cutMask && cutZ) {
+    const qc = cols - 1;
+    const qr = rows - 1;
+    const solid = new Uint8Array(qc * qr);
+    const cut = new Uint8Array(qc * qr);
+    const corners = (q: number) => {
+      const c = q % qc;
+      const r = (q - c) / qc;
+      const a = r * cols + c;
+      return [a, a + 1, a + cols, a + cols + 1];
+    };
+    for (let q = 0; q < solid.length; q++) {
+      const k = corners(q);
+      if (k.every((i) => topZ[i] > 0)) solid[q] = 1;
+      else if (k.every((i) => topZ[i] > 0 || cutMask[i]) && k.some((i) => cutMask[i])) cut[q] = 1;
+    }
+    const restore = stencilBridges(solid, cut, qc, qr, 1);
+    for (let q = 0; q < restore.length; q++) {
+      if (!restore[q]) continue;
+      for (const i of corners(q)) {
+        if (cutMask[i] && topZ[i] <= 0) {
+          topZ[i] = cutZ[i];
+          normLum[i] = 0;
+        }
+      }
     }
   }
 

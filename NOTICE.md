@@ -20,6 +20,8 @@ Filament colours in the bundled catalog are approximate values taken from public
 - **BiRefNet** (lite, ONNX export by onnx-community) is the model that finds the subject for the "Subject (automatic)" shape. It is © ZhengPeng7 and contributors, released under the MIT License: https://github.com/ZhengPeng7/BiRefNet
 - **ONNX Runtime** runs that model on your computer. It is © Microsoft Corporation, released under the MIT License: https://github.com/microsoft/onnxruntime
 
+- **Fonts** for the interface, clock numerals and name plates, bundled through Fontsource: IBM Plex Sans and IBM Plex Mono (© IBM Corp.), Playfair Display, Cinzel, Bebas Neue, Pacifico and Alfa Slab One (© their respective designers). All are released under the SIL Open Font License 1.1: https://openfontlicense.org
+
 The subject is found entirely on your computer. Your photo is never uploaded.
 
 ## Early release and bugs

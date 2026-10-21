@@ -13,6 +13,7 @@ import {
 } from '../engine/fidelityReport';
 import { ExportVerificationError, type VerificationReport } from '../engine/verifyExport';
 import { recordError } from '../engine/debugInfo';
+import { bytesToBase64, saveBytes } from '../utils/saveBytes';
 import { Button, Dialog, DialogSection, FOCUS_RING } from './ui';
 import {
   generateVerified3mfPackage,
@@ -43,14 +44,6 @@ type SlicerStatus =
   | { kind: 'saved'; filePath: string }
   | { kind: 'failed'; error: string; filePath?: string };
 
-const bytesToBase64 = (bytes: Uint8Array) => {
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-};
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -168,23 +161,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, grid,
   const saveUint8OrBuffer = async (data: Uint8Array | ArrayBuffer, filename: string, ext: string) => {
     setExporting(true);
     try {
-      const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-      const desktopBridge = (window as any).tailwagDesktop;
-      if (desktopBridge?.saveFile) {
-        await desktopBridge.saveFile({
-          defaultPath: filename,
-          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-          dataBase64: bytesToBase64(bytes),
-        });
-      } else {
-        const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+      await saveBytes(data, filename, ext);
     } finally {
       setExporting(false);
     }

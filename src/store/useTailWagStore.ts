@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { FilamentSpool, VERIFIED_FILAMENT_CATALOG } from '../data/filamentCatalog';
 import { LayerSwapSlot } from '../engine/opticalTdEngine';
 import { CadCutoutConfig } from '../engine/cadMeshBuilder';
+import { magnetBackingPatch, touchesMagnets } from '../engine/magnetBacking';
 import { parseFilamentLibraryJson } from '../utils/filamentJsonIO';
 import { optimizeManualSlotBoundaries } from '../engine/autoSolver';
 import { createDefaultPortraitImageData } from '../utils/defaultPortrait';
@@ -382,7 +383,9 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
     keychainHole: false,
     keychainHoleDiameterMm: 4.5,
     magnetPockets: false,
-    magnetDiameterMm: 8.2,
+    magnetDiameterMm: 8,
+    magnetThicknessMm: 1,
+    magnetLayout: 'corners',
     subjectMarginMm: 3,
     subjectSmoothMm: 2,
   },
@@ -498,7 +501,12 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
     }),
   setMeshResolution: (meshResolution) => set({ meshResolution }),
   setPrePress: (partial) => set((state) => ({ ...state, ...partial })),
-  setCadConfig: (partial) => set((state) => ({ cad: { ...state.cad, ...partial } })),
+  setCadConfig: (partial) =>
+    set((state) => {
+      const cad = { ...state.cad, ...partial };
+      // Magnets that don't fit get plain backing layers in the same step, so one undo takes both back
+      return touchesMagnets(partial) ? magnetBackingPatch(state, state.cad, cad) : { cad };
+    }),
   setSlots: (slots) =>
     set((state) => ({
       slots,

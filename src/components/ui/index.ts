@@ -5,5 +5,5 @@ export type { ButtonProps, IconButtonProps } from './Button';
 export { Segmented } from './Segmented';
 export type { SegmentOption } from './Segmented';
 export { Section } from './Section';
-export { SliderRow, NumberField, SelectField, CheckboxRow, Badge } from './Fields';
+export { SliderRow, NumberField, TextField, SelectField, CheckboxRow, Badge } from './Fields';
 export { Dialog, DialogSection } from './Dialog';

@@ -103,7 +103,7 @@ export const PrintSizePanel: React.FC = () => {
           valueText={`${baseSolidThicknessMm.toFixed(2)} mm`}
           hint={`Layers 1–${baseLayers} print the base filament everywhere.`}
           min={baseLayerMm}
-          max={2.0}
+          max={Math.max(2.0, baseSolidThicknessMm)}
           step={layerHeightMm}
           value={baseSolidThicknessMm}
           onChange={(e) => setBaseSolidThicknessMm(parseFloat(e.target.value))}
@@ -113,7 +113,7 @@ export const PrintSizePanel: React.FC = () => {
           valueText={`${totalDepthMm.toFixed(2)} mm`}
           hint={`${totalLayers} layers, top at ${maxZ.toFixed(2)} mm. Deeper prints blend colours over more layers.`}
           min={0.8}
-          max={3.6}
+          max={Math.max(3.6, totalDepthMm)}
           step={layerHeightMm}
           value={totalDepthMm}
           onChange={(e) => setTotalDepthMm(parseFloat(e.target.value))}

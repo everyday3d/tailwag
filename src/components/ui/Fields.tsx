@@ -47,6 +47,30 @@ export const NumberField: React.FC<NumberFieldProps> = ({ label, unit, className
   );
 };
 
+interface TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
+  label: string;
+  hint?: string;
+}
+
+/** A labelled one-line text input in the same style as NumberField. */
+export const TextField: React.FC<TextFieldProps> = ({ label, hint, className = '', ...input }) => {
+  const id = useId();
+  return (
+    <div className={`flex flex-col gap-1 min-w-0 ${className}`}>
+      <label htmlFor={id} className="text-small text-tw-ink-2">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="text"
+        className={`h-8 w-full px-2.5 rounded-control bg-tw-ground border border-tw-line text-tw-ink text-body placeholder:text-tw-ink-3 ${FOCUS_RING}`}
+        {...input}
+      />
+      {hint && <span className="text-micro text-tw-ink-3">{hint}</span>}
+    </div>
+  );
+};
+
 interface SelectFieldProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label: string;
   children: React.ReactNode;
