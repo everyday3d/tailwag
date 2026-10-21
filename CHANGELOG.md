@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-21
+
+Name plates, wall clocks with cut-through numbers and a back plate, more fonts (including your own), magnets of any size, and one-click templates for coasters, ornaments, keychains, fridge magnets and desk stands.
+
 ### Added
 - **Name plates and captions**: type a name in **Shape and extras** (and an optional smaller second line, such as "2019 – 2026") and it is raised on the print. **Name plate** puts a flat bar along the bottom or top edge, printed in your first filament, with the letters raised in your top filament, like a memorial plaque. **On the photo** raises the letters straight on the picture with a thin outline so they stay readable. Three letter sizes; long text shrinks to fit, and the panel warns when letters get too small to print cleanly. With **Subject (automatic)** the plate joins the cutout, so the subject stands on its name plate and the frame runs around both. Plates and letters sit exactly on layer boundaries and pass the export check.
 - **Clock numerals cut through, with a back plate**: under **Wall clock**, choose **Cut through** and the numerals and minute marks go right through the face. The middles of 0, 4, 6, 8 and 9 are held in by small stencil bridges, added automatically. **Download back plate (.stl)** saves a separate plate in the same outline, printed face down in any colour you like: that colour shows through the numerals. On its back it has a square rim that holds a standard 56 mm quartz movement and a keyhole hanger on a post as tall as the movement, so the clock hangs straight and the screw only stands out of the wall by its head plus 2.5 mm; the movement's shaft goes through the plate and the face and its nut holds everything together. The panel shows the total thickness so you can pick a movement with a long enough shaft, offers your own spools as colour ideas, and the 3D view shows the plate's colour behind the numerals.

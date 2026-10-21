@@ -1,6 +1,6 @@
-# 🐕 TailWag Studio (`v1.3.0`)
+# 🐕 TailWag Studio (`v1.4.0`)
 
-[![Release](https://img.shields.io/badge/Version-1.3.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Version-1.4.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=apple)](https://github.com/everyday3d/tailwag/releases)
 [![Wiki Documentation](https://img.shields.io/badge/Docs-Wiki-purple?style=flat-square&logo=github)](https://github.com/everyday3d/tailwag/wiki)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
@@ -25,7 +25,11 @@
 - **Shows the print before you print it.** A 3D preview shows the predicted colours, with a side-by-side compare against your photo.
 - **Cuts the print to your subject.** It can find your dog, a person or an object in the photo and cut the print to its outline automatically.
 - **Crop, turn and focus.** Crop and straighten the photo, and paint over what matters most, like a face, so it gets the best colours.
-- **Makes shapes and gifts.** Rectangle, rounded plaque, circle, hexagon, shield or medallion, with a raised frame. It can also add a wall clock hole and numbers, a keychain hole, or magnet pockets on the back.
+- **Makes gifts in one click.** Templates for a coaster, ornament, keychain, fridge magnet or desk stand set the size, shape, holes and depth for you.
+- **Adds a name.** Raise a name and a date on a name plate, like a memorial plaque, in one of the bundled fonts or any font on your computer.
+- **Makes wall clocks.** Raised numbers, or numbers cut right through with a coloured back plate behind them that also holds the clock movement and hangs on the wall.
+- **Holds your magnets.** Pockets sized for the magnets you have; the back gets thicker by itself when they need room.
+- **Shapes and frames.** Rectangle, rounded plaque, circle, hexagon, shield or medallion, with a raised frame, and a keychain hole.
 - **Exports a print you can trust.** A Bambu Studio or OrcaSlicer project with every colour already set up, or an STL with a step-by-step pause guide. Every file is checked against the plan before it is saved.
 - **Gets more accurate as you calibrate.** Print one small plate, take a photo, and TailWag measures how your own filaments really look.
 
@@ -106,7 +110,7 @@ Click the version number at the top left to check for updates. **Copy debug info
 
 ## Installing on Windows, and the blue "Windows protected your PC" screen
 
-Download **TailWag-Setup-1.3.0.exe** from the [releases page](https://github.com/everyday3d/tailwag/releases) and run it. There's also a portable version that doesn't need installing. You can also install it from a terminal:
+Download **TailWag-Setup-1.4.0.exe** from the [releases page](https://github.com/everyday3d/tailwag/releases) and run it. There's also a portable version that doesn't need installing. You can also install it from a terminal:
 
 ```powershell
 winget install everyday3d.TailWagStudio
@@ -131,7 +135,7 @@ Restore it from quarantine and add it to your antivirus exclusions, or use the p
 The [releases page](https://github.com/everyday3d/tailwag/releases) lists a **SHA-256** checksum for each file. To compare, open PowerShell in your Downloads folder and run:
 
 ```powershell
-Get-FileHash .\TailWag-Setup-1.3.0.exe -Algorithm SHA256
+Get-FileHash .\TailWag-Setup-1.4.0.exe -Algorithm SHA256
 ```
 
 The two values should match.
@@ -139,8 +143,8 @@ The two values should match.
 ## Installing on macOS (Apple Silicon & Intel)
 
 Download the `.dmg` from the [releases page](https://github.com/everyday3d/tailwag/releases):
-- **Apple Silicon (M1, M2, M3, M4):** `TailWag-Setup-1.3.0-mac-arm64.dmg`
-- **Intel Macs:** `TailWag-Setup-1.3.0-mac-x64.dmg`
+- **Apple Silicon (M1, M2, M3, M4):** `TailWag-Setup-1.4.0-mac-arm64.dmg`
+- **Intel Macs:** `TailWag-Setup-1.4.0-mac-x64.dmg`
 
 Open it and drag **TailWag Studio** into your **Applications** folder.
 

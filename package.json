@@ -1,6 +1,6 @@
 {
   "name": "tailwag",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "🐕 TailWag — 3D Filament Painting & TD Lithophane Studio",
   "main": "dist-electron/main.js",
   "author": "BoxerDawg 3D (everyday3d)",
