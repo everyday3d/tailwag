@@ -1,6 +1,6 @@
-# 🐕 TailWag Studio (`v1.4.1`)
+# 🐕 TailWag Studio (`v1.5.0`)
 
-[![Release](https://img.shields.io/badge/Version-1.4.1-orange?style=flat-square&logo=windows)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Version-1.5.0-orange?style=flat-square&logo=windows)](CHANGELOG.md)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square&logo=apple)](https://github.com/everyday3d/tailwag/releases)
 [![Wiki Documentation](https://img.shields.io/badge/Docs-Wiki-purple?style=flat-square&logo=github)](https://github.com/everyday3d/tailwag/wiki)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
@@ -112,7 +112,7 @@ Click the version number at the top left to check for updates. **Copy debug info
 
 ## Installing on Windows, and the blue "Windows protected your PC" screen
 
-Download **TailWag-Setup-1.4.1.exe** from the [releases page](https://github.com/everyday3d/tailwag/releases) and run it. There's also a portable version that doesn't need installing. You can also install it from a terminal:
+Download **TailWag-Setup-1.5.0.exe** from the [releases page](https://github.com/everyday3d/tailwag/releases) and run it. There's also a portable version that doesn't need installing. You can also install it from a terminal:
 
 ```powershell
 winget install everyday3d.TailWagStudio
@@ -137,7 +137,7 @@ Restore it from quarantine and add it to your antivirus exclusions, or use the p
 The [releases page](https://github.com/everyday3d/tailwag/releases) lists a **SHA-256** checksum for each file. To compare, open PowerShell in your Downloads folder and run:
 
 ```powershell
-Get-FileHash .\TailWag-Setup-1.4.1.exe -Algorithm SHA256
+Get-FileHash .\TailWag-Setup-1.5.0.exe -Algorithm SHA256
 ```
 
 The two values should match.
@@ -145,8 +145,8 @@ The two values should match.
 ## Installing on macOS (Apple Silicon & Intel)
 
 Download the `.dmg` from the [releases page](https://github.com/everyday3d/tailwag/releases):
-- **Apple Silicon (M1, M2, M3, M4):** `TailWag-Setup-1.4.1-mac-arm64.dmg`
-- **Intel Macs:** `TailWag-Setup-1.4.1-mac-x64.dmg`
+- **Apple Silicon (M1, M2, M3, M4):** `TailWag-Setup-1.5.0-mac-arm64.dmg`
+- **Intel Macs:** `TailWag-Setup-1.5.0-mac-x64.dmg`
 
 Open it and drag **TailWag Studio** into your **Applications** folder.
 

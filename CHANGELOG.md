@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-22
+
+Share your spools with Paws and Pennies, the BoxerDawg 3D print-pricing app.
+
+### Added
+- **Share my spools with Paws and Pennies**: a checkbox in the Filaments panel (desktop app, off until you turn it on). Your owned spools then stay in step with Paws and Pennies on the same computer: add, edit or remove a spool in either app and the other follows within a couple of seconds. TailWag looks after brand, name, material, colour, TD and stock; Paws and Pennies looks after what each spool cost. Spools added there arrive in My Filaments with an estimated TD (marked as an estimate) that you can measure later. When you first turn it on, spools both apps already list are paired by material and colour (a slicer's pure white finds your measured white), so nothing is listed twice. The list is kept in `%APPDATA%\BoxerDawg 3D\shared-spools.json`.
+
 ## [1.4.1] - 2026-10-21
 
 Fix poor phone photos in one click, and recolour any colour in the picture.
