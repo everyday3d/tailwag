@@ -19,7 +19,7 @@ export function findDuplicateSpool(catalog: FilamentSpool[], spool: FilamentSpoo
   );
 }
 
-function syncMyLibraryMeta(catalog: FilamentSpool[], libs: ImportedLibraryMeta[]): ImportedLibraryMeta[] {
+export function syncMyLibraryMeta(catalog: FilamentSpool[], libs: ImportedLibraryMeta[]): ImportedLibraryMeta[] {
   const count = catalog.filter((s) => s.libraryId === MY_LIBRARY_ID).length;
   const others = libs.filter((l) => l.id !== MY_LIBRARY_ID);
   return count === 0 ? others : [...others, { id: MY_LIBRARY_ID, name: MY_LIBRARY_NAME, count }];

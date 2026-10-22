@@ -307,6 +307,34 @@ app.whenReady().then(() => {
 
   ipcMain.handle('tailwag:app-version', () => app.getVersion());
 
+  // Spools shared with Paws and Pennies (src/utils/spoolShare.ts). Both apps read and write this file.
+  const sharedSpoolsFile = path.join(app.getPath('appData'), 'BoxerDawg 3D', 'shared-spools.json');
+  ipcMain.handle('tailwag:share-read', () => {
+    try {
+      return { path: sharedSpoolsFile, text: fs.readFileSync(sharedSpoolsFile, 'utf8') };
+    } catch {
+      return { path: sharedSpoolsFile, text: null };
+    }
+  });
+  ipcMain.handle('tailwag:share-write', (_event, text: unknown) => {
+    if (typeof text !== 'string' || text.length > 5_000_000) return false;
+    try {
+      fs.mkdirSync(path.dirname(sharedSpoolsFile), { recursive: true });
+      // Write beside it and swap in, so the other app never reads half a file.
+      const tmp = `${sharedSpoolsFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, text, 'utf8');
+      fs.renameSync(tmp, sharedSpoolsFile);
+      return true;
+    } catch (e) {
+      logMsg(`shared spools write failed: ${e}`);
+      return false;
+    }
+  });
+  // watchFile polls, which also works before the file exists and across apps on Windows.
+  fs.watchFile(sharedSpoolsFile, { interval: 1500 }, (cur, prev) => {
+    if (cur.mtimeMs !== prev.mtimeMs) mainWindow?.webContents.send('tailwag:share-changed');
+  });
+
   // Subject cutout: is the model installed, and run it on a 1024 x 1024 RGBA picture.
   ipcMain.handle('tailwag:subject-available', () => subjectModelAvailable());
   ipcMain.handle('tailwag:find-subject', async (_event, rgba: unknown) => {

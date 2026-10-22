@@ -88,6 +88,7 @@ import { buildPrintPlan } from './engine/printPlan';
 import { buildLayerColorLUT } from './engine/opticalTdEngine';
 import { solveFaithfulPalette } from './engine/faithfulSolver';
 import { FilamentLibraryModal, TdSourceBadge } from './components/FilamentLibraryModal';
+import { useSpoolShare } from './utils/useSpoolShare';
 import { SpoolEditModal } from './components/SpoolEditModal';
 import {
   filterAndSortSpools,
@@ -110,6 +111,7 @@ export const App: React.FC = () => {
   const [sourceDataUrl, setSourceDataUrl] = useState<string>(defaultImg.dataUrl);
   const [searchQuery, setSearchQuery] = useState('');
   const [libraryTab, setLibraryTab] = useState<'owned' | 'all'>('owned');
+  const spoolShare = useSpoolShare();
   const [solverPoolMode, setSolverPoolMode] = useState<'owned' | 'shown'>('owned');
   const [amsFilter, setAmsFilter] = useState<string>('all');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
@@ -900,6 +902,7 @@ export const App: React.FC = () => {
             }}
             message={jsonImportBanner}
             onDismissMessage={() => setJsonImportBanner(null)}
+            share={spoolShare}
           />
         </aside>
 

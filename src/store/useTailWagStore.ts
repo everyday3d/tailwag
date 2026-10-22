@@ -14,7 +14,9 @@ import {
   updateSpoolInCatalog,
   removeSpoolFromMyLibrary,
   withTdSource,
+  syncMyLibraryMeta,
   SEED_LIBRARY_ID,
+  MY_LIBRARY_ID,
 } from '../utils/myLibrary';
 
 export type ViewportMode = '3d-mesh' | 'split' | 'source' | 'heightmap';
@@ -133,6 +135,8 @@ export interface TailWagState {
   ) => void;
   removeImportedLibrary: (libraryId: string) => void;
   clearAllImportedLibraries: () => void;
+  /** Replaces the owned spools with the list after a sync with Paws and Pennies. */
+  applySharedSpools: (owned: FilamentSpool[]) => void;
 }
 
 function getInitialImageData(): ImageData | null {
@@ -908,5 +912,23 @@ export const useTailWagStore = create<TailWagState>((set, get) => ({
     set(() => {
       saveStoreDataToStorage(CLEAN_BUILTIN_CATALOG, []);
       return { catalog: CLEAN_BUILTIN_CATALOG, importedLibraries: [] };
+    }),
+  applySharedSpools: (owned) =>
+    set((state) => {
+      const byId = new Map(owned.map((s) => [s.id, s]));
+      const known = new Set(state.catalog.map((s) => s.id));
+      // Spools removed in Paws and Pennies leave My Filaments, and stop being owned if they came from elsewhere.
+      const kept = state.catalog.flatMap((s) => {
+        const shared = byId.get(s.id);
+        if (shared) return [shared];
+        if (!s.owned) return [s];
+        return s.libraryId === MY_LIBRARY_ID ? [] : [{ ...s, owned: false }];
+      });
+      const catalog = [...owned.filter((s) => !known.has(s.id)), ...kept];
+      const importedLibraries = syncMyLibraryMeta(catalog, state.importedLibraries);
+      saveStoreDataToStorage(catalog, importedLibraries);
+      // The stack holds copies of spools: keep their colour and TD current.
+      const slots = state.slots.map((slot) => (byId.has(slot.spool.id) ? { ...slot, spool: byId.get(slot.spool.id)! } : slot));
+      return { catalog, importedLibraries, slots };
     }),
 }));

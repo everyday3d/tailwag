@@ -18,4 +18,11 @@ contextBridge.exposeInMainWorld('tailwagDesktop', {
   sendToSlicer: (options: { slicerId: string | null; fileName: string; dataBase64: string }) =>
     ipcRenderer.invoke('tailwag:send-to-slicer', options),
   showExportInFolder: (filePath?: string) => ipcRenderer.invoke('tailwag:show-export-in-folder', filePath),
+  shareRead: () => ipcRenderer.invoke('tailwag:share-read'),
+  shareWrite: (text: string) => ipcRenderer.invoke('tailwag:share-write', text),
+  onShareChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('tailwag:share-changed', listener);
+    return () => ipcRenderer.removeListener('tailwag:share-changed', listener);
+  },
 });

@@ -5,6 +5,7 @@ import type { FilamentSpool } from '../../data/filamentCatalog';
 import { STOCK_LABEL, nextStock, stockOf, type SortMode, type StockFilter } from '../../utils/libraryView';
 import { TdSourceBadge } from '../FilamentLibraryModal';
 import { Badge, Button, IconButton, Section, Segmented, FOCUS_RING } from '../ui';
+import type { SpoolShareState } from '../../utils/useSpoolShare';
 
 interface Props {
   /** List to show (already filtered and sorted by App, which also feeds it to the solver). */
@@ -31,6 +32,8 @@ interface Props {
   /** App-wide status line (imports, saves, errors); shown here until there is a global toast area. */
   message: string | null;
   onDismissMessage: () => void;
+  /** Sharing My Filaments with Paws and Pennies (desktop app only). */
+  share: SpoolShareState;
 }
 
 const selectCls = `h-8 min-w-0 px-1.5 rounded-control bg-tw-ground border border-tw-line text-small text-tw-ink ${FOCUS_RING}`;
@@ -83,6 +86,24 @@ export const LibraryPanel: React.FC<Props> = (p) => {
               </Button>
             </div>
           ))}
+
+        {p.share.available && (
+          <div className="flex flex-col gap-0.5 px-2.5 py-1.5 rounded-control bg-tw-raised/60 border border-tw-line text-small">
+            <label className="flex items-center gap-2 text-tw-ink cursor-pointer">
+              <input type="checkbox" className="accent-tw-accent" checked={p.share.enabled} onChange={(e) => p.share.setEnabled(e.target.checked)} />
+              Share my spools with Paws and Pennies
+            </label>
+            {p.share.enabled && (
+              <span className={p.share.error ? 'text-tw-danger' : 'text-tw-ink-3'}>
+                {p.share.error
+                  ? p.share.error
+                  : p.share.lastSync
+                    ? `In step: ${p.share.shared} spool${p.share.shared === 1 ? '' : 's'} shared. Spools you own, edit or remove here change there too.`
+                    : 'Connecting…'}
+              </span>
+            )}
+          </div>
+        )}
 
         {p.message && (
           <div
