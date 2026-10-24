@@ -157,3 +157,23 @@ jobs:
           generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Opens the WinGet update PR for the new version. Skips quietly until the package is in winget-pkgs
+  # and a WINGET_TOKEN secret exists (see scripts/winget-update.ps1). Only for tag pushes: a manual run
+  # that adds one platform to an existing release does not resubmit.
+  winget:
+    name: Update the WinGet package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Submit the new version to WinGet
+        shell: pwsh
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: ./scripts/winget-update.ps1 -Tag $env:TAG
